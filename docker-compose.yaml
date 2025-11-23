@@ -1,0 +1,76 @@
+# Docker Compose version (compatible with 3.8+, stable for most production/development use cases)
+version: '3.8'
+
+# Define all services (containers) to be orchestrated
+services:
+  # Ollama Service: Local LLM runtime (auto-pulls models on startup)
+  ollama:
+    image: ollama/ollama:latest  # Official Ollama image (use 'latest' for latest stable build)
+    container_name: ollama       # Custom container name (easier CLI management)
+    ports:
+      - "11434:11434"            # Port mapping: [Host Port]:[Container Port] (Ollama's default API port)
+    volumes:
+      # Persistent volume: Stores downloaded models, chat history, and configurations
+      # Survives container restarts/deletions (no need to re-download models)
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_GPU_MEMORY=auto  # Auto-manage GPU memory (unload when idle)
+      - OLLAMA_IDLE_TIMEOUT=300  # Unload model after 300 seconds (5 minutes) of inactivity (adjust as needed: 60=1min, 120=2min)
+
+    deploy:
+      # GPU configuration (for NVIDIA GPUs only; replaces --gpus all CLI flag)
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all          # Attach all available NVIDIA GPUs
+              capabilities: [gpu] # Declare GPU hardware acceleration support
+    restart: always              # Auto-restart container on unexpected exit (e.g., crash, system reboot)
+    networks:
+      - ai-network               # Join custom network for seamless communication with Lobe Chat
+
+  # Lobe Chat Service: High-quality UI for interacting with Ollama/Llama models
+  lobe-chat:
+    image: lobehub/lobe-chat:latest  # Official Lobe Chat image (高颜值 AI chat UI)
+    container_name: lobe-chat        # Custom container name
+    ports:
+      - "3210:3210"                  # Port mapping: Lobe Chat's default web access port
+    volumes:
+      # Persistent volume: Stores chat history, UI settings, and model configurations
+      - lobe-chat-data:/app/data
+    environment:
+      - LOCALE=zh-CN                # Set UI language to Simplified Chinese (change to 'en-US' for English)
+    restart: always                  # Auto-restart on unexpected exit
+    networks:
+      - ai-network                   # Communicate with Ollama via service name: http://ollama:11434
+
+  # Jupyter PySpark Notebook Service: Interactive Jupyter environment with PySpark, PyTorch, and Transformers
+  pyspark-notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile.pyspark                # Custom Dockerfile with PyTorch and Transformers
+    image: pyspark-notebook-ml:latest               # Tag for the built image
+    container_name: pyspark-notebook                # Custom container name
+    ports:
+      - "8888:8888"                                 # Port mapping: Jupyter Notebook web interface
+    volumes:
+      # Persistent volume: Stores notebooks, data files, and workspace
+      - pyspark-notebook-data:/home/jovyan/work
+    environment:
+      - JUPYTER_ENABLE_LAB=yes                      # Enable JupyterLab interface (modern UI)
+    restart: always                                 # Auto-restart on unexpected exit
+    networks:
+      - ai-network                                  # Join AI network for potential integration
+
+# Persistent Volumes: Separate container lifecycle from data storage
+# Data remains intact even if containers are deleted/rebuilt
+volumes:
+  ollama-data:     # Stores Ollama's models, chat logs, and runtime data
+  lobe-chat-data:  # Stores Lobe Chat's user preferences and chat history
+  pyspark-notebook-data:  # Stores Jupyter notebooks and workspace files
+
+# Custom Network: Enables service-to-service communication using container names (instead of IPs)
+# Bridge driver is Docker's default for local network isolation
+networks:
+  ai-network:
+    driver: bridge
