@@ -1,0 +1,17 @@
+# PySpark ML Notebook Dependencies
+
+# PyTorch ecosystem
+torch
+torchvision
+torchaudio
+
+# Hugging Face ecosystem
+transformers
+accelerate
+datasets
+tokenizers
+huggingface-hub
+
+# Tokenization
+sentencepiece
+protobuf
