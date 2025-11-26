@@ -71,8 +71,8 @@ def process_audio(audio_input, transcript_state):
             indices = np.linspace(0, len(audio_float) - 1, new_length).astype(int)
             audio_float = audio_float[indices]
     
-    # Skip if too short (less than 0.5 seconds)
-    if len(audio_float) < 8000:
+    # Skip if too short (less than 0.3 seconds)
+    if len(audio_float) < 4800:
         return transcript_state or "Listening..."
     
     # Convert to int16 bytes for transmission
