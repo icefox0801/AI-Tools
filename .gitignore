@@ -30,11 +30,14 @@ env/
 .ipynb_checkpoints
 *.ipynb_checkpoints/
 
+# Notebook outputs (optional - uncomment to ignore all notebook outputs)
+# notebooks/**/*.ipynb
+
 # Docker
 *.log
 
 # IDE
-.vscode/
+# .vscode/  # Keep VS Code settings for team consistency
 .idea/
 *.swp
 *.swo
