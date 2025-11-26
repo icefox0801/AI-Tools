@@ -7,18 +7,9 @@ USER root
 # Switch back to jovyan user for pip installations (best practice for Jupyter images)
 USER ${NB_UID}
 
-# Install PyTorch and Transformers along with common ML dependencies
-RUN pip install --no-cache-dir \
-    torch \
-    torchvision \
-    torchaudio \
-    transformers \
-    accelerate \
-    sentencepiece \
-    protobuf \
-    datasets \
-    tokenizers \
-    huggingface-hub
+# Install Python dependencies (Docker-specific)
+COPY requirements.docker.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Set working directory
 WORKDIR /home/jovyan/work
