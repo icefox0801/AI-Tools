@@ -52,10 +52,10 @@ async def transcribe_audio(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connection established")
     
-    # Buffer for accumulating audio - optimized for low latency
+    # Buffer for accumulating audio
     audio_buffer = []
     sample_rate = 16000
-    chunk_duration = 0.8  # Process every 0.8 seconds for low latency
+    chunk_duration = 2.0  # Process every 2 seconds for better accuracy
     samples_per_chunk = int(sample_rate * chunk_duration)
     
     try:
@@ -84,15 +84,14 @@ async def transcribe_audio(websocket: WebSocket):
                 audio_array = np.array(audio_buffer[:samples_per_chunk], dtype=np.float32)
                 audio_buffer = audio_buffer[samples_per_chunk:]
                 
-                # Transcribe with optimized settings for speed
+                # Transcribe with settings optimized for accuracy
                 segments, info = model.transcribe(
                     audio_array,
-                    beam_size=1,  # Faster decoding (was 5)
+                    beam_size=3,  # Better accuracy
                     language="en",
-                    vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=300),  # Faster VAD (was 500)
-                    without_timestamps=True,  # Skip timestamp calculation
-                    condition_on_previous_text=False  # Don't condition on previous (faster)
+                    vad_filter=False,  # Disabled - let all audio through
+                    without_timestamps=True,
+                    condition_on_previous_text=False
                 )
                 
                 # Collect transcription
