@@ -71,26 +71,17 @@ services:
     networks:
       - ai-network                                  # Join AI network for potential integration
 
-  # Faster-Whisper ASR: High-performance speech recognition with GPU acceleration
-  whisper-asr:
+  # Vosk ASR: Lightweight, fast, offline speech recognition with native streaming
+  vosk-asr:
     build:
-      context: ./services/whisper
+      context: ./services/vosk
       dockerfile: Dockerfile
-    image: whisper-asr:latest
-    container_name: whisper-asr
+    image: vosk-asr:latest
+    container_name: vosk-asr
     ports:
-      - "8001:8000"                                 # Port mapping: Whisper ASR API endpoint
+      - "8001:8000"                                 # Port mapping: Vosk ASR API endpoint
     volumes:
-      - whisper-cache:/root/.cache                  # Cache for Whisper models
-    environment:
-      - CUDA_VISIBLE_DEVICES=0                      # Use first GPU
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+      - vosk-model-data:/app/model                  # Persistent model storage (1.8GB, downloads once)
     restart: always
     networks:
       - ai-network
@@ -99,7 +90,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s                            # Whisper model loading takes time
+      start_period: 60s                             # Allow time for first-time model download
 
   # Web GUI: Browser-based voice transcription interface
   web-gui:
@@ -116,7 +107,7 @@ services:
     networks:
       - ai-network
     depends_on:
-      - whisper-asr                                 # Wait for Whisper ASR
+      - vosk-asr                                    # Wait for Vosk ASR
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -130,7 +121,7 @@ volumes:
   ollama-data:                # Stores Ollama's models, chat logs, and runtime data
   lobe-chat-data:             # Stores Lobe Chat's user preferences and chat history
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
-  whisper-cache:              # Stores Whisper ASR models and cache
+  vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
