@@ -1,6 +1,6 @@
 """
 Voice Transcription - Gradio UI
-Simple streaming transcription via WebSocket
+Real-time streaming transcription via WebSocket with Vosk ASR
 """
 
 import gradio as gr
@@ -12,11 +12,11 @@ import time
 
 
 async def transcribe_audio(audio_data: bytes, language: str = "en") -> str:
-    """Send audio to whisper service and get transcription."""
-    uri = "ws://whisper-asr:8000/transcribe"
+    """Send audio to Vosk service and get transcription."""
+    uri = "ws://vosk-asr:8000/transcribe"
     
     try:
-        async with websockets.connect(uri, close_timeout=5) as ws:
+        async with websockets.connect(uri, close_timeout=10) as ws:
             # Send config
             await ws.send(json.dumps({"language": language, "task": "transcribe"}))
             
@@ -24,21 +24,52 @@ async def transcribe_audio(audio_data: bytes, language: str = "en") -> str:
             response = await ws.recv()
             data = json.loads(response)
             if data.get("status") != "ready":
+                print(f"Vosk not ready: {data}")
                 return ""
             
-            # Send audio
+            print(f"Sending {len(audio_data)} bytes of audio data...")
+            
+            # Send all audio data at once
             await ws.send(audio_data)
             
-            # Wait a bit for processing then close to get result
-            await asyncio.sleep(0.5)
+            # Send empty chunk to signal end of audio (triggers final result)
+            await ws.send(b"")
             
-            # Try to receive results
+            # Wait for final result with proper timeout
+            # The server should send the final result after receiving empty bytes
+            results = []
+            last_partial = ""
+            
             try:
-                response = await asyncio.wait_for(ws.recv(), timeout=3.0)
-                result = json.loads(response)
-                return result.get("text", "").strip()
-            except asyncio.TimeoutError:
-                return ""
+                # Wait up to 5 seconds for responses
+                end_time = time.time() + 5.0
+                while time.time() < end_time:
+                    try:
+                        response = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        result = json.loads(response)
+                        print(f"Received from Vosk: {result}")
+                        
+                        if "text" in result and result["text"]:
+                            results.append(result["text"])
+                            # Got final result, we can return
+                            break
+                        elif "partial" in result:
+                            last_partial = result["partial"]
+                    except asyncio.TimeoutError:
+                        # No more messages, break
+                        break
+            except Exception as e:
+                print(f"Error receiving from Vosk: {e}")
+            
+            # If no final results but have partial, use that
+            if not results and last_partial:
+                print(f"Using partial result: {last_partial}")
+                return last_partial.strip()
+            
+            final_text = " ".join(results).strip()
+            print(f"Final transcription: {final_text}")
+            return final_text
+            
     except Exception as e:
         print(f"Transcription error: {e}")
         return ""
@@ -101,10 +132,10 @@ with gr.Blocks(title="Voice Transcribe") as demo:
     
     gr.Markdown("""
     # Voice Transcribe
-    ### Real-time speech-to-text powered by Faster-Whisper AI
+    ### Real-time speech-to-text powered by Vosk AI
     
     Record audio and it will be transcribed automatically.
-    Audio is filtered to isolate human voice frequencies (100Hz - 3500Hz).
+    Fast, lightweight, and runs entirely offline.
     """)
     
     audio_input = gr.Audio(
@@ -126,7 +157,7 @@ with gr.Blocks(title="Voice Transcribe") as demo:
     
     gr.Markdown("""
     ---
-    *Powered by Faster-Whisper | GPU Accelerated | Large-v3 Model*
+    *Powered by Vosk | CPU Optimized | Fast & Lightweight*
     """)
     
     # Stream handler
