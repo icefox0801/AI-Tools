@@ -1,6 +1,4 @@
-# Docker Compose version (compatible with 3.8+, stable for most production/development use cases)
-version: '3.8'
-
+# Docker Compose configuration for AI-Tools
 # Define all services (containers) to be orchestrated
 services:
   # Ollama Service: Local LLM runtime (auto-pulls models on startup)
@@ -47,27 +45,92 @@ services:
   # Jupyter PySpark Notebook Service: Interactive Jupyter environment with PySpark, PyTorch, and Transformers
   pyspark-notebook:
     build:
-      context: .
-      dockerfile: Dockerfile.pyspark                # Custom Dockerfile with PyTorch and Transformers
+      context: ./services/pyspark
+      dockerfile: Dockerfile
     image: pyspark-notebook-ml:latest               # Tag for the built image
     container_name: pyspark-notebook                # Custom container name
     ports:
       - "8888:8888"                                 # Port mapping: Jupyter Notebook web interface
     volumes:
-      # Persistent volume: Stores notebooks, data files, and workspace
+      # Persistent volume: Stores notebooks, data files, workspace, and models
       - pyspark-notebook-data:/home/jovyan/work
+      # Optional: Uncomment to sync local notebooks folder with Docker
+      # - ./notebooks:/home/jovyan/work/notebooks
     environment:
       - JUPYTER_ENABLE_LAB=yes                      # Enable JupyterLab interface (modern UI)
+      - JUPYTER_TOKEN=ai-tools-dev-2025             # Fixed token for easy VS Code connection
+    deploy:
+      # GPU configuration (for NVIDIA GPUs only; enables PyTorch CUDA)
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all          # Attach all available NVIDIA GPUs
+              capabilities: [gpu] # Declare GPU hardware acceleration support
     restart: always                                 # Auto-restart on unexpected exit
     networks:
       - ai-network                                  # Join AI network for potential integration
 
+  # Faster-Whisper ASR: High-performance speech recognition with GPU acceleration
+  whisper-asr:
+    build:
+      context: ./services/whisper
+      dockerfile: Dockerfile
+    image: whisper-asr:latest
+    container_name: whisper-asr
+    ports:
+      - "8001:8000"                                 # Port mapping: Whisper ASR API endpoint
+    volumes:
+      - whisper-cache:/root/.cache                  # Cache for Whisper models
+    environment:
+      - CUDA_VISIBLE_DEVICES=0                      # Use first GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s                            # Whisper model loading takes time
+
+  # Web GUI: Browser-based voice transcription interface
+  web-gui:
+    build:
+      context: ./services/web-gui
+      dockerfile: Dockerfile
+    image: voice-web-gui:latest
+    container_name: voice-web-gui
+    ports:
+      - "8080:8080"                                 # Port mapping: Web GUI
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always
+    networks:
+      - ai-network
+    depends_on:
+      - whisper-asr                                 # Wait for Whisper ASR
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt
 volumes:
-  ollama-data:     # Stores Ollama's models, chat logs, and runtime data
-  lobe-chat-data:  # Stores Lobe Chat's user preferences and chat history
-  pyspark-notebook-data:  # Stores Jupyter notebooks and workspace files
+  ollama-data:                # Stores Ollama's models, chat logs, and runtime data
+  lobe-chat-data:             # Stores Lobe Chat's user preferences and chat history
+  pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
+  whisper-cache:              # Stores Whisper ASR models and cache
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
