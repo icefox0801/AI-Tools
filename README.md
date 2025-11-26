@@ -1,33 +1,48 @@
 # AI-Tools
 
-Docker-based AI tools setup with PySpark.
+Docker-based AI services for voice transcription, translation, and local LLM.
 
-## Contents
+## Services
 
-- `Dockerfile.pyspark` - PySpark Docker configuration
-- `docker-compose.yaml` - Docker Compose configuration
+| Service | Port | Description |
+|---------|------|-------------|
+| `whisper-asr` | 8001 | Faster-Whisper ASR (large-v3, GPU) |
+| `voice-api` | 8000 | Voice orchestration API |
+| `ollama` | 11434 | Local LLM runtime |
+| `lobe-chat` | 3210 | Chat UI for Ollama |
+| `pyspark-notebook` | 8888 | Jupyter with ML tools |
 
-## Getting Started
-
-### Prerequisites
-
-- Docker
-- Docker Compose
-
-### Usage
-
-Build and run the containers:
+## Quick Start
 
 ```bash
-docker-compose up -d
+# Start all services
+docker compose up -d
+
+# Check service health
+curl http://localhost:8001/health  # Whisper ASR
+curl http://localhost:8000/health  # Voice API
 ```
 
-Stop the containers:
+## GUI Client
+
+See [GUI_README.md](GUI_README.md) for the voice transcription desktop app.
 
 ```bash
-docker-compose down
+# Install dependencies
+pip install -r requirements_gui.txt
+
+# Launch GUI
+python voice_transcription_gui.py
 ```
 
-## License
+## Files
 
-MIT
+| File | Purpose |
+|------|---------|
+| `docker-compose.yaml` | Service orchestration |
+| `Dockerfile.whisper` | Whisper ASR container |
+| `Dockerfile.api` | Voice API container |
+| `Dockerfile.pyspark` | Jupyter ML container |
+| `whisper_service.py` | ASR service code |
+| `api_service.py` | Voice API service code |
+| `voice_transcription_gui.py` | Desktop GUI client |
