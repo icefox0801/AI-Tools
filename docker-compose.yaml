@@ -71,7 +71,7 @@ services:
     networks:
       - ai-network                                  # Join AI network for potential integration
 
-  # Vosk ASR: Lightweight, fast, offline speech recognition with native streaming
+  # Vosk ASR: Lightweight, fast, offline speech recognition with native streaming (CPU)
   vosk-asr:
     build:
       context: ./services/vosk
@@ -91,6 +91,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s                             # Allow time for first-time model download
+
+  # Parakeet ASR: NVIDIA NeMo GPU-accelerated speech recognition (high accuracy)
+  parakeet-asr:
+    build:
+      context: ./services/parakeet
+      dockerfile: Dockerfile
+    image: parakeet-asr:latest
+    container_name: parakeet-asr
+    ports:
+      - "8002:8000"                                 # Port mapping: Parakeet ASR API endpoint
+    volumes:
+      - parakeet-model-data:/root/.cache/huggingface  # Cache HuggingFace/NGC models
+      - parakeet-nemo-data:/root/.cache/nemo          # Cache NeMo models
+    environment:
+      - PARAKEET_MODEL=nvidia/parakeet-tdt-1.1b    # TDT model: fastest for real-time streaming
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s                            # Allow time for model download on first run
 
   # Web GUI: Browser-based voice transcription interface
   web-gui:
@@ -122,6 +155,8 @@ volumes:
   lobe-chat-data:             # Stores Lobe Chat's user preferences and chat history
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
   vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
+  parakeet-model-data:        # Stores HuggingFace model cache for Parakeet
+  parakeet-nemo-data:         # Stores NeMo model cache for Parakeet
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
