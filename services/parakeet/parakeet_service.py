@@ -67,6 +67,11 @@ punctuation_model = None
 audio_sessions: Dict[str, dict] = {}
 SESSION_TIMEOUT = 60
 
+# Audio overlap for better chunk boundary accuracy (in bytes, 16kHz 16-bit mono)
+# 0.5 seconds of overlap helps with word boundaries
+OVERLAP_SAMPLES = 8000  # 0.5s at 16kHz
+OVERLAP_BYTES = OVERLAP_SAMPLES * 2  # 16-bit = 2 bytes per sample
+
 
 def cleanup_old_sessions():
     """Remove sessions that haven't been accessed recently"""
@@ -85,9 +90,11 @@ def get_or_create_session(session_id: str) -> dict:
     if session_id not in audio_sessions:
         audio_sessions[session_id] = {
             'audio': bytearray(),       # Audio buffer for current chunk
+            'overlap': bytearray(),     # Previous chunk's tail for overlap
             'last_access': time.time(),
             'raw_text': '',             # Accumulated raw text (no punctuation)
             'full_text': '',            # Punctuated full transcription
+            'last_words': [],           # Last few words for deduplication
         }
         logger.info(f"Created new session: {session_id[:8]}...")
     else:
@@ -379,26 +386,62 @@ async def websocket_stream(websocket: WebSocket):
     session = get_or_create_session(session_id)
     
     async def transcribe_buffer():
-        """Transcribe accumulated audio"""
+        """Transcribe accumulated audio with overlap for better accuracy"""
         audio_buffer = session['audio']
         total_bytes = len(audio_buffer)
         
         if total_bytes < 16000:  # Less than 0.5 second
             return
         
-        audio_sec = total_bytes / (16000 * 2)
+        # Prepend overlap from previous chunk for better word boundaries
+        overlap = session['overlap']
+        if overlap:
+            transcribe_audio = bytes(overlap) + bytes(audio_buffer)
+            has_overlap = True
+        else:
+            transcribe_audio = bytes(audio_buffer)
+            has_overlap = False
+        
+        audio_sec = len(transcribe_audio) / (16000 * 2)
         
         try:
-            logger.info(f"Transcribing {audio_sec:.2f}s of audio")
+            logger.info(f"Transcribing {audio_sec:.2f}s of audio (overlap: {len(overlap)}B)")
             
-            transcription = process_audio(bytes(audio_buffer))
+            transcription = process_audio(transcribe_audio)
             chunk_text = transcription.strip() if isinstance(transcription, str) else str(transcription).strip()
             
             if chunk_text:
+                # Deduplicate overlap region using last words
+                if has_overlap and session['last_words']:
+                    chunk_words = chunk_text.split()
+                    last_words = session['last_words']
+                    
+                    # Find where the new content starts (skip repeated words from overlap)
+                    skip_count = 0
+                    for i in range(min(len(last_words), len(chunk_words))):
+                        # Check if beginning of chunk matches end of previous
+                        match_len = 0
+                        for j in range(min(len(last_words) - i, len(chunk_words))):
+                            if last_words[i + j].lower() == chunk_words[j].lower():
+                                match_len += 1
+                            else:
+                                break
+                        if match_len >= 2:  # Need at least 2 word match to consider overlap
+                            skip_count = match_len
+                            break
+                    
+                    if skip_count > 0:
+                        chunk_text = ' '.join(chunk_words[skip_count:])
+                        logger.debug(f"Deduped {skip_count} words from overlap")
+                
+                # Update last words for next deduplication
+                words = chunk_text.split()
+                session['last_words'] = words[-6:] if len(words) > 6 else words
+                
                 # Accumulate raw text
-                if session['raw_text']:
+                if session['raw_text'] and chunk_text:
                     session['raw_text'] += ' ' + chunk_text
-                else:
+                elif chunk_text:
                     session['raw_text'] = chunk_text
                 
                 # Apply punctuation to full accumulated text
@@ -430,6 +473,12 @@ async def websocket_stream(websocket: WebSocket):
                     "duration": audio_sec
                 })
             
+            # Save overlap for next chunk (last 0.5s of audio)
+            if total_bytes > OVERLAP_BYTES:
+                session['overlap'] = bytearray(audio_buffer[-OVERLAP_BYTES:])
+            else:
+                session['overlap'] = bytearray(audio_buffer)
+            
             # Clear audio buffer after transcription
             session['audio'].clear()
                 
@@ -458,8 +507,10 @@ async def websocket_stream(websocket: WebSocket):
                     
                     if msg.get("action") == "clear":
                         session['audio'].clear()
+                        session['overlap'].clear()
                         session['raw_text'] = ''
                         session['full_text'] = ''
+                        session['last_words'] = []
                         logger.info(f"Cleared session: {session_id[:8]}...")
                         await websocket.send_json({"type": "cleared"})
                         continue
