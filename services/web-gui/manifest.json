@@ -1,11 +1,11 @@
 {
   "name": "Voice Transcribe",
   "short_name": "Transcribe",
-  "description": "GPU-accelerated speech-to-text powered by NVIDIA Parakeet",
+  "description": "GPU-accelerated speech-to-text powered by NVIDIA Parakeet TDT",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f0f10",
-  "theme_color": "#0f0f10",
+  "background_color": "#1a1a2e",
+  "theme_color": "#6366f1",
   "orientation": "portrait-primary",
   "icons": [
     {

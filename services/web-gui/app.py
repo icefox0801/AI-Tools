@@ -96,7 +96,7 @@ def create_ui():
         
         # Header
         gr.Markdown("# 🎙️ Voice Transcribe")
-        gr.Markdown("GPU-accelerated • **Parakeet RNNT 1.1B** • Real-time streaming")
+        gr.Markdown("GPU-accelerated • **Parakeet TDT 1.1B** • Real-time streaming")
         
         # Main components
         audio_input = gr.Audio(
