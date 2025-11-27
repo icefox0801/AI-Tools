@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY requirements.docker.txt .
-RUN pip install --no-cache-dir -r requirements.docker.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.docker.txt
 
 # Copy service code (includes model download script)
 COPY vosk_service.py .

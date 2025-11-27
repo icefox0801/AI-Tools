@@ -1,9 +1,10 @@
 # PySpark ML Notebook Dependencies
 
-# PyTorch ecosystem
-torch
-torchvision
-torchaudio
+# PyTorch ecosystem (2.9.1 with CUDA 12.8 support)
+# Note: RTX 5070 Ti (Blackwell, CC 12.0) support may require future PyTorch updates
+torch>=2.9.0
+torchvision>=0.20.0
+torchaudio>=2.5.0
 
 # Hugging Face ecosystem
 transformers

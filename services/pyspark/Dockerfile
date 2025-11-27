@@ -9,7 +9,8 @@ USER ${NB_UID}
 
 # Install Python dependencies (Docker-specific)
 COPY requirements.docker.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r /tmp/requirements.txt
 
 # Set working directory
 WORKDIR /home/jovyan/work
