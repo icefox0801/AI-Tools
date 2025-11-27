@@ -1,182 +1,153 @@
 """
-Voice Transcription - Gradio UI
-Real-time streaming transcription via WebSocket with Vosk ASR
+Voice Transcribe - Web Application
+
+GPU-accelerated speech-to-text using NVIDIA Parakeet.
+Gradio-based web interface with streaming audio input.
 """
 
 import gradio as gr
-import numpy as np
-import websockets
-import asyncio
-import json
-import time
+import logging
+from pathlib import Path
+
+from core import AudioProcessor, TranscriptionClient, SessionState
+
+# ============== Configuration ==============
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Initialize components
+audio_processor = AudioProcessor()
+client = TranscriptionClient()
+session = SessionState()
+
+# Transcription settings
+TRANSCRIBE_INTERVAL = 2.0  # Transcribe after 2 seconds of audio
 
 
-async def transcribe_audio(audio_data: bytes, language: str = "en") -> str:
-    """Send audio to Vosk service and get transcription."""
-    uri = "ws://vosk-asr:8000/transcribe"
-    
-    try:
-        async with websockets.connect(uri, close_timeout=10) as ws:
-            # Send config
-            await ws.send(json.dumps({"language": language, "task": "transcribe"}))
-            
-            # Wait for ready
-            response = await ws.recv()
-            data = json.loads(response)
-            if data.get("status") != "ready":
-                print(f"Vosk not ready: {data}")
-                return ""
-            
-            print(f"Sending {len(audio_data)} bytes of audio data...")
-            
-            # Send all audio data at once
-            await ws.send(audio_data)
-            
-            # Send empty chunk to signal end of audio (triggers final result)
-            await ws.send(b"")
-            
-            # Wait for final result with proper timeout
-            # The server should send the final result after receiving empty bytes
-            results = []
-            last_partial = ""
-            
-            try:
-                # Wait up to 5 seconds for responses
-                end_time = time.time() + 5.0
-                while time.time() < end_time:
-                    try:
-                        response = await asyncio.wait_for(ws.recv(), timeout=1.0)
-                        result = json.loads(response)
-                        print(f"Received from Vosk: {result}")
-                        
-                        if "text" in result and result["text"]:
-                            results.append(result["text"])
-                            # Got final result, we can return
-                            break
-                        elif "partial" in result:
-                            last_partial = result["partial"]
-                    except asyncio.TimeoutError:
-                        # No more messages, break
-                        break
-            except Exception as e:
-                print(f"Error receiving from Vosk: {e}")
-            
-            # If no final results but have partial, use that
-            if not results and last_partial:
-                print(f"Using partial result: {last_partial}")
-                return last_partial.strip()
-            
-            final_text = " ".join(results).strip()
-            print(f"Final transcription: {final_text}")
-            return final_text
-            
-    except Exception as e:
-        print(f"Transcription error: {e}")
-        return ""
+# ============== Handlers ==============
 
-
-def process_audio(audio_input, transcript_state):
-    """Process uploaded or recorded audio."""
-    if audio_input is None:
-        return transcript_state or "Click record and speak..."
+def process_audio(audio_chunk):
+    """
+    Process streaming audio - server handles accumulation and punctuation.
     
-    sample_rate, audio_data = audio_input
+    Strategy: Send audio chunks to server, which accumulates text and
+    applies punctuation to the full transcript. We just display the result.
     
-    # Convert to float32
-    if audio_data.dtype == np.int16:
-        audio_float = audio_data.astype(np.float32) / 32767.0
-    elif audio_data.dtype == np.int32:
-        audio_float = audio_data.astype(np.float32) / 2147483647.0
-    else:
-        audio_float = audio_data.astype(np.float32)
+    Args:
+        audio_chunk: Tuple of (sample_rate, numpy_array) from Gradio
     
-    # Mono conversion
-    if len(audio_float.shape) > 1:
-        audio_float = audio_float.mean(axis=1)
+    Returns:
+        Current transcript display string
+    """
+    if audio_chunk is None:
+        return session.last_display
     
-    # Resample to 16kHz if needed
-    if sample_rate != 16000:
-        ratio = 16000 / sample_rate
-        new_length = int(len(audio_float) * ratio)
-        if new_length > 0:
-            indices = np.linspace(0, len(audio_float) - 1, new_length).astype(int)
-            audio_float = audio_float[indices]
+    sample_rate, chunk_data = audio_chunk
     
-    # Skip if too short (less than 0.3 seconds)
-    if len(audio_float) < 4800:
-        return transcript_state or "Listening..."
+    # Preprocess audio
+    audio = audio_processor.preprocess(sample_rate, chunk_data)
     
-    # Convert to int16 bytes for transmission
-    audio_int16 = (audio_float * 32767).astype(np.int16)
-    audio_bytes = audio_int16.tobytes()
+    # Skip very short chunks
+    duration = audio_processor.get_duration(audio)
+    if duration < 0.05:
+        return session.last_display
     
-    # Transcribe
-    result = asyncio.run(transcribe_audio(audio_bytes))
+    # Accumulate audio locally
+    session.append_audio(audio)
     
-    if result:
-        current = transcript_state or ""
-        if current and not current.endswith(" "):
-            current += " "
-        return current + result
+    # Transcribe when we have enough pending audio
+    if session.pending_duration >= TRANSCRIBE_INTERVAL:
+        pending_audio = session.get_pending_audio()
+        
+        logger.info(f"Sending {session.pending_duration:.1f}s of audio...")
+        
+        audio_bytes = audio_processor.to_int16_bytes(pending_audio)
+        result = client.transcribe_sync(audio_bytes, session.session_id)
+        
+        if result.success and result.text:
+            # Server returns FULL punctuated transcript - just display it
+            session.set_full_transcript(result.text)
+            logger.info(f"Transcript: ...{result.text[-80:]}")
+        
+        # Clear pending audio after transcription
+        session.clear_pending_audio()
     
-    return transcript_state or "Listening..."
+    return session.build_display()
 
 
 def clear_transcript():
-    """Clear the transcript."""
+    """Clear all transcript history and reset session."""
+    client.clear_session_sync(session.session_id)
+    session.reset()
+    logger.info(f"New session: {session.session_id[:8]}...")
     return ""
 
 
-# Build Gradio interface
-with gr.Blocks(title="Voice Transcribe") as demo:
-    
-    gr.Markdown("""
-    # Voice Transcribe
-    ### Real-time speech-to-text powered by Vosk AI
-    
-    Record audio and it will be transcribed automatically.
-    Fast, lightweight, and runs entirely offline.
-    """)
-    
-    audio_input = gr.Audio(
-        sources=["microphone"],
-        type="numpy",
-        label="Click to Record",
-        streaming=True,
-    )
-    
-    transcript_output = gr.Textbox(
-        label="Transcript",
-        placeholder="Click the microphone and start speaking...",
-        lines=12,
-        max_lines=25,
-        interactive=False,
-    )
-    
-    clear_btn = gr.Button("Clear Transcript", variant="secondary")
-    
-    gr.Markdown("""
-    ---
-    *Powered by Vosk | CPU Optimized | Fast & Lightweight*
-    """)
-    
-    # Stream handler
-    audio_input.stream(
-        fn=process_audio,
-        inputs=[audio_input, transcript_output],
-        outputs=[transcript_output],
-        stream_every=2.0,
-    )
-    
-    clear_btn.click(
-        fn=clear_transcript,
-        outputs=[transcript_output],
-    )
+# ============== UI ==============
 
+def create_ui():
+    """Create the Gradio interface."""
+    
+    with gr.Blocks(title="Voice Transcribe") as app:
+        
+        # Header
+        gr.Markdown("# 🎙️ Voice Transcribe")
+        gr.Markdown("GPU-accelerated • **Parakeet RNNT 1.1B** • Real-time streaming")
+        
+        # Main components
+        audio_input = gr.Audio(
+            sources=["microphone"],
+            type="numpy",
+            label="Click to Record",
+            streaming=True,
+        )
+        
+        transcript_output = gr.Textbox(
+            label="Full Transcript",
+            placeholder="Start speaking... transcription grows as you speak.",
+            lines=12,
+            max_lines=30,
+            interactive=False,
+        )
+        
+        # Controls
+        clear_btn = gr.Button("🗑️ Clear All", variant="secondary")
+        
+        # Help text
+        gr.Markdown("""
+        **How it works:** Audio is split at natural speech pauses. 
+        Each segment is transcribed and appended to the full transcript.
+        """)
+        
+        # Event handlers
+        audio_input.stream(
+            fn=process_audio,
+            inputs=[audio_input],
+            outputs=[transcript_output],
+            time_limit=300,
+            stream_every=0.3,
+        )
+        
+        clear_btn.click(fn=clear_transcript, outputs=[transcript_output])
+    
+    return app
+
+
+# ============== Main ==============
+
+demo = create_ui()
 
 if __name__ == "__main__":
+    app_dir = Path(__file__).parent
+    favicon = app_dir / "static" / "favicon.ico"
+    
     demo.launch(
         server_name="0.0.0.0",
         server_port=8080,
-        show_error=True
+        show_error=True,
+        favicon_path=str(favicon) if favicon.exists() else None,
     )
