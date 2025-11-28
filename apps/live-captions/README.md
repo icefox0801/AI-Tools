@@ -1,20 +1,21 @@
-# Live Captions v8.0
+# Live Captions v10.1
 
 A standalone desktop application that displays real-time speech-to-text captions in a transparent overlay window.
 
 ## Features
 
-- 🎙️ **Direct microphone capture** - No browser needed
+- 🎙️ **Microphone capture** - Direct audio input
+- 🔊 **System audio capture** - WASAPI loopback for perfect quality
 - 🖥️ **Transparent overlay** - Always on top, movie subtitle style
 - 🔤 **High DPI support** - Crisp text on 4K displays
 - 🎨 **Customizable** - Resize text with mouse wheel
 - ⚡ **Real-time streaming** - WebSocket connection to ASR service
-- 🔧 **Debug mode** - Verbose logging with `--debug` flag
+- 🔧 **Debug mode** - Verbose logging and audio saving
 
 ## Requirements
 
 - Python 3.10+
-- Windows 10/11 (for DPI awareness)
+- Windows 10/11 (for DPI awareness and WASAPI loopback)
 - Running ASR service (Vosk or Parakeet via Docker)
 
 ## Installation
@@ -35,8 +36,14 @@ docker compose up -d vosk-asr       # CPU-based (default)
 # OR
 docker compose up -d parakeet-asr   # GPU-based
 
-# Run the caption overlay
+# Run with microphone (default)
 python live_captions.py
+
+# Run with system audio (captures what you hear)
+python live_captions.py --system-audio
+
+# List available devices
+python live_captions.py --list-devices
 
 # Run with debug logging
 python live_captions.py --debug
@@ -54,12 +61,40 @@ python live_captions.py --debug
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `--system-audio` | off | Capture system audio instead of microphone |
+| `--device N` | default | Microphone device index |
+| `--loopback-device N` | default | System audio loopback device index |
+| `--list-devices` | - | List available audio devices |
+| `--backend` | vosk | ASR backend (vosk/parakeet) |
 | `--debug` | off | Enable verbose debug logging |
+| `--debug-save-audio` | off | Save captured audio on exit |
 
 Backend is configured in `shared/config/backends.py`:
 ```python
 BACKEND = "vosk"      # CPU-based, port 8001
 # BACKEND = "parakeet"  # GPU-based, port 8002
+```
+
+## Project Structure
+
+```
+live-captions/
+├── live_captions.py      # Main entry point
+├── requirements.txt
+├── README.md
+└── src/
+    ├── __init__.py       # Package init (version)
+    ├── audio/            # Audio capture module
+    │   ├── __init__.py
+    │   ├── capture.py    # MicrophoneCapture, SystemAudioCapture
+    │   ├── devices.py    # Device listing
+    │   └── utils.py      # Resampling, stereo-to-mono
+    ├── ui/               # UI module
+    │   ├── __init__.py
+    │   └── window.py     # CaptionWindow overlay
+    └── asr/              # ASR client module
+        ├── __init__.py
+        └── client.py     # ASRClient WebSocket
 ```
 
 ## Architecture
@@ -69,7 +104,7 @@ BACKEND = "vosk"      # CPU-based, port 8001
 │  Live Captions  │ ───────────────────▶│   ASR Service   │
 │   (Desktop)     │     Audio Stream   │   (Docker)      │
 │                 │ ◀─────────────────  │                 │
-│   Microphone    │   {id, text} JSON  │  Vosk/Parakeet  │
+│  Mic/System     │   {id, text} JSON  │  Vosk/Parakeet  │
 └─────────────────┘                    └─────────────────┘
 ```
 
