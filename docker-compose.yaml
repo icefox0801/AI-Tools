@@ -82,14 +82,16 @@ services:
       - "8001:8000"                                 # Port mapping: Vosk ASR API endpoint
     volumes:
       - vosk-model-data:/app/model                  # Persistent model storage (1.8GB, downloads once)
+      - vosk-hf-cache:/root/.cache/huggingface     # HuggingFace cache for punctuation model
+    environment:
+      - CUDA_VISIBLE_DEVICES=0                      # Use GPU 0 for punctuation model
     deploy:
       resources:
-        limits:
-          cpus: '8'                                 # Allow up to 8 CPU cores for best performance
-          memory: 4G                                # 4GB RAM limit
         reservations:
-          cpus: '4'                                 # Reserve 4 CPU cores minimum
-          memory: 2G                                # Reserve 2GB RAM
+          devices:
+            - driver: nvidia
+              count: 1                              # Use 1 GPU for punctuation model
+              capabilities: [gpu]
     restart: always
     networks:
       - ai-network
@@ -140,6 +142,7 @@ volumes:
   lobe-chat-data:             # Stores Lobe Chat's user preferences and chat history
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
   vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
+  vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
   parakeet-model-data:        # Stores HuggingFace model cache for Parakeet
   parakeet-nemo-data:         # Stores NeMo model cache for Parakeet
 
