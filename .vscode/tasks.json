@@ -1,0 +1,27 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Live Captions",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
+		}
+	]
+}
