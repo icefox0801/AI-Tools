@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install Cython && pip install -r requirements.docker.txt
 
 # Copy application code
-COPY parakeet_service.py .
+COPY parakeet_service.py parakeet_service.py
 
 # Expose port
 EXPOSE 8000
