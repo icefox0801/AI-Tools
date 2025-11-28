@@ -1,12 +1,13 @@
 """
-NVIDIA NeMo Parakeet ASR Service v3
+NVIDIA NeMo Parakeet ASR Service v3.1
 GPU-accelerated speech recognition using Parakeet TDT with word timestamps
 
 Key improvements:
 - Uses word-level timestamps from Parakeet TDT (no overlap needed)
-- Pause-based punctuation using actual inter-word gaps from audio
-- Rule: pause >0.8s → period, 0.3-0.8s → comma
-- No text-based punctuation model - uses prosodic cues only
+- Two punctuation modes:
+  - "model": Uses punctuators ONNX model (better quality, English)
+  - "pause": Uses prosodic cues from word timing gaps
+- Text buffering for better punctuation context (6+ words)
 - Continuous audio accumulation with timestamp-based deduplication
 """
 
@@ -38,12 +39,18 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 USE_FP16 = os.getenv("USE_FP16", "true").lower() == "true"
 USE_CUDNN_BENCHMARK = True
 
-# Punctuation thresholds (in seconds)
+# Punctuation thresholds (in seconds) - for pause-based mode
 # Based on research: short pause (0.3-0.8s) = comma, long pause (>0.8s) = period
 # However, TDT timestamps may have gaps between words even in continuous speech
 # So we use slightly higher thresholds to account for natural word spacing
 COMMA_PAUSE_THRESHOLD = 0.5   # Pause > 0.5s → comma
 PERIOD_PAUSE_THRESHOLD = 1.0  # Pause > 1.0s → period
+
+# Punctuation mode: "model" (ONNX) or "pause" (timing-based)
+PUNCTUATION_MODE = os.getenv("PUNCTUATION_MODE", "model")
+
+# Text buffering for model-based punctuation
+MIN_WORDS_FOR_PUNCTUATION = 6  # Buffer at least 6 words before running model
 
 # Torch compile settings (PyTorch 2.x JIT compiler for ~1.5-2x speedup)
 USE_TORCH_COMPILE = os.getenv("USE_TORCH_COMPILE", "false").lower() == "true"
@@ -168,6 +175,56 @@ def load_model():
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         raise
+
+
+# ============================================================================
+# Punctuation Model (ONNX-based, English)
+# ============================================================================
+punctuation_model = None
+
+def load_punctuation_model():
+    """Load the punctuators ONNX model for English."""
+    global punctuation_model
+    
+    if PUNCTUATION_MODE != "model":
+        logger.info(f"Punctuation mode: {PUNCTUATION_MODE} (model not loaded)")
+        return None
+    
+    if punctuation_model is not None:
+        return punctuation_model
+    
+    try:
+        from punctuators.models import PunctCapSegModelONNX
+        logger.info("Loading punctuation model (pcs_en)...")
+        punctuation_model = PunctCapSegModelONNX.from_pretrained("pcs_en")
+        logger.info("Punctuation model loaded successfully")
+        return punctuation_model
+    except Exception as e:
+        logger.warning(f"Failed to load punctuation model: {e}")
+        logger.info("Falling back to pause-based punctuation")
+        return None
+
+
+def capitalize_text(text: str) -> str:
+    """Capitalize first letter of text."""
+    if not text:
+        return text
+    return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
+
+def model_punctuate(text: str) -> str:
+    """Apply punctuation using ONNX model."""
+    if not punctuation_model or not text:
+        return capitalize_text(text) + '.'
+    
+    try:
+        results = punctuation_model.infer([text])
+        if results and results[0]:
+            return ' '.join(results[0])
+        return capitalize_text(text) + '.'
+    except Exception as e:
+        logger.debug(f"Model punctuation failed: {e}")
+        return capitalize_text(text) + '.'
 
 
 def transcribe_with_timestamps(audio_data: bytes, sample_rate: int = 16000) -> List[dict]:
@@ -331,9 +388,10 @@ def apply_pause_punctuation(words: List[dict], debug: bool = False) -> str:
 
 @app.on_event("startup")
 async def startup_event():
-    """Load model on startup"""
+    """Load models on startup"""
     try:
         load_model()
+        load_punctuation_model()
     except Exception as e:
         logger.error(f"Startup failed: {e}")
 
@@ -343,6 +401,7 @@ async def health_check():
     """Health check endpoint"""
     model_loaded = asr_model is not None
     cuda_available = torch.cuda.is_available()
+    punct_loaded = punctuation_model is not None
     
     gpu_info = {}
     if cuda_available:
@@ -359,7 +418,8 @@ async def health_check():
         "model_loaded": model_loaded,
         "device": DEVICE,
         "cuda_available": cuda_available,
-        "punctuation_mode": "pause-based",
+        "punctuation_mode": PUNCTUATION_MODE,
+        "punctuation_model_loaded": punct_loaded,
         **gpu_info
     }
 
@@ -373,9 +433,11 @@ async def model_info():
         "cuda_available": torch.cuda.is_available(),
         "torch_version": torch.__version__,
         "punctuation": {
-            "mode": "pause-based",
+            "mode": PUNCTUATION_MODE,
+            "model_loaded": punctuation_model is not None,
             "comma_threshold_sec": COMMA_PAUSE_THRESHOLD,
             "period_threshold_sec": PERIOD_PAUSE_THRESHOLD,
+            "min_words_for_model": MIN_WORDS_FOR_PUNCTUATION,
         }
     }
 
@@ -513,6 +575,21 @@ async def websocket_stream(websocket: WebSocket):
         """Run transcription in thread pool (blocking but doesn't block event loop)."""
         return transcribe_with_timestamps(audio_bytes)
     
+    def apply_punctuation(words: List[dict], use_model: bool = True) -> str:
+        """Apply punctuation - model-based or pause-based."""
+        if not words:
+            return ""
+        
+        # Get raw text from words
+        raw_text = ' '.join(w['word'] for w in words)
+        
+        # Use model-based punctuation if available and enough words
+        if use_model and punctuation_model and len(words) >= MIN_WORDS_FOR_PUNCTUATION:
+            return model_punctuate(raw_text)
+        
+        # Fall back to pause-based punctuation
+        return apply_pause_punctuation(words, debug=False)
+    
     async def process_transcription_result(chunk_words: List[dict], is_final: bool = False):
         """Process transcription results and queue messages to send."""
         nonlocal transcribed_words, segment_counter, current_segment_id
@@ -557,7 +634,8 @@ async def websocket_stream(websocket: WebSocket):
                 words_to_keep = []
             
             if words_to_finalize:
-                text = apply_pause_punctuation(words_to_finalize, debug=False)
+                # Use model punctuation for final results
+                text = apply_punctuation(words_to_finalize, use_model=True)
                 await send_queue.put({"id": current_segment_id, "text": text})
                 logger.info(f"Finalized [{current_segment_id}] ({len(words_to_finalize)} words): {text[:60]}...")
                 
@@ -574,8 +652,8 @@ async def websocket_stream(websocket: WebSocket):
             else:
                 transcribed_words = []
         else:
-            # Send update
-            text = apply_pause_punctuation(transcribed_words, debug=False)
+            # Send partial update (pause-based for speed, no model inference)
+            text = apply_punctuation(transcribed_words, use_model=False)
             await send_queue.put({"id": current_segment_id, "text": text})
     
     async def receive_audio():

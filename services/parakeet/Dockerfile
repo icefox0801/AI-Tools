@@ -41,6 +41,10 @@ COPY requirements.docker.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install Cython && pip install -r requirements.docker.txt
 
+# Pre-download the punctuation ONNX model during build
+# This downloads ~100MB model for offline use
+RUN python -c "from punctuators.models import PunctCapSegModelONNX; PunctCapSegModelONNX.from_pretrained('pcs_en')"
+
 # Copy application code
 COPY parakeet_service.py parakeet_service.py
 
