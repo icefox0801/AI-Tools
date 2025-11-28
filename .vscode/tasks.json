@@ -6,7 +6,10 @@
 			"type": "shell",
 			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
 			"args": [
-				"apps/live-captions/live_captions.py"
+				"apps/live-captions/live_captions.py",
+				"--system-audio",
+				"--backend", "vosk",
+				"--debug"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}",
