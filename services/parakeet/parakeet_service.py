@@ -554,9 +554,9 @@ async def websocket_stream(websocket: WebSocket):
     SILENCE_THRESHOLD_SEC = 1.5
     
     # Sliding window punctuation settings
-    # Buffer segments until we have enough, then punctuate and shift
-    PUNCTUATION_BUFFER_SIZE = 10   # Accumulate 10 segments before punctuation
-    PUNCTUATION_SHIFT_SIZE = 5     # Output first 5, keep last 5 for context
+    # Keep recent text for context when punctuating new segments
+    CONTEXT_SEGMENTS = 3  # Keep last N segments as context for punctuation
+    MIN_WORDS_FOR_PUNCTUATION = 6  # Minimum words to use model punctuation
     
     running = True
     transcription_in_progress = False
@@ -564,9 +564,9 @@ async def websocket_stream(websocket: WebSocket):
     # Message queue for sending results back
     send_queue = asyncio.Queue()
     
-    # Sliding window buffer: list of (segment_id, words) tuples
-    segment_buffer = []  # [(id, words), ...]
-    output_segment_counter = 0  # Counter for actually output segments
+    # Context buffer: recent finalized text for punctuation context
+    context_buffer = []  # List of recent segment texts (already punctuated)
+    output_segment_counter = 0  # Counter for output segments
     
     def find_pause_cut_point(words: List[dict]) -> int:
         """Find the best point to cut the segment based on pauses."""
@@ -600,10 +600,10 @@ async def websocket_stream(websocket: WebSocket):
         return apply_pause_punctuation(words, debug=False)
     
     async def process_transcription_result(chunk_words: List[dict], is_final: bool = False):
-        """Process transcription results using sliding window punctuation."""
+        """Process transcription results with context-aware punctuation."""
         nonlocal transcribed_words, segment_counter, current_segment_id
         nonlocal last_speech_time, segment_start_time
-        nonlocal segment_buffer, output_segment_counter
+        nonlocal context_buffer, output_segment_counter
         
         if chunk_words:
             # Adjust timestamps relative to segment
@@ -644,62 +644,47 @@ async def websocket_stream(websocket: WebSocket):
                 words_to_keep = []
             
             if words_to_finalize:
-                # Add to segment buffer for sliding window punctuation
-                segment_buffer.append((segment_counter, words_to_finalize))
-                logger.debug(f"Buffered segment {segment_counter} ({len(words_to_finalize)} words), buffer size: {len(segment_buffer)}")
+                # Get raw text for this segment
+                raw_text = ' '.join(w['word'] for w in words_to_finalize)
                 
+                # Build context from recent segments for better punctuation
+                context_text = ' '.join(context_buffer[-CONTEXT_SEGMENTS:]) if context_buffer else ''
+                
+                # Punctuate with context
+                if punctuation_model and len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
+                    # Combine context + new text, punctuate, then extract just the new part
+                    if context_text:
+                        full_text = context_text + ' ' + raw_text
+                        punctuated_full = model_punctuate(full_text)
+                        # Extract the new part (approximate by finding where context ends)
+                        context_words = len(context_text.split())
+                        punctuated_words = punctuated_full.split()
+                        # Take words after context
+                        if len(punctuated_words) > context_words:
+                            punctuated_text = ' '.join(punctuated_words[context_words:])
+                        else:
+                            punctuated_text = model_punctuate(raw_text)
+                    else:
+                        punctuated_text = model_punctuate(raw_text)
+                else:
+                    # Simple capitalization for short segments
+                    punctuated_text = capitalize_text(raw_text)
+                    if is_final or len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
+                        punctuated_text += '.'
+                
+                # Output the punctuated segment
+                await send_queue.put({"id": f"s{output_segment_counter}", "text": punctuated_text})
+                logger.info(f"Finalized [s{output_segment_counter}] ({len(words_to_finalize)} words): {punctuated_text[:60]}...")
+                
+                # Update context buffer
+                context_buffer.append(raw_text)
+                if len(context_buffer) > CONTEXT_SEGMENTS:
+                    context_buffer.pop(0)
+                
+                output_segment_counter += 1
                 segment_counter += 1
                 current_segment_id = f"s{segment_counter}"
                 segment_start_time = time.time()
-            
-            # Check if we should run sliding window punctuation
-            if len(segment_buffer) >= PUNCTUATION_BUFFER_SIZE or is_final:
-                # Combine all buffered words for punctuation
-                all_words = []
-                for _, words in segment_buffer:
-                    all_words.extend(words)
-                
-                if all_words:
-                    # Run punctuation on combined text
-                    combined_text = ' '.join(w['word'] for w in all_words)
-                    punctuated = model_punctuate(combined_text) if punctuation_model else capitalize_text(combined_text) + '.'
-                    
-                    # Split punctuated text back into segments (approximate by word count ratio)
-                    punctuated_words = punctuated.split()
-                    total_raw_words = len(all_words)
-                    
-                    if is_final:
-                        # Output everything
-                        segments_to_output = len(segment_buffer)
-                    else:
-                        # Output first SHIFT_SIZE segments, keep rest for context
-                        segments_to_output = min(PUNCTUATION_SHIFT_SIZE, len(segment_buffer))
-                    
-                    # Calculate word boundaries for output segments
-                    word_offset = 0
-                    for i in range(segments_to_output):
-                        seg_id, seg_words = segment_buffer[i]
-                        seg_word_count = len(seg_words)
-                        
-                        # Calculate proportional slice of punctuated text
-                        start_ratio = word_offset / total_raw_words if total_raw_words > 0 else 0
-                        end_ratio = (word_offset + seg_word_count) / total_raw_words if total_raw_words > 0 else 1
-                        
-                        start_idx = int(start_ratio * len(punctuated_words))
-                        end_idx = int(end_ratio * len(punctuated_words))
-                        
-                        # Extract this segment's punctuated text
-                        seg_text = ' '.join(punctuated_words[start_idx:end_idx])
-                        if seg_text:
-                            await send_queue.put({"id": f"s{output_segment_counter}", "text": seg_text})
-                            logger.info(f"Output [s{output_segment_counter}] ({seg_word_count} words): {seg_text[:50]}...")
-                            output_segment_counter += 1
-                        
-                        word_offset += seg_word_count
-                    
-                    # Keep remaining segments for context (sliding window)
-                    segment_buffer = segment_buffer[segments_to_output:]
-                    logger.debug(f"Shifted buffer, remaining: {len(segment_buffer)} segments")
             
             # Update words to keep for next segment
             if words_to_keep:
@@ -712,8 +697,7 @@ async def websocket_stream(websocket: WebSocket):
                 transcribed_words = []
         else:
             # Send partial update - just show current segment being built
-            # Use output_segment_counter + buffer length for partial ID
-            partial_id = f"s{output_segment_counter + len(segment_buffer)}"
+            partial_id = f"s{output_segment_counter}"
             current_text = ' '.join(w['word'] for w in transcribed_words)
             display_text = capitalize_text(current_text)
             await send_queue.put({"id": partial_id, "text": display_text})
