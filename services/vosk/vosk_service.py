@@ -79,12 +79,13 @@ async def stream_transcribe(websocket: WebSocket):
     await websocket.accept()
     logger.info("Stream connection established")
     
-    # Config
-    finalize_interval = 0.8  # Force finalize every 0.8 seconds
+    # Config - longer interval for smoother output
+    finalize_interval = 2.0  # Force finalize every 2 seconds for smoother output
+    min_partial_length = 2   # Minimum words before sending partial
     
     recognizer = KaldiRecognizer(model, SAMPLE_RATE)
     recognizer.SetMaxAlternatives(0)
-    recognizer.SetWords(False)
+    recognizer.SetWords(True)  # Enable word-level info for better accuracy
     
     # State
     last_finalize_time = time.time()
@@ -153,12 +154,15 @@ async def stream_transcribe(websocket: WebSocket):
                         # Send partial with current segment ID
                         partial = json.loads(recognizer.PartialResult())
                         partial_text = partial.get("partial", "").strip()
+                        # Only send if changed and has minimum length
                         if partial_text and partial_text != last_partial:
-                            await websocket.send_json({
-                                "id": current_segment_id,
-                                "text": partial_text
-                            })
-                            last_partial = partial_text
+                            word_count = len(partial_text.split())
+                            if word_count >= min_partial_length or elapsed > 0.5:
+                                await websocket.send_json({
+                                    "id": current_segment_id,
+                                    "text": partial_text
+                                })
+                                last_partial = partial_text
     
     except WebSocketDisconnect:
         logger.info("Stream disconnected")
