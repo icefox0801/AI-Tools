@@ -711,20 +711,12 @@ async def websocket_stream(websocket: WebSocket):
             else:
                 transcribed_words = []
         else:
-            # Send partial update (show current segment being built)
-            # Combine buffer preview + current partial
-            buffer_text = ""
-            if segment_buffer:
-                # Show last few buffered segments as context
-                preview_segments = segment_buffer[-2:] if len(segment_buffer) >= 2 else segment_buffer
-                preview_words = []
-                for _, words in preview_segments:
-                    preview_words.extend(words)
-                buffer_text = ' '.join(w['word'] for w in preview_words) + ' '
-            
+            # Send partial update - just show current segment being built
+            # Use output_segment_counter + buffer length for partial ID
+            partial_id = f"s{output_segment_counter + len(segment_buffer)}"
             current_text = ' '.join(w['word'] for w in transcribed_words)
-            display_text = capitalize_text(buffer_text + current_text)
-            await send_queue.put({"id": current_segment_id, "text": display_text})
+            display_text = capitalize_text(current_text)
+            await send_queue.put({"id": partial_id, "text": display_text})
     
     async def receive_audio():
         """Task: Receive audio from websocket (never blocks on transcription)."""
