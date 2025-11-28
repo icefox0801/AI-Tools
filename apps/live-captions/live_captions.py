@@ -255,23 +255,23 @@ def main():
     # Determine device index
     device_index = args.loopback_device if args.system_audio else args.device
     
-    # Print startup banner
-    print("╔══════════════════════════════════════╗")
-    print("║        Live Captions v10.1           ║")
-    print("╚══════════════════════════════════════╝")
+    # Print startup banner (ASCII only for Windows console compatibility)
+    print("+======================================+")
+    print("|        Live Captions v10.1          |")
+    print("+======================================+")
     print(f"Model: {cfg['name']} ({cfg['device']})")
     print(f"ASR: ws://{args.host}:{port}/stream")
     
     if args.system_audio:
-        print("Audio: 🔊 System Audio (WASAPI loopback)")
+        print("Audio: [Speaker] System Audio (WASAPI loopback)")
     else:
-        print("Audio: 🎤 Microphone")
+        print("Audio: [Mic] Microphone")
     
     if args.debug:
         print("Debug: ENABLED")
     print()
-    print("💡 Use --system-audio for best quality")
-    print("   Use --list-devices to see options")
+    print("Tip: Use --system-audio for best quality")
+    print("     Use --list-devices to see options")
     print()
     
     # Run application
