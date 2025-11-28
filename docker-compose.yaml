@@ -82,6 +82,14 @@ services:
       - "8001:8000"                                 # Port mapping: Vosk ASR API endpoint
     volumes:
       - vosk-model-data:/app/model                  # Persistent model storage (1.8GB, downloads once)
+    deploy:
+      resources:
+        limits:
+          cpus: '8'                                 # Allow up to 8 CPU cores for best performance
+          memory: 4G                                # 4GB RAM limit
+        reservations:
+          cpus: '4'                                 # Reserve 4 CPU cores minimum
+          memory: 2G                                # Reserve 2GB RAM
     restart: always
     networks:
       - ai-network
@@ -124,29 +132,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 120s                            # Allow time for model download on first run
-
-  # Web GUI: Browser-based voice transcription interface
-  web-gui:
-    build:
-      context: ./services/web-gui
-      dockerfile: Dockerfile
-    image: voice-web-gui:latest
-    container_name: voice-web-gui
-    ports:
-      - "8080:8080"                                 # Port mapping: Web GUI
-    environment:
-      - PYTHONUNBUFFERED=1
-    restart: always
-    networks:
-      - ai-network
-    depends_on:
-      - vosk-asr                                    # Wait for Vosk ASR
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt
