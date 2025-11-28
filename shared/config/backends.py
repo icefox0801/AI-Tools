@@ -59,7 +59,8 @@ IS_DOCKER = os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER", "").l
 BACKENDS = BACKENDS_DOCKER if IS_DOCKER else BACKENDS_LOCAL
 
 # ========== SWITCH BACKEND HERE ==========
-BACKEND = os.getenv("ASR_BACKEND", "vosk")
+# Options: "vosk" (CPU, lightweight) or "parakeet" (GPU, high accuracy)
+BACKEND = os.getenv("ASR_BACKEND", "parakeet")
 # =========================================
 
 
