@@ -422,16 +422,17 @@ async def transcribe_audio(
 # ============================================================================
 # Protocol:
 # 1. Client connects to /stream WebSocket
-# 2. Client sends config JSON: {"chunk_ms": 500}
+# 2. Client sends config JSON: {"chunk_ms": 300}
 # 3. Client streams raw audio bytes (16kHz, mono, int16 PCM)
 # 4. Server buffers audio and transcribes at chunk_ms intervals
-# 5. Server sends: {"id": "s1", "text": "...", "is_final": false/true}
+# 5. Server sends: {"id": "s1", "text": "..."}
 #
 # Client logic: if ID exists → replace, if not → append
 # ============================================================================
 
-DEFAULT_CHUNK_MS = 500  # Default chunk duration for Parakeet
-MIN_CHUNK_MS = 300  # Minimum chunk duration
+DEFAULT_CHUNK_MS = 500  # Default chunk duration - longer for better accuracy
+MIN_CHUNK_MS = 300      # Minimum chunk duration
+TRANSCRIBE_INTERVAL_MS = 400  # How often to transcribe (independent of chunk_ms)
 
 
 @app.websocket("/stream")
@@ -439,166 +440,289 @@ async def websocket_stream(websocket: WebSocket):
     """
     Unified WebSocket streaming endpoint with segment IDs.
     
+    Architecture:
+    - Audio receiving runs continuously (never blocked by transcription)
+    - Transcription runs in background thread pool (non-blocking)
+    - Results are sent back asynchronously
+    
     Protocol:
     1. First message: JSON config {"chunk_ms": 500}
     2. Then: raw audio bytes (16kHz, mono, int16 PCM)
     
     Server responses:
-    - {"id": "s0", "text": "...", "is_final": false} - partial (replace by ID)
-    - {"id": "s1", "text": "...", "is_final": true} - finalized (new segment)
+    - {"id": "s0", "text": "..."} - partial (replace by ID)
+    - {"id": "s1", "text": "..."} - finalized (new segment)
     
     Client logic: if ID exists → replace text, if not → append new segment
     """
     await websocket.accept()
-    logger.info("WebSocket connection established (Unified API v3.0)")
+    logger.info("WebSocket connection established (Unified API v3.1 - async)")
+    
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    # Thread pool for transcription (non-blocking)
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="transcribe")
     
     # Configuration
     chunk_ms = DEFAULT_CHUNK_MS
     configured = False
     
-    # State
-    pending_audio = bytearray()
+    # Shared state with lock for thread safety
+    audio_lock = asyncio.Lock()
+    state_lock = asyncio.Lock()
+    
+    # Audio buffer - continuously accumulated, never lost
+    audio_buffer = bytearray()
+    audio_buffer_time = 0.0  # Total time of audio in buffer
+    
+    # Transcription state
     transcribed_words = []  # Words for CURRENT segment only
     last_transcribe_time = time.time()
-    last_speech_time = time.time()  # Track when we last got speech
+    last_speech_time = time.time()
+    segment_start_time = time.time()
     segment_counter = 0
     current_segment_id = "s0"
-    total_audio_time = 0.0  # Track total audio duration for timestamps
     
-    # Silence detection settings
-    SILENCE_THRESHOLD_SEC = 1.5  # Finalize after 1.5s of silence
+    # Segment finalization settings
+    PAUSE_CUT_THRESHOLD = 0.4
+    MIN_WORDS_BEFORE_CUT = 5
+    MAX_SEGMENT_WORDS = 20
+    MAX_SEGMENT_DURATION = 8.0
+    SILENCE_THRESHOLD_SEC = 1.5
     
-    async def finalize_segment():
-        """Finalize current segment and start new one"""
-        nonlocal transcribed_words, segment_counter, current_segment_id, total_audio_time
-        
-        if transcribed_words:
-            text = apply_pause_punctuation(transcribed_words, debug=False)
-            # Send final text for this segment
-            await websocket.send_json({
-                "id": current_segment_id,
-                "text": text
-            })
-            logger.info(f"Finalized [{current_segment_id}]: {text[:50]}...")
-            
-            # Start new segment
-            segment_counter += 1
-            current_segment_id = f"s{segment_counter}"
-            transcribed_words = []
+    running = True
+    transcription_in_progress = False
     
-    async def transcribe_pending(is_final: bool = False):
-        """Transcribe pending audio and send results"""
-        nonlocal pending_audio, transcribed_words, last_transcribe_time, last_speech_time
-        nonlocal segment_counter, current_segment_id, total_audio_time
+    # Message queue for sending results back
+    send_queue = asyncio.Queue()
+    
+    def find_pause_cut_point(words: List[dict]) -> int:
+        """Find the best point to cut the segment based on pauses."""
+        if len(words) < MIN_WORDS_BEFORE_CUT:
+            return -1
         
-        min_bytes = int(0.3 * 16000 * 2)
-        
-        if len(pending_audio) < min_bytes:
-            if transcribed_words and is_final:
-                await finalize_segment()
-            return
-        
-        audio_bytes = bytes(pending_audio)
-        audio_duration = len(pending_audio) / (16000 * 2)
-        
-        logger.info(f"Transcribing chunk: {audio_duration:.2f}s")
-        
-        chunk_words = transcribe_with_timestamps(audio_bytes)
+        for i in range(len(words) - 2, MIN_WORDS_BEFORE_CUT - 2, -1):
+            if i + 1 < len(words):
+                pause = words[i + 1]['start'] - words[i]['end']
+                if pause >= PAUSE_CUT_THRESHOLD:
+                    return i + 1
+        return -1
+    
+    def do_transcription(audio_bytes: bytes) -> List[dict]:
+        """Run transcription in thread pool (blocking but doesn't block event loop)."""
+        return transcribe_with_timestamps(audio_bytes)
+    
+    async def process_transcription_result(chunk_words: List[dict], is_final: bool = False):
+        """Process transcription results and queue messages to send."""
+        nonlocal transcribed_words, segment_counter, current_segment_id
+        nonlocal last_speech_time, segment_start_time
         
         if chunk_words:
-            # Adjust timestamps to be relative to segment start
+            # Adjust timestamps relative to segment
             time_offset = transcribed_words[-1]['end'] if transcribed_words else 0.0
-            
             for w in chunk_words:
                 w['start'] += time_offset
                 w['end'] += time_offset
                 transcribed_words.append(w)
             
-            last_speech_time = time.time()  # Got speech!
-            logger.info(f"Added {len(chunk_words)} words (segment: {len(transcribed_words)})")
+            last_speech_time = time.time()
+            logger.debug(f"Added {len(chunk_words)} words (total: {len(transcribed_words)})")
         
-        pending_audio = bytearray()
-        total_audio_time += audio_duration
-        last_transcribe_time = time.time()
+        if not transcribed_words:
+            return
         
-        if transcribed_words:
-            text = apply_pause_punctuation(transcribed_words, debug=False)
-            
-            if is_final:
-                await finalize_segment()
+        # Check for segment finalization
+        segment_duration = time.time() - segment_start_time
+        word_count = len(transcribed_words)
+        cut_point = find_pause_cut_point(transcribed_words)
+        
+        should_finalize = False
+        if is_final:
+            should_finalize = True
+        elif word_count >= MAX_SEGMENT_WORDS:
+            should_finalize = True
+        elif segment_duration >= MAX_SEGMENT_DURATION:
+            should_finalize = True
+        elif cut_point > 0 and word_count >= MIN_WORDS_BEFORE_CUT + 3:
+            should_finalize = True
+        
+        if should_finalize:
+            # Finalize segment
+            if cut_point > 0 and cut_point < len(transcribed_words):
+                words_to_finalize = transcribed_words[:cut_point]
+                words_to_keep = transcribed_words[cut_point:]
             else:
-                # Send update - client will replace by ID
-                await websocket.send_json({
-                    "id": current_segment_id,
-                    "text": text
-                })
-                logger.debug(f"Update [{current_segment_id}]: {text[-80:] if len(text) > 80 else text}")
+                words_to_finalize = transcribed_words
+                words_to_keep = []
+            
+            if words_to_finalize:
+                text = apply_pause_punctuation(words_to_finalize, debug=False)
+                await send_queue.put({"id": current_segment_id, "text": text})
+                logger.info(f"Finalized [{current_segment_id}] ({len(words_to_finalize)} words): {text[:60]}...")
+                
+                segment_counter += 1
+                current_segment_id = f"s{segment_counter}"
+                segment_start_time = time.time()
+            
+            if words_to_keep:
+                time_offset = words_to_keep[0]['start']
+                for w in words_to_keep:
+                    w['start'] -= time_offset
+                    w['end'] -= time_offset
+                transcribed_words = words_to_keep
+            else:
+                transcribed_words = []
+        else:
+            # Send update
+            text = apply_pause_punctuation(transcribed_words, debug=False)
+            await send_queue.put({"id": current_segment_id, "text": text})
     
-    try:
-        while True:
-            data = await websocket.receive()
-            
-            if "text" in data:
-                try:
-                    msg = json.loads(data["text"])
-                    
-                    if "chunk_ms" in msg:
-                        chunk_ms = max(MIN_CHUNK_MS, msg.get("chunk_ms", DEFAULT_CHUNK_MS))
-                        configured = True
-                        logger.info(f"Configured: chunk_ms={chunk_ms}")
-                        continue
-                    
-                    if msg.get("action") == "clear":
-                        pending_audio = bytearray()
-                        transcribed_words = []
-                        segment_counter += 1
-                        current_segment_id = f"s{segment_counter}"
-                        logger.info("Session cleared")
-                        await websocket.send_json({
-                            "id": current_segment_id,
-                            "text": ""
-                        })
-                        continue
-                        
-                except json.JSONDecodeError:
-                    logger.warning("Invalid JSON received")
-                continue
-            
-            if "bytes" in data:
-                audio_data = data["bytes"]
+    async def receive_audio():
+        """Task: Receive audio from websocket (never blocks on transcription)."""
+        nonlocal running, configured, chunk_ms, audio_buffer, transcription_in_progress
+        nonlocal last_transcribe_time, last_speech_time
+        
+        while running:
+            try:
+                data = await websocket.receive()
                 
-                if not configured:
-                    configured = True
-                    logger.info(f"Auto-configured with defaults: chunk_ms={chunk_ms}")
-                
-                if len(audio_data) == 0:
-                    await transcribe_pending(is_final=False)
+                if "text" in data:
+                    try:
+                        msg = json.loads(data["text"])
+                        if "chunk_ms" in msg:
+                            chunk_ms = max(MIN_CHUNK_MS, msg.get("chunk_ms", DEFAULT_CHUNK_MS))
+                            configured = True
+                            logger.info(f"Configured: chunk_ms={chunk_ms}")
+                        elif msg.get("action") == "clear":
+                            async with audio_lock:
+                                audio_buffer = bytearray()
+                            async with state_lock:
+                                nonlocal transcribed_words, segment_counter, current_segment_id
+                                transcribed_words = []
+                                segment_counter += 1
+                                current_segment_id = f"s{segment_counter}"
+                            await send_queue.put({"id": current_segment_id, "text": ""})
+                            logger.info("Session cleared")
+                    except json.JSONDecodeError:
+                        pass
                     continue
                 
-                pending_audio.extend(audio_data)
-                
-                elapsed_ms = (time.time() - last_transcribe_time) * 1000
-                if elapsed_ms >= chunk_ms:
-                    await transcribe_pending(is_final=False)
+                if "bytes" in data:
+                    audio_data = data["bytes"]
+                    if not configured:
+                        configured = True
+                        logger.info(f"Auto-configured: chunk_ms={chunk_ms}")
                     
-                    # Check for silence - finalize segment after SILENCE_THRESHOLD_SEC of no speech
-                    silence_duration = time.time() - last_speech_time
-                    if transcribed_words and silence_duration > SILENCE_THRESHOLD_SEC:
-                        await finalize_segment()
-                
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected")
-        if transcribed_words or len(pending_audio) > 0:
+                    if audio_data:
+                        async with audio_lock:
+                            audio_buffer.extend(audio_data)
+                            
+            except WebSocketDisconnect:
+                running = False
+                break
+            except Exception as e:
+                logger.error(f"Receive error: {e}")
+                running = False
+                break
+    
+    async def transcription_loop():
+        """Task: Periodically transcribe accumulated audio."""
+        nonlocal running, transcription_in_progress, audio_buffer
+        nonlocal last_transcribe_time, last_speech_time
+        
+        loop = asyncio.get_event_loop()
+        min_audio_bytes = int(0.3 * 16000 * 2)  # 300ms minimum
+        
+        while running:
+            await asyncio.sleep(TRANSCRIBE_INTERVAL_MS / 1000.0)
+            
+            if transcription_in_progress:
+                continue
+            
+            # Get audio to transcribe
+            async with audio_lock:
+                if len(audio_buffer) < min_audio_bytes:
+                    continue
+                audio_bytes = bytes(audio_buffer)
+                audio_buffer = bytearray()  # Clear buffer
+            
+            audio_duration = len(audio_bytes) / (16000 * 2)
+            logger.debug(f"Transcribing {audio_duration:.2f}s of audio")
+            
+            transcription_in_progress = True
             try:
-                await transcribe_pending(is_final=True)
+                # Run transcription in thread pool (non-blocking)
+                chunk_words = await loop.run_in_executor(executor, do_transcription, audio_bytes)
+                
+                # Process results
+                async with state_lock:
+                    await process_transcription_result(chunk_words)
+                
+                last_transcribe_time = time.time()
+                
+                # Check for silence
+                silence_duration = time.time() - last_speech_time
+                if transcribed_words and silence_duration > SILENCE_THRESHOLD_SEC:
+                    async with state_lock:
+                        await process_transcription_result([], is_final=True)
+                        
+            except Exception as e:
+                logger.error(f"Transcription error: {e}")
+            finally:
+                transcription_in_progress = False
+    
+    async def send_results():
+        """Task: Send queued results back to client."""
+        nonlocal running
+        
+        while running:
+            try:
+                msg = await asyncio.wait_for(send_queue.get(), timeout=0.5)
+                await websocket.send_json(msg)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Send error: {e}")
+                break
+    
+    try:
+        # Run all tasks concurrently
+        receive_task = asyncio.create_task(receive_audio())
+        transcribe_task = asyncio.create_task(transcription_loop())
+        send_task = asyncio.create_task(send_results())
+        
+        # Wait for receive to finish (disconnect)
+        await receive_task
+        
+        # Final transcription of remaining audio
+        async with audio_lock:
+            if len(audio_buffer) >= int(0.1 * 16000 * 2):
+                audio_bytes = bytes(audio_buffer)
+                audio_buffer = bytearray()
+                loop = asyncio.get_event_loop()
+                chunk_words = await loop.run_in_executor(executor, do_transcription, audio_bytes)
+                async with state_lock:
+                    await process_transcription_result(chunk_words, is_final=True)
+        
+        # Clean up tasks
+        running = False
+        transcribe_task.cancel()
+        send_task.cancel()
+        
+        # Send any remaining messages
+        while not send_queue.empty():
+            try:
+                msg = send_queue.get_nowait()
+                await websocket.send_json(msg)
             except:
-                pass
+                break
+                
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        try:
-            await websocket.close(code=1011, reason=str(e))
-        except:
-            pass
+        running = False
+    finally:
+        executor.shutdown(wait=False)
 
 
 @app.post("/clear_session/{session_id}")
