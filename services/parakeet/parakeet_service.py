@@ -68,8 +68,8 @@ audio_sessions: Dict[str, dict] = {}
 SESSION_TIMEOUT = 60
 
 # Audio overlap for better chunk boundary accuracy (in bytes, 16kHz 16-bit mono)
-# 0.5 seconds of overlap helps with word boundaries
-OVERLAP_SAMPLES = 8000  # 0.5s at 16kHz
+# 1 second of overlap provides surrounding context for word boundaries
+OVERLAP_SAMPLES = 16000  # 1.0s at 16kHz
 OVERLAP_BYTES = OVERLAP_SAMPLES * 2  # 16-bit = 2 bytes per sample
 
 
@@ -416,23 +416,29 @@ async def websocket_stream(websocket: WebSocket):
                     chunk_words = chunk_text.split()
                     last_words = session['last_words']
                     
-                    # Find where the new content starts (skip repeated words from overlap)
+                    # Find longest matching prefix between chunk and last_words suffix
+                    # e.g., last_words = ["the", "quick", "brown"] and chunk starts with "brown fox"
+                    # should skip "brown" from chunk
                     skip_count = 0
-                    for i in range(min(len(last_words), len(chunk_words))):
-                        # Check if beginning of chunk matches end of previous
+                    for start_idx in range(len(last_words)):
+                        # Try matching from this position in last_words to end
+                        suffix = last_words[start_idx:]
                         match_len = 0
-                        for j in range(min(len(last_words) - i, len(chunk_words))):
-                            if last_words[i + j].lower() == chunk_words[j].lower():
+                        for j in range(min(len(suffix), len(chunk_words))):
+                            if suffix[j].lower() == chunk_words[j].lower():
                                 match_len += 1
                             else:
                                 break
-                        if match_len >= 2:  # Need at least 2 word match to consider overlap
-                            skip_count = match_len
-                            break
+                        # Accept match if we matched the entire suffix (at least 1 word)
+                        # or matched at least 3 words
+                        if match_len == len(suffix) and match_len >= 1:
+                            skip_count = max(skip_count, match_len)
+                        elif match_len >= 3:
+                            skip_count = max(skip_count, match_len)
                     
                     if skip_count > 0:
                         chunk_text = ' '.join(chunk_words[skip_count:])
-                        logger.debug(f"Deduped {skip_count} words from overlap")
+                        logger.info(f"Deduped {skip_count} words from overlap")
                 
                 # Update last words for next deduplication
                 words = chunk_text.split()
