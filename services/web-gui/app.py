@@ -25,7 +25,7 @@ client = TranscriptionClient()
 session = SessionState()
 
 # Transcription settings
-TRANSCRIBE_INTERVAL = 2.0  # Transcribe after 2 seconds of audio
+TRANSCRIBE_INTERVAL = 1.0  # Transcribe after 1 second of audio
 
 
 # ============== Handlers ==============
