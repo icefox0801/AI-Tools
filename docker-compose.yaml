@@ -86,8 +86,12 @@ services:
     build:
       context: ./services/vosk
       dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared                         # Shared Python modules
     image: vosk-asr:latest
     container_name: vosk-asr
+    depends_on:
+      - text-refiner
     ports:
       - "8001:8000"                                 # Port mapping: Vosk ASR API endpoint
     volumes:
@@ -95,6 +99,8 @@ services:
       - vosk-hf-cache:/root/.cache/huggingface     # HuggingFace cache for punctuation model
     environment:
       - CUDA_VISIBLE_DEVICES=0                      # Use GPU 0 for punctuation model
+      - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
+      - ENABLE_TEXT_REFINER=${ENABLE_TEXT_REFINER:-true}
     deploy:
       resources:
         reservations:
@@ -117,18 +123,23 @@ services:
     build:
       context: ./services/parakeet
       dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared                         # Shared Python modules
     image: parakeet-asr:latest
     container_name: parakeet-asr
+    depends_on:
+      - text-refiner
     ports:
       - "8002:8000"                                 # Port mapping: Parakeet ASR API endpoint
     volumes:
-      - parakeet-hf-cache:/root/.cache/huggingface    # Cache HuggingFace/NGC models
-      - parakeet-nemo-cache:/root/.cache/nemo         # Cache NeMo models
+      - parakeet-model-data:/root/.cache/huggingface  # Cache HuggingFace/NGC models (15GB cached)
     environment:
       - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-rnnt-1.1b}
       - USE_FP16=${PARAKEET_FP16:-false}
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
+      - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
+      - ENABLE_TEXT_REFINER=${ENABLE_TEXT_REFINER:-true}
     deploy:
       resources:
         reservations:
@@ -146,6 +157,42 @@ services:
       retries: 3
       start_period: 120s                            # Allow time for model download on first run
 
+  # Text Refiner Service: Punctuation + ASR Error Correction
+  text-refiner:
+    build:
+      context: ./services/text-refiner
+      dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared                         # Shared Python modules
+    image: text-refiner:latest
+    container_name: text-refiner
+    ports:
+      - "8003:8000"                                 # Port mapping: Text Refiner API endpoint
+    volumes:
+      - text-refiner-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (T5, etc.)
+    environment:
+      - PUNCTUATION_MODEL=pcs_en                    # Punctuation ONNX model
+      - CORRECTION_MODEL=${CORRECTION_MODEL:-oliverguhr/spelling-correction-english-base}
+      - ENABLE_CORRECTION=${ENABLE_CORRECTION:-true}
+      - CORRECTION_MIN_WORDS=4                      # Min words before applying correction
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s                             # Allow time for model download
+
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt
 volumes:
@@ -154,8 +201,8 @@ volumes:
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
   vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
   vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
-  parakeet-hf-cache:          # Stores HuggingFace model cache for Parakeet
-  parakeet-nemo-cache:        # Stores NeMo model cache for Parakeet
+  parakeet-model-data:        # Stores HuggingFace/NeMo model cache for Parakeet (15GB cached)
+  text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (T5, etc.)
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
