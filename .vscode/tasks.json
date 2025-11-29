@@ -2,7 +2,55 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Live Captions",
+			"label": "Live Captions (Vosk)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--system-audio",
+				"--backend", "vosk"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Parakeet)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--system-audio",
+				"--backend", "parakeet"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Vosk + Debug)",
 			"type": "shell",
 			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
 			"args": [
@@ -10,6 +58,77 @@
 				"--system-audio",
 				"--backend", "vosk",
 				"--debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Parakeet + Debug)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--system-audio",
+				"--backend", "parakeet",
+				"--debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Mic + Vosk)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--backend", "vosk"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Mic + Parakeet)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--backend", "parakeet"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}",
