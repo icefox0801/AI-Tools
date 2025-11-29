@@ -6,7 +6,9 @@ Change BACKEND constant to switch between services.
 """
 
 import os
-from typing import Dict, Any
+import urllib.request
+import json
+from typing import Dict, Any, Optional
 
 
 # ============== Backend Definitions ==============
@@ -22,7 +24,7 @@ BACKENDS_LOCAL: Dict[str, Dict[str, Any]] = {
         "description": "Lightweight CPU-based streaming ASR",
     },
     "parakeet": {
-        "name": "Parakeet TDT 1.1B",
+        "name": "Parakeet",  # Will be updated from service
         "device": "GPU",
         "host": "localhost",
         "port": 8002,
@@ -44,7 +46,7 @@ BACKENDS_DOCKER: Dict[str, Dict[str, Any]] = {
         "description": "Lightweight CPU-based streaming ASR",
     },
     "parakeet": {
-        "name": "Parakeet TDT 1.1B",
+        "name": "Parakeet",  # Will be updated from service
         "device": "GPU",
         "host": "parakeet-asr",  # Docker service name
         "port": 8000,            # Docker internal port
@@ -83,18 +85,84 @@ def get_backend_config(backend: str = None) -> Dict[str, Any]:
     return BACKENDS[key]
 
 
+def fetch_service_model_name(backend: str = None, timeout: float = 2.0) -> Optional[str]:
+    """
+    Fetch the actual model name from the ASR service's /info endpoint.
+    
+    Args:
+        backend: Backend name ('vosk' or 'parakeet'). Uses default if None.
+        timeout: Request timeout in seconds.
+    
+    Returns:
+        Model name string (e.g., 'nvidia/parakeet-rnnt-1.1b') or None if unavailable.
+    """
+    cfg = get_backend_config(backend)
+    url = f"http://{cfg['host']}:{cfg['port']}/info"
+    
+    try:
+        req = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            return data.get('model_name') or data.get('model')
+    except Exception:
+        return None
+
+
+def format_model_name(model_id: Optional[str]) -> str:
+    """
+    Format a model ID into a display-friendly name.
+    
+    Args:
+        model_id: Full model ID (e.g., 'nvidia/parakeet-rnnt-1.1b')
+    
+    Returns:
+        Formatted name (e.g., 'Parakeet RNNT 1.1B')
+    """
+    if not model_id:
+        return "Parakeet"
+    
+    # Extract model name from path (e.g., 'nvidia/parakeet-rnnt-1.1b' -> 'parakeet-rnnt-1.1b')
+    name = model_id.split('/')[-1]
+    
+    # Format: parakeet-rnnt-1.1b -> Parakeet RNNT 1.1B
+    parts = name.replace('-', ' ').split()
+    formatted = []
+    for part in parts:
+        if part.lower() in ('tdt', 'rnnt', 'ctc'):
+            formatted.append(part.upper())
+        elif part[0].isdigit():
+            formatted.append(part.upper())  # Version numbers like 1.1b -> 1.1B
+        else:
+            formatted.append(part.capitalize())
+    
+    return ' '.join(formatted)
+    if key not in BACKENDS:
+        raise KeyError(f"Unknown backend: {key}. Available: {list(BACKENDS.keys())}")
+    return BACKENDS[key]
+
+
 def get_display_info(backend: str = None) -> str:
     """
     Get human-readable display string for a backend.
+    Fetches actual model name from the service if available.
     
     Args:
         backend: Backend name. Uses default if None.
     
     Returns:
-        Formatted string like "🤖 Vosk small-en (CPU) | 🔄 streaming"
+        Formatted string like "🤖 Parakeet RNNT 1.1B (GPU) | 🔄 300ms chunks"
     """
     cfg = get_backend_config(backend)
-    return f"🤖 {cfg['name']} ({cfg['device']}) | 🔄 {cfg['mode']}"
+    name = cfg['name']
+    
+    # For Parakeet, try to fetch actual model name from service
+    key = backend or BACKEND
+    if key == "parakeet":
+        model_id = fetch_service_model_name(backend)
+        if model_id:
+            name = format_model_name(model_id)
+    
+    return f"🤖 {name} ({cfg['device']}) | 🔄 {cfg['mode']}"
 
 
 def list_backends() -> Dict[str, str]:

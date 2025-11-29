@@ -1,7 +1,0 @@
-[
-    {
-        "key": "ctrl+shift+l",
-        "command": "workbench.action.tasks.runTask",
-        "args": "Live Captions"
-    }
-]
