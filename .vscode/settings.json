@@ -11,10 +11,25 @@
         "loadNpmCommands": false,
         "commands": [
             {
-                "name": "🎙️ Live Captions",
+                "name": "🎙️ Parakeet",
                 "color": "#4ade80",
+                "useVsCodeApi": true,
                 "command": "workbench.action.tasks.runTask",
-                "args": ["Live Captions"]
+                "args": ["Live Captions (Parakeet)"]
+            },
+            {
+                "name": "🔊 Vosk",
+                "color": "#60a5fa",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask",
+                "args": ["Live Captions (Vosk)"]
+            },
+            {
+                "name": "🐛 Debug",
+                "color": "#fbbf24",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask",
+                "args": ["Live Captions (Parakeet + Debug)"]
             }
         ]
     }
