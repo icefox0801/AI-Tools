@@ -32,6 +32,15 @@ BACKENDS_LOCAL: Dict[str, Dict[str, Any]] = {
         "mode": "300ms chunks",
         "description": "High-accuracy GPU-based ASR with word timestamps",
     },
+    "whisper": {
+        "name": "Whisper",  # Will be updated from service
+        "device": "GPU",
+        "host": "localhost",
+        "port": 8004,
+        "chunk_ms": 500,
+        "mode": "500ms chunks",
+        "description": "OpenAI Whisper Large V3 Turbo - fast, multilingual ASR",
+    },
 }
 
 # Docker internal settings (service names)
@@ -54,6 +63,15 @@ BACKENDS_DOCKER: Dict[str, Dict[str, Any]] = {
         "mode": "300ms chunks",
         "description": "High-accuracy GPU-based ASR with word timestamps",
     },
+    "whisper": {
+        "name": "Whisper",  # Will be updated from service
+        "device": "GPU",
+        "host": "whisper-asr",  # Docker service name
+        "port": 8000,           # Docker internal port
+        "chunk_ms": 500,
+        "mode": "500ms chunks",
+        "description": "OpenAI Whisper Large V3 Turbo - fast, multilingual ASR",
+    },
 }
 
 # Auto-detect environment: use Docker config if running in container
@@ -61,7 +79,7 @@ IS_DOCKER = os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER", "").l
 BACKENDS = BACKENDS_DOCKER if IS_DOCKER else BACKENDS_LOCAL
 
 # ========== SWITCH BACKEND HERE ==========
-# Options: "vosk" (CPU, lightweight) or "parakeet" (GPU, high accuracy)
+# Options: "vosk" (CPU, lightweight), "parakeet" (GPU, high accuracy), or "whisper" (GPU, multilingual)
 BACKEND = os.getenv("ASR_BACKEND", "parakeet")
 # =========================================
 
@@ -71,7 +89,7 @@ def get_backend_config(backend: str = None) -> Dict[str, Any]:
     Get configuration for a backend.
     
     Args:
-        backend: Backend name ('vosk' or 'parakeet'). Uses default if None.
+        backend: Backend name ('vosk', 'parakeet', or 'whisper'). Uses default if None.
     
     Returns:
         Backend configuration dictionary.
@@ -90,7 +108,7 @@ def fetch_service_model_name(backend: str = None, timeout: float = 2.0) -> Optio
     Fetch the actual model name from the ASR service's /info endpoint.
     
     Args:
-        backend: Backend name ('vosk' or 'parakeet'). Uses default if None.
+        backend: Backend name ('vosk', 'parakeet', or 'whisper'). Uses default if None.
         timeout: Request timeout in seconds.
     
     Returns:
@@ -108,27 +126,35 @@ def fetch_service_model_name(backend: str = None, timeout: float = 2.0) -> Optio
         return None
 
 
-def format_model_name(model_id: Optional[str]) -> str:
+def format_model_name(model_id: Optional[str], backend: str = None) -> str:
     """
     Format a model ID into a display-friendly name.
     
     Args:
-        model_id: Full model ID (e.g., 'nvidia/parakeet-rnnt-1.1b')
+        model_id: Full model ID (e.g., 'nvidia/parakeet-rnnt-1.1b', 'openai/whisper-large-v3-turbo')
+        backend: Backend type to help format appropriately
     
     Returns:
-        Formatted name (e.g., 'Parakeet RNNT 1.1B')
+        Formatted name (e.g., 'Parakeet RNNT 1.1B', 'Whisper Large V3 Turbo')
     """
     if not model_id:
+        if backend == "whisper":
+            return "Whisper"
         return "Parakeet"
     
     # Extract model name from path (e.g., 'nvidia/parakeet-rnnt-1.1b' -> 'parakeet-rnnt-1.1b')
     name = model_id.split('/')[-1]
     
     # Format: parakeet-rnnt-1.1b -> Parakeet RNNT 1.1B
+    # Format: whisper-large-v3-turbo -> Whisper Large V3 Turbo
     parts = name.replace('-', ' ').split()
     formatted = []
     for part in parts:
-        if part.lower() in ('tdt', 'rnnt', 'ctc'):
+        lower = part.lower()
+        if lower in ('tdt', 'rnnt', 'ctc'):
+            formatted.append(part.upper())
+        elif lower.startswith('v') and len(lower) > 1 and lower[1].isdigit():
+            # Version like v3 -> V3
             formatted.append(part.upper())
         elif part[0].isdigit():
             formatted.append(part.upper())  # Version numbers like 1.1b -> 1.1B
@@ -136,9 +162,6 @@ def format_model_name(model_id: Optional[str]) -> str:
             formatted.append(part.capitalize())
     
     return ' '.join(formatted)
-    if key not in BACKENDS:
-        raise KeyError(f"Unknown backend: {key}. Available: {list(BACKENDS.keys())}")
-    return BACKENDS[key]
 
 
 def get_display_info(backend: str = None) -> str:
@@ -155,12 +178,12 @@ def get_display_info(backend: str = None) -> str:
     cfg = get_backend_config(backend)
     name = cfg['name']
     
-    # For Parakeet, try to fetch actual model name from service
+    # For GPU backends (Parakeet, Whisper), try to fetch actual model name from service
     key = backend or BACKEND
-    if key == "parakeet":
+    if key in ("parakeet", "whisper"):
         model_id = fetch_service_model_name(backend)
         if model_id:
-            name = format_model_name(model_id)
+            name = format_model_name(model_id, backend=key)
     
     return f"🤖 {name} ({cfg['device']}) | 🔄 {cfg['mode']}"
 

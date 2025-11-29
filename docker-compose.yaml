@@ -157,6 +157,44 @@ services:
       retries: 3
       start_period: 120s                            # Allow time for model download on first run
 
+  # Whisper ASR: OpenAI Whisper Large V3 Turbo - fast, accurate speech recognition (GPU)
+  whisper-asr:
+    build:
+      context: ./services/whisper
+      dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared                         # Shared Python modules
+    image: whisper-asr:latest
+    container_name: whisper-asr
+    depends_on:
+      - text-refiner
+    ports:
+      - "8004:8000"                                 # Port mapping: Whisper ASR API endpoint
+    volumes:
+      - whisper-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (~3GB)
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-openai/whisper-large-v3-turbo}
+      - USE_FLASH_ATTENTION=${WHISPER_FLASH_ATTENTION:-true}
+      - CUDA_VISIBLE_DEVICES=0
+      - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
+      - ENABLE_TEXT_REFINER=${ENABLE_TEXT_REFINER:-true}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s                            # Allow time for model download on first run
+
   # Text Refiner Service: Punctuation + ASR Error Correction
   text-refiner:
     build:
@@ -202,6 +240,7 @@ volumes:
   vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
   vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
   parakeet-model-data:        # Stores HuggingFace/NeMo model cache for Parakeet (15GB cached)
+  whisper-hf-cache:           # Stores HuggingFace model cache for Whisper (~3GB)
   text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (T5, etc.)
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)

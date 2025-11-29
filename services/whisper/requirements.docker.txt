@@ -1,0 +1,18 @@
+# Whisper Large V3 Turbo - GPU ASR Service
+transformers>=4.40.0
+accelerate>=0.30.0
+torch>=2.0.0
+optimum>=1.19.0
+
+# Audio processing
+soundfile>=0.12.1
+librosa>=0.10.1
+numpy>=1.24.0
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Text refinement client
+httpx>=0.25.0
