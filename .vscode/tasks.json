@@ -144,6 +144,78 @@
 				"reveal": "silent",
 				"panel": "dedicated"
 			}
+		},
+		{
+			"label": "Live Captions (Whisper)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--system-audio",
+				"--backend", "whisper"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Whisper + Debug)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--system-audio",
+				"--backend", "whisper",
+				"--debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Live Captions (Mic + Whisper)",
+			"type": "shell",
+			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"args": [
+				"apps/live-captions/live_captions.py",
+				"--backend", "whisper"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
 		}
 	]
 }

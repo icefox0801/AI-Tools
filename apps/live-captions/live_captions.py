@@ -225,7 +225,7 @@ def main():
     parser = argparse.ArgumentParser(description="Live Captions v10.1")
     parser.add_argument('--host', default='localhost', help='ASR service host')
     parser.add_argument('--port', type=int, help='ASR service port')
-    parser.add_argument('--backend', choices=['vosk', 'parakeet'], default=BACKEND,
+    parser.add_argument('--backend', choices=['vosk', 'parakeet', 'whisper'], default=BACKEND,
                         help=f'ASR backend (default: {BACKEND})')
     parser.add_argument('--system-audio', action='store_true',
                         help='Capture system audio instead of microphone')

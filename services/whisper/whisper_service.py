@@ -270,8 +270,9 @@ async def stream_transcribe(websocket: WebSocket):
                     text = transcribe_audio(audio_array)
                     
                     if text:
-                        # Apply text refinement
-                        refined_text = await refine_text(text)
+                        # Apply text refinement (spelling correction only)
+                        # Whisper already outputs punctuated text
+                        refined_text = await refine_text(text, punctuate=False, correct=True)
                         
                         # Send result
                         await websocket.send_json({

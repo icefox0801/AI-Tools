@@ -11,8 +11,11 @@ AI-Tools is a Docker-based suite of AI services for voice transcription with a f
 │   Client Apps       │ ──────────────────▶│   ASR Services      │
 │                     │    Audio Stream    │                     │
 │  • Live Captions    │ ◀──────────────────│  • Vosk (CPU:8001)  │
-│    (Desktop)        │    {id, text}      │  • Parakeet (GPU)   │
-└─────────────────────┘                    └─────────────────────┘
+│    (Desktop)        │    {id, text}      │  • Parakeet (:8002) │
+└─────────────────────┘                    │  • Whisper (:8004)  │
+                                           │                     │
+                                           │  Text Refiner:8003  │
+                                           └─────────────────────┘
 ```
 
 ## Key Components
@@ -20,6 +23,8 @@ AI-Tools is a Docker-based suite of AI services for voice transcription with a f
 ### ASR Services (Docker)
 - **Vosk** (`services/vosk/`) - CPU-based, lightweight, port 8001
 - **Parakeet** (`services/parakeet/`) - GPU-based (NVIDIA NeMo), port 8002
+- **Whisper** (`services/whisper/`) - GPU-based (OpenAI Whisper Large V3 Turbo), port 8004
+- **Text Refiner** (`services/text-refiner/`) - Punctuation & ASR correction, port 8003
 
 ### Client Applications
 - **Live Captions** (`apps/live-captions/`) - Desktop overlay with microphone capture
@@ -27,7 +32,8 @@ AI-Tools is a Docker-based suite of AI services for voice transcription with a f
 ### Shared Library (`shared/`)
 - `shared/client/websocket_client.py` - WebSocket client for ASR streaming
 - `shared/client/transcript.py` - TranscriptManager with ID-based replace/append
-- `shared/config/backends.py` - Backend configuration (BACKEND = "vosk" or "parakeet")
+- `shared/config/backends.py` - Backend configuration (vosk, parakeet, or whisper)
+- `shared/text_refiner/` - Text refiner client module for punctuation & correction
 
 ## WebSocket Protocol (v3.0)
 
@@ -46,8 +52,10 @@ Client logic (TranscriptManager):
 ## Running Commands
 
 ```bash
-# Start ASR services
-docker compose up -d vosk-asr
+# Start ASR services (choose one)
+docker compose up -d vosk-asr      # CPU
+docker compose up -d parakeet-asr  # GPU
+docker compose up -d whisper-asr   # GPU (multilingual)
 
 # Run Live Captions with debug logging
 cd apps/live-captions
@@ -61,8 +69,12 @@ python live_captions.py --debug
 
 Backend selection in `shared/config/backends.py`:
 ```python
-BACKEND = "vosk"  # or "parakeet"
+BACKEND = "vosk"      # CPU, lightweight
+BACKEND = "parakeet"  # GPU, high accuracy
+BACKEND = "whisper"   # GPU, multilingual
 ```
+
+Or via command line: `--backend vosk|parakeet|whisper`
 
 ## Debug Logging
 
@@ -96,15 +108,18 @@ AI-Tools/
 ├── docker-compose.yaml      # Service orchestration
 ├── apps/
 │   └── live-captions/       # Desktop caption overlay
-│       ├── live_captions.py # Main application (v8.0)
+│       ├── live_captions.py # Main application
 │       └── requirements.txt
 ├── services/
 │   ├── vosk/                # CPU ASR service
-│   └── parakeet/            # GPU ASR service
+│   ├── parakeet/            # GPU ASR service (NVIDIA NeMo)
+│   ├── whisper/             # GPU ASR service (OpenAI Whisper)
+│   └── text-refiner/        # Punctuation & correction service
 └── shared/
     ├── client/
     │   ├── websocket_client.py
     │   └── transcript.py    # ID-based replace/append
-    └── config/
-        └── backends.py      # BACKEND selection
+    ├── config/
+    │   └── backends.py      # BACKEND selection
+    └── text_refiner/        # Text refiner client module
 ```
