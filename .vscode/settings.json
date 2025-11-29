@@ -18,6 +18,13 @@
                 "args": ["Live Captions (Parakeet)"]
             },
             {
+                "name": "🗣️ Whisper",
+                "color": "#a78bfa",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask",
+                "args": ["Live Captions (Whisper)"]
+            },
+            {
                 "name": "🔊 Vosk",
                 "color": "#60a5fa",
                 "useVsCodeApi": true,
