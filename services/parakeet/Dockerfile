@@ -29,11 +29,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --upgrade pip setuptools wheel
 
 # Install PyTorch 2.9+ with CUDA 12.8 support (compatible with driver 576.88)
-# Using BuildKit cache mount to persist pip downloads across builds
+# Cache mount stores downloads permanently in Docker's buildkit cache
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
-# Copy requirements first for better layer caching
+# Copy ONLY requirements first for better layer caching
+# (Code changes won't invalidate pip install layer)
 COPY requirements.docker.txt .
 
 # Install Python dependencies
@@ -41,12 +42,11 @@ COPY requirements.docker.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install Cython && pip install -r requirements.docker.txt
 
-# Pre-download the punctuation ONNX model during build
-# This downloads ~100MB model for offline use
-RUN python -c "from punctuators.models import PunctCapSegModelONNX; PunctCapSegModelONNX.from_pretrained('pcs_en')"
-
-# Copy application code
+# Copy application code LAST (changes here won't re-download pip packages)
 COPY parakeet_service.py parakeet_service.py
+
+# Copy shared modules from additional context
+COPY --from=shared . /app/shared/
 
 # Expose port
 EXPOSE 8000

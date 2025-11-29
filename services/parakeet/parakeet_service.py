@@ -1,12 +1,11 @@
 """
-NVIDIA NeMo Parakeet ASR Service v3.1
+NVIDIA NeMo Parakeet ASR Service v3.2
 GPU-accelerated speech recognition using Parakeet TDT with word timestamps
 
 Key improvements:
 - Uses word-level timestamps from Parakeet TDT (no overlap needed)
-- Two punctuation modes:
-  - "model": Uses punctuators ONNX model (better quality, English)
-  - "pause": Uses prosodic cues from word timing gaps
+- Text refinement via external text-refiner service (punctuation + spelling correction)
+- Fallback to pause-based punctuation if text-refiner unavailable
 - Text buffering for better punctuation context (6+ words)
 - Continuous audio accumulation with timestamp-based deduplication
 """
@@ -28,6 +27,9 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSock
 from fastapi.responses import JSONResponse
 import uvicorn
 
+# Import shared text refiner client
+from shared.text_refiner_client import get_client, check_text_refiner, refine_text, capitalize_text
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,14 +48,14 @@ USE_CUDNN_BENCHMARK = True
 COMMA_PAUSE_THRESHOLD = 0.5   # Pause > 0.5s → comma
 PERIOD_PAUSE_THRESHOLD = 1.0  # Pause > 1.0s → period
 
-# Punctuation mode: "model" (ONNX) or "pause" (timing-based)
-PUNCTUATION_MODE = os.getenv("PUNCTUATION_MODE", "model")
-
-# Text buffering for model-based punctuation
-MIN_WORDS_FOR_PUNCTUATION = 6  # Buffer at least 6 words before running model
+# Text buffering for punctuation
+MIN_WORDS_FOR_PUNCTUATION = 6  # Buffer at least 6 words before running refiner
 
 # Torch compile settings (PyTorch 2.x JIT compiler for ~1.5-2x speedup)
 USE_TORCH_COMPILE = os.getenv("USE_TORCH_COMPILE", "false").lower() == "true"
+
+# Get shared text refiner client
+text_refiner = get_client()
 
 if DEVICE == "cuda":
     torch.backends.cudnn.benchmark = USE_CUDNN_BENCHMARK
@@ -175,56 +177,6 @@ def load_model():
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         raise
-
-
-# ============================================================================
-# Punctuation Model (ONNX-based, English)
-# ============================================================================
-punctuation_model = None
-
-def load_punctuation_model():
-    """Load the punctuators ONNX model for English."""
-    global punctuation_model
-    
-    if PUNCTUATION_MODE != "model":
-        logger.info(f"Punctuation mode: {PUNCTUATION_MODE} (model not loaded)")
-        return None
-    
-    if punctuation_model is not None:
-        return punctuation_model
-    
-    try:
-        from punctuators.models import PunctCapSegModelONNX
-        logger.info("Loading punctuation model (pcs_en)...")
-        punctuation_model = PunctCapSegModelONNX.from_pretrained("pcs_en")
-        logger.info("Punctuation model loaded successfully")
-        return punctuation_model
-    except Exception as e:
-        logger.warning(f"Failed to load punctuation model: {e}")
-        logger.info("Falling back to pause-based punctuation")
-        return None
-
-
-def capitalize_text(text: str) -> str:
-    """Capitalize first letter of text."""
-    if not text:
-        return text
-    return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
-
-
-def model_punctuate(text: str) -> str:
-    """Apply punctuation using ONNX model."""
-    if not punctuation_model or not text:
-        return capitalize_text(text) + '.'
-    
-    try:
-        results = punctuation_model.infer([text])
-        if results and results[0]:
-            return ' '.join(results[0])
-        return capitalize_text(text) + '.'
-    except Exception as e:
-        logger.debug(f"Model punctuation failed: {e}")
-        return capitalize_text(text) + '.'
 
 
 def transcribe_with_timestamps(audio_data: bytes, sample_rate: int = 16000) -> List[dict]:
@@ -391,7 +343,7 @@ async def startup_event():
     """Load models on startup"""
     try:
         load_model()
-        load_punctuation_model()
+        await check_text_refiner()
     except Exception as e:
         logger.error(f"Startup failed: {e}")
 
@@ -401,7 +353,6 @@ async def health_check():
     """Health check endpoint"""
     model_loaded = asr_model is not None
     cuda_available = torch.cuda.is_available()
-    punct_loaded = punctuation_model is not None
     
     gpu_info = {}
     if cuda_available:
@@ -418,8 +369,9 @@ async def health_check():
         "model_loaded": model_loaded,
         "device": DEVICE,
         "cuda_available": cuda_available,
-        "punctuation_mode": PUNCTUATION_MODE,
-        "punctuation_model_loaded": punct_loaded,
+        "text_refiner_enabled": text_refiner.enabled,
+        "text_refiner_available": text_refiner.available,
+        "text_refiner_url": text_refiner.url if text_refiner.enabled else None,
         **gpu_info
     }
 
@@ -432,12 +384,16 @@ async def model_info():
         "device": DEVICE,
         "cuda_available": torch.cuda.is_available(),
         "torch_version": torch.__version__,
+        "text_refiner": {
+            "enabled": text_refiner.enabled,
+            "available": text_refiner.available,
+            "url": text_refiner.url,
+            "timeout_sec": text_refiner.timeout,
+        },
         "punctuation": {
-            "mode": PUNCTUATION_MODE,
-            "model_loaded": punctuation_model is not None,
             "comma_threshold_sec": COMMA_PAUSE_THRESHOLD,
             "period_threshold_sec": PERIOD_PAUSE_THRESHOLD,
-            "min_words_for_model": MIN_WORDS_FOR_PUNCTUATION,
+            "min_words_for_refiner": MIN_WORDS_FOR_PUNCTUATION,
         }
     }
 
@@ -518,7 +474,7 @@ async def websocket_stream(websocket: WebSocket):
     Client logic: if ID exists → replace text, if not → append new segment
     """
     await websocket.accept()
-    logger.info("WebSocket connection established (Unified API v3.1 - async)")
+    logger.info("WebSocket connection established (Unified API v3.2 - text refiner)")
     
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -554,9 +510,7 @@ async def websocket_stream(websocket: WebSocket):
     SILENCE_THRESHOLD_SEC = 1.5
     
     # Sliding window punctuation settings
-    # Keep recent text for context when punctuating new segments
-    CONTEXT_SEGMENTS = 3  # Keep last N segments as context for punctuation
-    MIN_WORDS_FOR_PUNCTUATION = 6  # Minimum words to use model punctuation
+    MIN_WORDS_FOR_PUNCTUATION = 6  # Minimum words to use text refiner
     
     running = True
     transcription_in_progress = False
@@ -564,8 +518,6 @@ async def websocket_stream(websocket: WebSocket):
     # Message queue for sending results back
     send_queue = asyncio.Queue()
     
-    # Context buffer: recent finalized text for punctuation context
-    context_buffer = []  # List of recent segment texts (already punctuated)
     output_segment_counter = 0  # Counter for output segments
     
     def find_pause_cut_point(words: List[dict]) -> int:
@@ -584,26 +536,11 @@ async def websocket_stream(websocket: WebSocket):
         """Run transcription in thread pool (blocking but doesn't block event loop)."""
         return transcribe_with_timestamps(audio_bytes)
     
-    def apply_punctuation(words: List[dict], use_model: bool = True) -> str:
-        """Apply punctuation - model-based or pause-based."""
-        if not words:
-            return ""
-        
-        # Get raw text from words
-        raw_text = ' '.join(w['word'] for w in words)
-        
-        # Use model-based punctuation if available and enough words
-        if use_model and punctuation_model and len(words) >= MIN_WORDS_FOR_PUNCTUATION:
-            return model_punctuate(raw_text)
-        
-        # Fall back to pause-based punctuation
-        return apply_pause_punctuation(words, debug=False)
-    
     async def process_transcription_result(chunk_words: List[dict], is_final: bool = False):
-        """Process transcription results with context-aware punctuation."""
+        """Process transcription results with text-refiner punctuation."""
         nonlocal transcribed_words, segment_counter, current_segment_id
         nonlocal last_speech_time, segment_start_time
-        nonlocal context_buffer, output_segment_counter
+        nonlocal output_segment_counter
         
         if chunk_words:
             # Adjust timestamps relative to segment
@@ -647,27 +584,11 @@ async def websocket_stream(websocket: WebSocket):
                 # Get raw text for this segment
                 raw_text = ' '.join(w['word'] for w in words_to_finalize)
                 
-                # Build context from recent segments for better punctuation
-                context_text = ' '.join(context_buffer[-CONTEXT_SEGMENTS:]) if context_buffer else ''
-                
-                # Punctuate with context
-                if punctuation_model and len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
-                    # Combine context + new text, punctuate, then extract just the new part
-                    if context_text:
-                        full_text = context_text + ' ' + raw_text
-                        punctuated_full = model_punctuate(full_text)
-                        # Extract the new part (approximate by finding where context ends)
-                        context_words = len(context_text.split())
-                        punctuated_words = punctuated_full.split()
-                        # Take words after context
-                        if len(punctuated_words) > context_words:
-                            punctuated_text = ' '.join(punctuated_words[context_words:])
-                        else:
-                            punctuated_text = model_punctuate(raw_text)
-                    else:
-                        punctuated_text = model_punctuate(raw_text)
+                # Use text-refiner for punctuation and correction
+                if text_refiner.available and len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
+                    punctuated_text = await refine_text(raw_text)
                 else:
-                    # Simple capitalization for short segments
+                    # Fallback: capitalize + period
                     punctuated_text = capitalize_text(raw_text)
                     if is_final or len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
                         punctuated_text += '.'
@@ -675,11 +596,6 @@ async def websocket_stream(websocket: WebSocket):
                 # Output the punctuated segment
                 await send_queue.put({"id": f"s{output_segment_counter}", "text": punctuated_text})
                 logger.info(f"Finalized [s{output_segment_counter}] ({len(words_to_finalize)} words): {punctuated_text[:60]}...")
-                
-                # Update context buffer
-                context_buffer.append(raw_text)
-                if len(context_buffer) > CONTEXT_SEGMENTS:
-                    context_buffer.pop(0)
                 
                 output_segment_counter += 1
                 segment_counter += 1
