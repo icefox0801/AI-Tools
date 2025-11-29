@@ -27,8 +27,8 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSock
 from fastapi.responses import JSONResponse
 import uvicorn
 
-# Import shared text refiner client
-from shared.text_refiner_client import get_client, check_text_refiner, refine_text, capitalize_text
+# Import shared text refiner module
+from shared.text_refiner import get_client, check_text_refiner, refine_text, capitalize_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

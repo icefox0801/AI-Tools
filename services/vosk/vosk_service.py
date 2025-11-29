@@ -24,8 +24,8 @@ import os
 import asyncio
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
-# Import shared text refiner client
-from shared.text_refiner_client import get_client, refine_text, capitalize_text
+# Import shared text refiner module
+from shared.text_refiner import get_client, refine_text, capitalize_text
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
