@@ -16,14 +16,13 @@ COPY requirements.docker.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.docker.txt
 
-# Pre-download the punctuation ONNX model during build
-# This downloads ~100MB model for offline use
-RUN python -c "from punctuators.models import PunctCapSegModelONNX; PunctCapSegModelONNX.from_pretrained('pcs_en')"
-
 # Copy service code (includes model download script)
 COPY vosk_service.py .
 COPY download_model.sh .
 RUN chmod +x download_model.sh
+
+# Copy shared modules from additional context
+COPY --from=shared . /app/shared/
 
 # Model will be mounted as volume at /app/model
 # Download script runs on startup if model is missing

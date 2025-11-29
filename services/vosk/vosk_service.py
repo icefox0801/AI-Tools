@@ -1,10 +1,10 @@
 """
-Vosk ASR Service - Unified Streaming API v3.1
+Vosk ASR Service - Unified Streaming API v3.2
 Lightweight, fast, offline speech recognition with native streaming support
 
 Features:
 - Low-latency streaming with immediate partial results
-- Post-processing: punctuation restoration
+- Post-processing via Text Refiner service (punctuation + correction)
 - Segment-based ID protocol for clean UI updates
 
 Unified Protocol:
@@ -20,7 +20,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import logging
 import time
+import os
+import asyncio
 from vosk import Model, KaldiRecognizer, SetLogLevel
+
+# Import shared text refiner client
+from shared.text_refiner_client import get_client, refine_text, capitalize_text
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +33,7 @@ logger = logging.getLogger(__name__)
 # Suppress Vosk internal logs
 SetLogLevel(-1)
 
-app = FastAPI(title="Vosk ASR Service", version="3.1")
+app = FastAPI(title="Vosk ASR Service", version="3.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,68 +55,8 @@ except Exception as e:
     logger.error(f"Failed to load Vosk model: {e}")
     raise
 
-# ============================================================================
-# Post-Processing: Punctuation, Capitalization, Segmentation (English)
-# ============================================================================
-# Uses ONNX-based model for fast CPU inference
-# Model: 1-800-BAD-CODE/punctuation_fullstop_truecase_english
-
-punctuation_model = None
-try:
-    from punctuators.models import PunctCapSegModelONNX
-    logger.info("Loading punctuation model (pcs_en)...")
-    punctuation_model = PunctCapSegModelONNX.from_pretrained("pcs_en")
-    logger.info("Punctuation model loaded successfully")
-except Exception as e:
-    logger.warning(f"Failed to load punctuation model: {e}")
-    punctuation_model = None
-
-
-def capitalize_text(text: str) -> str:
-    """Fallback: Capitalize first letter of text."""
-    if not text:
-        return text
-    return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
-
-
-def _sync_punctuate(text: str) -> str:
-    """Synchronous punctuation using ONNX model."""
-    if not punctuation_model or not text:
-        return capitalize_text(text) + '.'
-    
-    try:
-        # Model returns list of sentences for each input
-        results = punctuation_model.infer([text])
-        if results and results[0]:
-            # Join all sentences from the result
-            return ' '.join(results[0])
-        return capitalize_text(text) + '.'
-    except Exception as e:
-        logger.debug(f"Punctuation failed: {e}")
-        return capitalize_text(text) + '.'
-
-
-async def post_process_async(text: str, is_final: bool = False) -> str:
-    """Post-process transcription text."""
-    if not text:
-        return text
-    
-    if is_final:
-        import asyncio
-        # Run ONNX inference in thread pool to avoid blocking
-        text = await asyncio.to_thread(_sync_punctuate, text)
-    else:
-        # For partials, just capitalize (no model inference)
-        text = capitalize_text(text)
-    
-    return text
-
-
-def post_process_sync(text: str) -> str:
-    """Sync post-processing for partials - just capitalize."""
-    if not text:
-        return text
-    return capitalize_text(text)
+# Get text refiner client for config info
+text_refiner = get_client()
 
 
 @app.get("/health")
@@ -124,8 +69,9 @@ async def health_check():
         "sample_rate": SAMPLE_RATE,
         "streaming": True,
         "native_streaming": True,
-        "post_processing": True,
-        "api_version": "3.1"
+        "text_refiner_enabled": text_refiner.enabled,
+        "text_refiner_url": text_refiner.url if text_refiner.enabled else None,
+        "api_version": "3.2"
     }
 
 
@@ -144,7 +90,7 @@ async def stream_transcribe(websocket: WebSocket):
     Client logic: if ID exists → replace text, if not → append new segment
     """
     await websocket.accept()
-    logger.info("Stream connection established (v3.1 - low latency)")
+    logger.info("Stream connection established (v3.2 - text refiner)")
     
     # Config - optimized for quality punctuation
     finalize_interval = 3.0  # Force finalize every 3s (longer chunks for better punctuation)
@@ -200,8 +146,8 @@ async def stream_transcribe(websocket: WebSocket):
                         
                         # Only run punctuation if we have enough words
                         if word_count >= min_words_for_punctuation:
-                            # Apply full post-processing for final result (async)
-                            punctuated = await post_process_async(buffered_text, is_final=True)
+                            # Apply text refinement (punctuation + correction)
+                            punctuated = await refine_text(buffered_text)
                             await websocket.send_json({
                                 "id": current_segment_id,
                                 "text": punctuated
@@ -233,7 +179,7 @@ async def stream_transcribe(websocket: WebSocket):
                         # Flush buffer with punctuation (regardless of word count)
                         if text_buffer:
                             buffered_text = ' '.join(text_buffer)
-                            punctuated = await post_process_async(buffered_text, is_final=True)
+                            punctuated = await refine_text(buffered_text)
                             await websocket.send_json({
                                 "id": current_segment_id,
                                 "text": punctuated
@@ -274,7 +220,8 @@ async def stream_transcribe(websocket: WebSocket):
         if text_buffer:
             try:
                 buffered_text = ' '.join(text_buffer)
-                punctuated = _sync_punctuate(buffered_text)
+                # Use sync fallback on disconnect (can't await)
+                punctuated = capitalize_text(buffered_text) + '.'
                 await websocket.send_json({
                     "id": current_segment_id,
                     "text": punctuated

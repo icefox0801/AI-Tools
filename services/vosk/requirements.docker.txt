@@ -4,6 +4,4 @@ uvicorn[standard]==0.30.1
 websockets==12.0
 vosk==0.3.45
 numpy==1.26.4
-
-# Punctuation restoration (ONNX-based, English)
-punctuators
+httpx>=0.25.0
