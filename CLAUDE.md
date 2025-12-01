@@ -111,7 +111,9 @@ AI-Tools/
 ├── docker-compose.yaml      # Service orchestration
 ├── apps/
 │   └── live-captions/       # Desktop caption overlay
-│       ├── live_captions.py # Main application
+│       ├── live_captions.py       # Main caption window
+│       ├── live_captions_tray.py  # System tray launcher
+│       ├── build_tray.bat         # Build Windows executable
 │       └── requirements.txt
 ├── services/
 │   ├── vosk/                # CPU ASR service
