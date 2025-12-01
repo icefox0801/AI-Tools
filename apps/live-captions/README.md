@@ -11,12 +11,13 @@ A standalone desktop application that displays real-time speech-to-text captions
 - 🎨 **Customizable** - Resize text with mouse wheel
 - ⚡ **Real-time streaming** - WebSocket connection to ASR service
 - 🔧 **Debug mode** - Verbose logging and audio saving
+- **🖱️ System Tray App** - Easy access with right-click backend selection
 
 ## Requirements
 
 - Python 3.10+
 - Windows 10/11 (for DPI awareness and WASAPI loopback)
-- Running ASR service (Vosk or Parakeet via Docker)
+- Running ASR service (Vosk, Parakeet, or Whisper via Docker)
 
 ## Installation
 
@@ -30,11 +31,53 @@ pip install -r requirements.txt
 
 ## Usage
 
+### System Tray App (Recommended)
+
+The easiest way to use Live Captions is via the system tray app:
+
+```bash
+# Run the tray app
+python live_captions_tray.py
+
+# Or with auto-start
+python live_captions_tray.py --auto-start
+```
+
+**Tray Controls:**
+| Action | Description |
+|--------|-------------|
+| **Double-click** tray icon | Start/Stop with Whisper (default) |
+| **Right-click** tray icon | Menu to select backend & audio source |
+
+**Right-click Menu:**
+- 🎙️ **Whisper** (GPU, Multilingual)
+- 🎙️ **Parakeet** (GPU, English)
+- 🎙️ **Vosk** (CPU, Lightweight)
+- 🔊 **System Audio** / 🎤 **Microphone** toggle
+
+### Build Windows Executable
+
+To create a standalone `.exe` file:
+
+```bash
+# Run the build script
+scripts\build_tray.bat
+```
+
+This creates `dist/Live Captions.exe` - a single executable you can:
+- Add to Windows startup
+- Pin to taskbar
+- Put on your desktop
+
+### Command Line Usage
+
 ```bash
 # Make sure ASR service is running
-docker compose up -d vosk-asr       # CPU-based (default)
+docker compose up -d whisper-asr     # GPU-based (recommended)
 # OR
-docker compose up -d parakeet-asr   # GPU-based
+docker compose up -d parakeet-asr    # GPU-based (English)
+# OR
+docker compose up -d vosk-asr        # CPU-based
 
 # Run with microphone (default)
 python live_captions.py
@@ -79,22 +122,30 @@ BACKEND = "vosk"      # CPU-based, port 8001
 
 ```
 live-captions/
-├── live_captions.py      # Main entry point
+├── live_captions.py          # Main caption window entry point
+├── live_captions_tray.py     # System tray app entry point
 ├── requirements.txt
 ├── README.md
-└── src/
-    ├── __init__.py       # Package init (version)
-    ├── audio/            # Audio capture module
+├── icon.ico                  # Application icon
+├── Live Captions Tray.spec   # PyInstaller spec file
+├── .gitignore
+├── scripts/                  # Windows batch scripts
+│   ├── run.bat               # Run caption window
+│   ├── run_tray.bat          # Run tray app (development)
+│   └── build_tray.bat        # Build Windows executable
+└── src/                      # Source modules
+    ├── __init__.py
+    ├── audio/                # Audio capture module
     │   ├── __init__.py
-    │   ├── capture.py    # MicrophoneCapture, SystemAudioCapture
-    │   ├── devices.py    # Device listing
-    │   └── utils.py      # Resampling, stereo-to-mono
-    ├── ui/               # UI module
+    │   ├── capture.py        # MicrophoneCapture, SystemAudioCapture
+    │   ├── devices.py        # Device listing
+    │   └── utils.py          # Resampling, stereo-to-mono
+    ├── ui/                   # UI module
     │   ├── __init__.py
-    │   └── window.py     # CaptionWindow overlay
-    └── asr/              # ASR client module
+    │   └── window.py         # CaptionWindow overlay
+    └── asr/                  # ASR client module
         ├── __init__.py
-        └── client.py     # ASRClient WebSocket
+        └── client.py         # ASRClient WebSocket
 ```
 
 ## Architecture

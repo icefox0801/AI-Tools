@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Debug files
+debug_audio_*.wav
+
+# IDE
+.idea/
+*.swp
