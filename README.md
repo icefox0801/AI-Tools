@@ -20,8 +20,8 @@ Docker-based AI services for real-time voice transcription and local LLM.
 |---------|------|--------------|
 | `vosk-asr` | 8001 | Vosk streaming ASR (CPU, lightweight) |
 | `parakeet-asr` | 8002 | NVIDIA NeMo Parakeet (GPU, high accuracy) |
-| `whisper-asr` | 8004 | OpenAI Whisper Large V3 Turbo (GPU, multilingual) |
-| `text-refiner` | 8003 | Punctuation & ASR error correction |
+| `whisper-asr` | 8003 | OpenAI Whisper Large V3 Turbo (GPU, multilingual) |
+| `text-refiner` | 8010 | Punctuation & ASR error correction |
 | `ollama` | 11434 | Local LLM runtime |
 | `lobe-chat` | 3210 | Chat UI for Ollama |
 | `pyspark-notebook` | 8888 | Jupyter with ML tools |
@@ -37,7 +37,7 @@ docker compose up -d whisper-asr   # GPU-based (multilingual)
 # Check service health
 curl http://localhost:8001/health  # Vosk ASR
 curl http://localhost:8002/health  # Parakeet ASR
-curl http://localhost:8004/health  # Whisper ASR
+curl http://localhost:8003/health  # Whisper ASR
 ```
 
 ## Live Captions (Desktop App)

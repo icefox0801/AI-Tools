@@ -7,24 +7,27 @@ AI-Tools is a Docker-based suite of AI services for voice transcription with a f
 ## Architecture
 
 ```
-┌─────────────────────┐     WebSocket      ┌─────────────────────┐
-│   Client Apps       │ ──────────────────▶│   ASR Services      │
-│                     │    Audio Stream    │                     │
-│  • Live Captions    │ ◀──────────────────│  • Vosk (CPU:8001)  │
-│    (Desktop)        │    {id, text}      │  • Parakeet (:8002) │
-└─────────────────────┘                    │  • Whisper (:8004)  │
-                                           │                     │
-                                           │  Text Refiner:8003  │
-                                           └─────────────────────┘
++---------------------+     WebSocket      +---------------------+
+|   Client Apps       | -----------------> |   ASR Services      |
+|                     |    Audio Stream    |                     |
+|  - Live Captions    | <----------------- |  - Vosk (CPU:8001)  |
+|    (Desktop)        |    {id, text}      |  - Parakeet (:8002) |
++---------------------+                    |  - Whisper (:8003)  |
+                                           |                     |
+                                           |  Text Refiner:8010  |
+                                           +---------------------+
 ```
 
 ## Key Components
 
 ### ASR Services (Docker)
 - **Vosk** (`services/vosk/`) - CPU-based, lightweight, port 8001
-- **Parakeet** (`services/parakeet/`) - GPU-based (NVIDIA NeMo), port 8002
-- **Whisper** (`services/whisper/`) - GPU-based (OpenAI Whisper Large V3 Turbo), port 8004
-- **Text Refiner** (`services/text-refiner/`) - Punctuation & ASR correction, port 8003
+- **Parakeet** (`services/parakeet/`) - GPU-based (NVIDIA NeMo TDT), port 8002
+  - Uses TDT (Token-and-Duration Transducer) model - better for streaming
+  - 300ms sliding window overlap for word boundary handling
+  - FP16 inference enabled for performance
+- **Whisper** (`services/whisper/`) - GPU-based (OpenAI Whisper Large V3 Turbo), port 8003
+- **Text Refiner** (`services/text-refiner/`) - Punctuation & ASR correction, port 8010
 
 ### Client Applications
 - **Live Captions** (`apps/live-captions/`) - Desktop overlay with microphone capture
@@ -112,7 +115,7 @@ AI-Tools/
 │       └── requirements.txt
 ├── services/
 │   ├── vosk/                # CPU ASR service
-│   ├── parakeet/            # GPU ASR service (NVIDIA NeMo)
+│   ├── parakeet/            # GPU ASR service (NVIDIA NeMo TDT)
 │   ├── whisper/             # GPU ASR service (OpenAI Whisper)
 │   └── text-refiner/        # Punctuation & correction service
 └── shared/
@@ -123,3 +126,15 @@ AI-Tools/
     │   └── backends.py      # BACKEND selection
     └── text_refiner/        # Text refiner client module
 ```
+
+## Parakeet Model Configuration
+
+Parakeet model can be configured via `.env` or docker-compose.yaml:
+```bash
+PARAKEET_MODEL=nvidia/parakeet-tdt-1.1b  # TDT - better for streaming
+PARAKEET_MODEL=nvidia/parakeet-rnnt-1.1b # RNNT - alternative model
+PARAKEET_FP16=true                        # Enable FP16 for TDT (required)
+```
+
+TDT (Token-and-Duration Transducer) is preferred for streaming because it handles
+chunk boundaries better than RNNT.

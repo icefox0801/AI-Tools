@@ -7,8 +7,8 @@
 #   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, slower (FP32 required, ~8GB VRAM)
 #   nvidia/parakeet-ctc-1.1b   - CTC: Balanced speed/accuracy (FP16 OK, ~4GB VRAM)
 x-parakeet-config: &parakeet-config
-  model: nvidia/parakeet-rnnt-1.1b
-  fp16: "false"  # Set to "true" for TDT/CTC, "false" for RNNT
+  model: nvidia/parakeet-tdt-1.1b
+  fp16: "true"  # Set to "true" for TDT/CTC, "false" for RNNT
 
 services:
   # Ollama Service: Local LLM runtime (auto-pulls models on startup)
@@ -134,8 +134,8 @@ services:
     volumes:
       - parakeet-model-data:/root/.cache/huggingface  # Cache HuggingFace/NGC models (15GB cached)
     environment:
-      - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-rnnt-1.1b}
-      - USE_FP16=${PARAKEET_FP16:-false}
+      - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-tdt-1.1b}
+      - USE_FP16=${PARAKEET_FP16:-true}
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
       - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
@@ -169,7 +169,7 @@ services:
     depends_on:
       - text-refiner
     ports:
-      - "8004:8000"                                 # Port mapping: Whisper ASR API endpoint
+      - "8003:8000"                                 # Port mapping: Whisper ASR API endpoint
     volumes:
       - whisper-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (~3GB)
     environment:
@@ -205,7 +205,7 @@ services:
     image: text-refiner:latest
     container_name: text-refiner
     ports:
-      - "8003:8000"                                 # Port mapping: Text Refiner API endpoint
+      - "8010:8000"                                 # Port mapping: Text Refiner API endpoint
     volumes:
       - text-refiner-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (T5, etc.)
     environment:

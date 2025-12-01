@@ -29,7 +29,7 @@ Audio → ASR Service → Text Refiner Service → Client
 
 ```bash
 # Full processing
-curl -X POST http://localhost:8003/process \
+curl -X POST http://localhost:8010/process \
   -H "Content-Type: application/json" \
   -d '{"text": "i went to the store yesterday and brought some apples"}'
 
@@ -43,7 +43,7 @@ curl -X POST http://localhost:8003/process \
 # }
 
 # Punctuation only (faster)
-curl -X POST http://localhost:8003/punctuate \
+curl -X POST http://localhost:8010/punctuate \
   -H "Content-Type: application/json" \
   -d '{"text": "hello world how are you"}'
 ```
@@ -54,7 +54,7 @@ curl -X POST http://localhost:8003/punctuate \
 import websockets
 import json
 
-async with websockets.connect("ws://localhost:8003/stream") as ws:
+async with websockets.connect("ws://localhost:8010/stream") as ws:
     # Send config
     await ws.send(json.dumps({"punctuate": True, "correct": True}))
     config_response = await ws.recv()

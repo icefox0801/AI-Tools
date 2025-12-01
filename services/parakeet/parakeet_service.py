@@ -1,13 +1,16 @@
 """
-NVIDIA NeMo Parakeet ASR Service v3.2
-GPU-accelerated speech recognition using Parakeet TDT with word timestamps
+NVIDIA NeMo Parakeet ASR Service v3.4
+GPU-accelerated speech recognition with word timestamps
 
-Key improvements:
-- Uses word-level timestamps from Parakeet TDT (no overlap needed)
-- Text refinement via external text-refiner service (punctuation + spelling correction)
+Supports all Parakeet models:
+- nvidia/parakeet-tdt-1.1b  (TDT: best for streaming)
+- nvidia/parakeet-rnnt-1.1b (RNNT: highest accuracy)
+- nvidia/parakeet-ctc-1.1b  (CTC: balanced)
+
+Features:
+- Sliding window overlap (300ms) to prevent word fragmentation
+- Text refinement via text-refiner service (punctuation + correction)
 - Fallback to pause-based punctuation if text-refiner unavailable
-- Text buffering for better punctuation context (6+ words)
-- Continuous audio accumulation with timestamp-based deduplication
 """
 
 import io
@@ -16,15 +19,12 @@ import json
 import logging
 import tempfile
 import time
-import hashlib
-from typing import Optional, Dict, List, Tuple
-from dataclasses import dataclass
+from typing import Optional, List
 
 import numpy as np
 import soundfile as sf
 import torch
 from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 import uvicorn
 
 # Import shared text refiner module
@@ -34,100 +34,62 @@ from shared.text_refiner import get_client, check_text_refiner, refine_text, cap
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ============== GPU OPTIMIZATION SETTINGS ==============
+# ============== CONFIGURATION ==============
 MODEL_NAME = os.getenv("PARAKEET_MODEL", "nvidia/parakeet-tdt-1.1b")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
 USE_FP16 = os.getenv("USE_FP16", "true").lower() == "true"
-USE_CUDNN_BENCHMARK = True
 
-# Punctuation thresholds (in seconds) - for pause-based mode
-# Based on research: short pause (0.3-0.8s) = comma, long pause (>0.8s) = period
-# However, TDT timestamps may have gaps between words even in continuous speech
-# So we use slightly higher thresholds to account for natural word spacing
-COMMA_PAUSE_THRESHOLD = 0.5   # Pause > 0.5s → comma
-PERIOD_PAUSE_THRESHOLD = 1.0  # Pause > 1.0s → period
+# Streaming settings
+DEFAULT_CHUNK_MS = 500
+MIN_CHUNK_MS = 300
+TRANSCRIBE_INTERVAL_MS = 400
 
-# Text buffering for punctuation
-MIN_WORDS_FOR_PUNCTUATION = 6  # Buffer at least 6 words before running refiner
+# Sliding window overlap (prevents word fragmentation at chunk boundaries)
+OVERLAP_MS = 300
+OVERLAP_BYTES = int(OVERLAP_MS * 16 * 2)  # 300ms @ 16kHz, int16
 
-# Torch compile settings (PyTorch 2.x JIT compiler for ~1.5-2x speedup)
-USE_TORCH_COMPILE = os.getenv("USE_TORCH_COMPILE", "false").lower() == "true"
+# Punctuation thresholds (fallback when text-refiner unavailable)
+COMMA_PAUSE_THRESHOLD = 0.5
+PERIOD_PAUSE_THRESHOLD = 1.0
+MIN_WORDS_FOR_PUNCTUATION = 6
 
-# Get shared text refiner client
+# Text refiner client
 text_refiner = get_client()
 
+# CUDA optimizations
 if DEVICE == "cuda":
-    torch.backends.cudnn.benchmark = USE_CUDNN_BENCHMARK
+    torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.enabled = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     torch.cuda.empty_cache()
-    logger.info(f"CUDA optimizations enabled: FP16={USE_FP16}, cuDNN benchmark={USE_CUDNN_BENCHMARK}")
+    logger.info(f"CUDA optimizations enabled: FP16={USE_FP16}")
 
+# FastAPI app
 app = FastAPI(
     title="Parakeet ASR Service",
-    description="GPU-accelerated streaming ASR with word timestamps and pause-based punctuation",
-    version="3.0.0"
+    description="GPU-accelerated streaming ASR with word timestamps",
+    version="3.4.0"
 )
 
-# Global model instance
+# Global model
 asr_model = None
 
-# Session storage
-audio_sessions: Dict[str, dict] = {}
-SESSION_TIMEOUT = 60
 
-
-@dataclass
-class TimestampedWord:
-    """Word with timing information"""
-    word: str
-    start: float  # Start time in seconds (relative to session start)
-    end: float    # End time in seconds
-
-
-def cleanup_old_sessions():
-    """Remove sessions that haven't been accessed recently"""
-    current_time = time.time()
-    expired = [sid for sid, data in audio_sessions.items() 
-               if current_time - data['last_access'] > SESSION_TIMEOUT]
-    for sid in expired:
-        logger.info(f"Cleaning up expired session: {sid[:8]}...")
-        del audio_sessions[sid]
-
-
-def get_or_create_session(session_id: str) -> dict:
-    """Get existing session or create new one"""
-    cleanup_old_sessions()
-    
-    if session_id not in audio_sessions:
-        audio_sessions[session_id] = {
-            'audio': bytearray(),           # Full audio buffer for session
-            'last_access': time.time(),
-            'words': [],                    # List of TimestampedWord objects
-            'audio_offset': 0.0,            # Total audio duration processed so far
-            'last_transcribed_end': 0.0,    # End time of last transcribed word
-        }
-        logger.info(f"Created new session: {session_id[:8]}...")
-    else:
-        audio_sessions[session_id]['last_access'] = time.time()
-    
-    return audio_sessions[session_id]
-
+# ============== MODEL LOADING ==============
 
 def load_model():
-    """Load the Parakeet TDT model"""
+    """Load NeMo Parakeet model (TDT/RNNT/CTC)"""
     global asr_model
     
     if asr_model is not None:
         return asr_model
     
-    logger.info(f"Loading Parakeet model: {MODEL_NAME}")
+    logger.info(f"Loading model: {MODEL_NAME}")
     logger.info(f"Device: {DEVICE}")
     
     if DEVICE == "cuda":
-        logger.info(f"CUDA Device: {torch.cuda.get_device_name(0)}")
+        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
     
     try:
         import nemo.collections.asr as nemo_asr
@@ -139,45 +101,35 @@ def load_model():
         if DEVICE == "cuda" and USE_FP16:
             try:
                 asr_model = asr_model.half()
-                logger.info("ASR model converted to FP16")
+                logger.info("Model converted to FP16")
             except Exception as e:
                 logger.warning(f"FP16 conversion failed: {e}")
         
-        # Apply torch.compile() for faster inference (PyTorch 2.x)
-        if USE_TORCH_COMPILE and DEVICE == "cuda":
-            try:
-                logger.info("Applying torch.compile() optimization...")
-                # Use 'reduce-overhead' mode for best latency
-                asr_model = torch.compile(asr_model, mode="reduce-overhead")
-                logger.info("torch.compile() applied successfully")
-            except Exception as e:
-                logger.warning(f"torch.compile() failed (will use eager mode): {e}")
-        
-        # Warmup
+        # GPU warmup
         if DEVICE == "cuda":
             logger.info("Warming up GPU...")
             try:
-                dummy_audio = torch.randn(1, 16000).to(DEVICE)
+                dummy = torch.randn(1, 16000).to(DEVICE)
                 if USE_FP16:
-                    dummy_audio = dummy_audio.half()
+                    dummy = dummy.half()
                 with torch.no_grad():
-                    _ = asr_model.preprocessor(input_signal=dummy_audio, length=torch.tensor([16000]).to(DEVICE))
+                    _ = asr_model.preprocessor(input_signal=dummy, length=torch.tensor([16000]).to(DEVICE))
                 torch.cuda.synchronize()
                 logger.info("GPU warmup complete")
             except Exception as e:
                 logger.warning(f"GPU warmup skipped: {e}")
             
-            mem_allocated = torch.cuda.memory_allocated() / 1024**3
-            mem_reserved = torch.cuda.memory_reserved() / 1024**3
-            logger.info(f"GPU Memory: {mem_allocated:.2f}GB allocated, {mem_reserved:.2f}GB reserved")
+            mem = torch.cuda.memory_allocated() / 1024**3
+            logger.info(f"GPU Memory: {mem:.2f}GB allocated")
         
-        logger.info(f"ASR model loaded in {'FP16' if USE_FP16 and DEVICE == 'cuda' else 'FP32'} mode")
         return asr_model
         
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         raise
 
+
+# ============== TRANSCRIPTION ==============
 
 def transcribe_with_timestamps(audio_data: bytes, sample_rate: int = 16000) -> List[dict]:
     """
@@ -192,19 +144,18 @@ def transcribe_with_timestamps(audio_data: bytes, sample_rate: int = 16000) -> L
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     try:
-        # Convert raw PCM to float array
+        # Convert PCM to float
         audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
         
-        if len(audio_array) < 1600:  # Less than 0.1 second
+        if len(audio_array) < 1600:  # < 0.1 second
             return []
         
         # Save to temp file (NeMo requires file path)
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-            tmp_path = tmp_file.name
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            tmp_path = f.name
             sf.write(tmp_path, audio_array, sample_rate)
         
         try:
-            # Transcribe with timestamps enabled
             with torch.no_grad():
                 if DEVICE == "cuda":
                     torch.cuda.synchronize()
@@ -224,44 +175,36 @@ def transcribe_with_timestamps(audio_data: bytes, sample_rate: int = 16000) -> L
                         verbose=False
                     )
             
-            # Extract word timestamps from hypothesis
+            # Extract word timestamps
             if results and len(results) > 0:
                 hypothesis = results[0]
                 
                 if hasattr(hypothesis, 'timestamp') and hypothesis.timestamp:
                     word_timestamps = hypothesis.timestamp.get('word', [])
-                    
-                    words_with_times = []
+                    words = []
                     for wt in word_timestamps:
                         if isinstance(wt, dict):
-                            # Use 'start' and 'end' which are in seconds
-                            # (not 'start_offset'/'end_offset' which are in frames)
-                            words_with_times.append({
+                            words.append({
                                 'word': wt.get('word', wt.get('char', '')),
                                 'start': wt.get('start', 0),
                                 'end': wt.get('end', 0)
                             })
                         elif hasattr(wt, 'word'):
-                            words_with_times.append({
+                            words.append({
                                 'word': wt.word,
                                 'start': getattr(wt, 'start', 0),
                                 'end': getattr(wt, 'end', 0)
                             })
-                    
-                    return words_with_times
+                    return words
                 
-                # Fallback: no timestamps, just return text
+                # Fallback: no timestamps
                 if hasattr(hypothesis, 'text') and hypothesis.text:
-                    audio_duration = len(audio_array) / sample_rate
+                    duration = len(audio_array) / sample_rate
                     words = hypothesis.text.strip().split()
                     if words:
-                        # Estimate timing evenly distributed
-                        word_duration = audio_duration / len(words)
-                        return [{
-                            'word': w,
-                            'start': i * word_duration,
-                            'end': (i + 1) * word_duration
-                        } for i, w in enumerate(words)]
+                        word_dur = duration / len(words)
+                        return [{'word': w, 'start': i * word_dur, 'end': (i + 1) * word_dur} 
+                                for i, w in enumerate(words)]
             
             return []
             
@@ -273,74 +216,45 @@ def transcribe_with_timestamps(audio_data: bytes, sample_rate: int = 16000) -> L
         return []
 
 
-def apply_pause_punctuation(words: List[dict], debug: bool = False) -> str:
-    """
-    Apply punctuation based on inter-word pauses.
-    
-    Rules:
-    - pause > PERIOD_PAUSE_THRESHOLD → period (end of sentence)
-    - pause > COMMA_PAUSE_THRESHOLD → comma (clause break)
-    - Otherwise no punctuation
-    
-    Args:
-        words: List of {'word': str, 'start': float, 'end': float}
-        debug: If True, log pause durations
-    
-    Returns:
-        Punctuated text string
-    """
+def apply_pause_punctuation(words: List[dict]) -> str:
+    """Apply punctuation based on inter-word pauses (fallback mode)."""
     if not words:
         return ""
     
-    result_parts = []
-    pause_info = []  # For debugging
-    
-    for i, word_info in enumerate(words):
-        word = word_info['word']
+    result = []
+    for i, w in enumerate(words):
+        result.append(w['word'])
         
-        # Add the word
-        result_parts.append(word)
-        
-        # Calculate pause after this word (if not last word)
         if i < len(words) - 1:
-            next_word = words[i + 1]
-            pause_duration = next_word['start'] - word_info['end']
-            
-            if debug and pause_duration > 0.1:
-                pause_info.append(f"{word}→{pause_duration:.2f}s")
-            
-            if pause_duration > PERIOD_PAUSE_THRESHOLD:
-                # Long pause → period, capitalize next word
-                result_parts.append('.')
-            elif pause_duration > COMMA_PAUSE_THRESHOLD:
-                # Medium pause → comma
-                result_parts.append(',')
+            pause = words[i + 1]['start'] - w['end']
+            if pause > PERIOD_PAUSE_THRESHOLD:
+                result.append('.')
+            elif pause > COMMA_PAUSE_THRESHOLD:
+                result.append(',')
     
-    if debug and pause_info:
-        logger.info(f"Pauses detected: {', '.join(pause_info[:10])}")  # Log first 10
-    
-    # Build final text
+    # Build text with capitalization
     text = ""
-    capitalize_next = True
-    
-    for part in result_parts:
+    cap_next = True
+    for part in result:
         if part in '.?!':
             text = text.rstrip() + part + ' '
-            capitalize_next = True
+            cap_next = True
         elif part == ',':
             text = text.rstrip() + part + ' '
         else:
-            if capitalize_next and part:
+            if cap_next and part:
                 part = part[0].upper() + part[1:] if len(part) > 1 else part.upper()
-                capitalize_next = False
+                cap_next = False
             text += part + ' '
     
     return text.strip()
 
 
+# ============== HTTP ENDPOINTS ==============
+
 @app.on_event("startup")
 async def startup_event():
-    """Load models on startup"""
+    """Load model on startup"""
     try:
         load_model()
         await check_text_refiner()
@@ -350,64 +264,55 @@ async def startup_event():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check"""
     model_loaded = asr_model is not None
-    cuda_available = torch.cuda.is_available()
     
-    gpu_info = {}
-    if cuda_available:
-        gpu_info = {
-            "cuda_device": torch.cuda.get_device_name(0),
-            "memory_allocated_gb": round(torch.cuda.memory_allocated() / 1024**3, 2),
-            "memory_reserved_gb": round(torch.cuda.memory_reserved() / 1024**3, 2),
-            "fp16_enabled": USE_FP16,
-        }
-    
-    return {
+    info = {
         "status": "healthy" if model_loaded else "loading",
         "model": MODEL_NAME,
         "model_loaded": model_loaded,
         "device": DEVICE,
-        "cuda_available": cuda_available,
-        "text_refiner_enabled": text_refiner.enabled,
         "text_refiner_available": text_refiner.available,
-        "text_refiner_url": text_refiner.url if text_refiner.enabled else None,
-        **gpu_info
     }
+    
+    if torch.cuda.is_available():
+        info.update({
+            "cuda_device": torch.cuda.get_device_name(0),
+            "memory_gb": round(torch.cuda.memory_allocated() / 1024**3, 2),
+            "fp16": USE_FP16,
+        })
+    
+    return info
 
 
 @app.get("/info")
 async def model_info():
-    """Get model information"""
+    """Service information"""
     return {
         "model_name": MODEL_NAME,
         "device": DEVICE,
-        "cuda_available": torch.cuda.is_available(),
         "torch_version": torch.__version__,
+        "streaming": {
+            "api_version": "v3.4",
+            "overlap_ms": OVERLAP_MS,
+            "default_chunk_ms": DEFAULT_CHUNK_MS,
+            "transcribe_interval_ms": TRANSCRIBE_INTERVAL_MS,
+        },
         "text_refiner": {
             "enabled": text_refiner.enabled,
             "available": text_refiner.available,
             "url": text_refiner.url,
-            "timeout_sec": text_refiner.timeout,
         },
-        "punctuation": {
-            "comma_threshold_sec": COMMA_PAUSE_THRESHOLD,
-            "period_threshold_sec": PERIOD_PAUSE_THRESHOLD,
-            "min_words_for_refiner": MIN_WORDS_FOR_PUNCTUATION,
-        }
     }
 
 
 @app.post("/transcribe")
-async def transcribe_audio(
-    file: UploadFile = File(...),
-    language: Optional[str] = "en"
-):
-    """Transcribe an audio file with pause-based punctuation"""
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe an audio file"""
     try:
         audio_data = await file.read()
         
-        # Try to read as audio file
+        # Try to decode audio file
         try:
             audio_io = io.BytesIO(audio_data)
             audio_array, sr = sf.read(audio_io)
@@ -423,205 +328,123 @@ async def transcribe_audio(
         words = transcribe_with_timestamps(audio_data)
         text = apply_pause_punctuation(words)
         
-        return {
-            "text": text,
-            "words": words,
-            "language": language,
-            "model": MODEL_NAME
-        }
+        return {"text": text, "words": words, "model": MODEL_NAME}
         
     except Exception as e:
-        logger.error(f"Error processing file: {e}")
+        logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============================================================================
-# UNIFIED STREAMING API v3.0
-# ============================================================================
-# Protocol:
-# 1. Client connects to /stream WebSocket
-# 2. Client sends config JSON: {"chunk_ms": 300}
-# 3. Client streams raw audio bytes (16kHz, mono, int16 PCM)
-# 4. Server buffers audio and transcribes at chunk_ms intervals
-# 5. Server sends: {"id": "s1", "text": "..."}
-#
-# Client logic: if ID exists → replace, if not → append
-# ============================================================================
-
-DEFAULT_CHUNK_MS = 500  # Default chunk duration - longer for better accuracy
-MIN_CHUNK_MS = 300      # Minimum chunk duration
-TRANSCRIBE_INTERVAL_MS = 400  # How often to transcribe (independent of chunk_ms)
-
+# ============== WEBSOCKET STREAMING ==============
 
 @app.websocket("/stream")
 async def websocket_stream(websocket: WebSocket):
     """
-    Unified WebSocket streaming endpoint with segment IDs.
-    
-    Architecture:
-    - Audio receiving runs continuously (never blocked by transcription)
-    - Transcription runs in background thread pool (non-blocking)
-    - Results are sent back asynchronously
+    Streaming transcription endpoint.
     
     Protocol:
-    1. First message: JSON config {"chunk_ms": 500}
-    2. Then: raw audio bytes (16kHz, mono, int16 PCM)
+    1. Send config: {"chunk_ms": 500}
+    2. Stream audio: raw PCM bytes (16kHz, mono, int16)
+    3. Receive: {"id": "s0", "text": "..."}
     
-    Server responses:
-    - {"id": "s0", "text": "..."} - partial (replace by ID)
-    - {"id": "s1", "text": "..."} - finalized (new segment)
-    
-    Client logic: if ID exists → replace text, if not → append new segment
+    Client: if id exists → replace, else → append
     """
     await websocket.accept()
-    logger.info("WebSocket connection established (Unified API v3.2 - text refiner)")
+    logger.info("WebSocket connected (API v3.4)")
     
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     
-    # Thread pool for transcription (non-blocking)
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="transcribe")
+    executor = ThreadPoolExecutor(max_workers=1)
     
-    # Configuration
+    # State
     chunk_ms = DEFAULT_CHUNK_MS
-    configured = False
-    
-    # Shared state with lock for thread safety
-    audio_lock = asyncio.Lock()
-    state_lock = asyncio.Lock()
-    
-    # Audio buffer - continuously accumulated, never lost
     audio_buffer = bytearray()
-    audio_buffer_time = 0.0  # Total time of audio in buffer
-    
-    # Transcription state
-    transcribed_words = []  # Words for CURRENT segment only
-    last_transcribe_time = time.time()
-    last_speech_time = time.time()
-    segment_start_time = time.time()
-    segment_counter = 0
-    current_segment_id = "s0"
-    
-    # Segment finalization settings
-    PAUSE_CUT_THRESHOLD = 0.4
-    MIN_WORDS_BEFORE_CUT = 5
-    MAX_SEGMENT_WORDS = 20
-    MAX_SEGMENT_DURATION = 8.0
-    SILENCE_THRESHOLD_SEC = 1.5
-    
-    # Sliding window punctuation settings
-    MIN_WORDS_FOR_PUNCTUATION = 6  # Minimum words to use text refiner
-    
+    overlap_buffer = bytearray()
+    last_words_from_overlap = []
+    transcribed_words = []
+    output_counter = 0
+    segment_start = time.time()
+    last_speech = time.time()
     running = True
-    transcription_in_progress = False
-    
-    # Message queue for sending results back
+    transcribing = False
     send_queue = asyncio.Queue()
     
-    output_segment_counter = 0  # Counter for output segments
+    # Segment settings
+    MAX_WORDS = 20
+    MAX_DURATION = 8.0
+    SILENCE_THRESHOLD = 1.5
+    PAUSE_CUT = 0.4
+    MIN_WORDS_CUT = 5
     
-    def find_pause_cut_point(words: List[dict]) -> int:
-        """Find the best point to cut the segment based on pauses."""
-        if len(words) < MIN_WORDS_BEFORE_CUT:
+    def find_cut_point(words):
+        if len(words) < MIN_WORDS_CUT:
             return -1
-        
-        for i in range(len(words) - 2, MIN_WORDS_BEFORE_CUT - 2, -1):
+        for i in range(len(words) - 2, MIN_WORDS_CUT - 2, -1):
             if i + 1 < len(words):
                 pause = words[i + 1]['start'] - words[i]['end']
-                if pause >= PAUSE_CUT_THRESHOLD:
+                if pause >= PAUSE_CUT:
                     return i + 1
         return -1
     
-    def do_transcription(audio_bytes: bytes) -> List[dict]:
-        """Run transcription in thread pool (blocking but doesn't block event loop)."""
-        return transcribe_with_timestamps(audio_bytes)
-    
-    async def process_transcription_result(chunk_words: List[dict], is_final: bool = False):
-        """Process transcription results with text-refiner punctuation."""
-        nonlocal transcribed_words, segment_counter, current_segment_id
-        nonlocal last_speech_time, segment_start_time
-        nonlocal output_segment_counter
+    async def process_result(chunk_words, is_final=False):
+        nonlocal transcribed_words, output_counter, segment_start, last_speech
         
         if chunk_words:
-            # Adjust timestamps relative to segment
-            time_offset = transcribed_words[-1]['end'] if transcribed_words else 0.0
+            offset = transcribed_words[-1]['end'] if transcribed_words else 0.0
             for w in chunk_words:
-                w['start'] += time_offset
-                w['end'] += time_offset
+                w['start'] += offset
+                w['end'] += offset
                 transcribed_words.append(w)
-            
-            last_speech_time = time.time()
-            logger.debug(f"Added {len(chunk_words)} words (total: {len(transcribed_words)})")
+            last_speech = time.time()
         
         if not transcribed_words:
             return
         
-        # Check for segment finalization
-        segment_duration = time.time() - segment_start_time
-        word_count = len(transcribed_words)
-        cut_point = find_pause_cut_point(transcribed_words)
+        duration = time.time() - segment_start
+        cut = find_cut_point(transcribed_words)
         
-        should_finalize = False
-        if is_final:
-            should_finalize = True
-        elif word_count >= MAX_SEGMENT_WORDS:
-            should_finalize = True
-        elif segment_duration >= MAX_SEGMENT_DURATION:
-            should_finalize = True
-        elif cut_point > 0 and word_count >= MIN_WORDS_BEFORE_CUT + 3:
-            should_finalize = True
+        should_finalize = (is_final or 
+                          len(transcribed_words) >= MAX_WORDS or 
+                          duration >= MAX_DURATION or
+                          (cut > 0 and len(transcribed_words) >= MIN_WORDS_CUT + 3))
         
         if should_finalize:
-            # Finalize current segment
-            if cut_point > 0 and cut_point < len(transcribed_words):
-                words_to_finalize = transcribed_words[:cut_point]
-                words_to_keep = transcribed_words[cut_point:]
+            if 0 < cut < len(transcribed_words):
+                to_finalize = transcribed_words[:cut]
+                to_keep = transcribed_words[cut:]
             else:
-                words_to_finalize = transcribed_words
-                words_to_keep = []
+                to_finalize = transcribed_words
+                to_keep = []
             
-            if words_to_finalize:
-                # Get raw text for this segment
-                raw_text = ' '.join(w['word'] for w in words_to_finalize)
+            if to_finalize:
+                raw = ' '.join(w['word'] for w in to_finalize)
                 
-                # Use text-refiner for punctuation and correction
-                if text_refiner.available and len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
-                    punctuated_text = await refine_text(raw_text)
+                if text_refiner.available and len(to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
+                    text = await refine_text(raw)
                 else:
-                    # Fallback: capitalize + period
-                    punctuated_text = capitalize_text(raw_text)
-                    if is_final or len(words_to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
-                        punctuated_text += '.'
+                    text = capitalize_text(raw)
+                    if is_final or len(to_finalize) >= MIN_WORDS_FOR_PUNCTUATION:
+                        text += '.'
                 
-                # Output the punctuated segment
-                await send_queue.put({"id": f"s{output_segment_counter}", "text": punctuated_text})
-                logger.info(f"Finalized [s{output_segment_counter}] ({len(words_to_finalize)} words): {punctuated_text[:60]}...")
-                
-                output_segment_counter += 1
-                segment_counter += 1
-                current_segment_id = f"s{segment_counter}"
-                segment_start_time = time.time()
+                await send_queue.put({"id": f"s{output_counter}", "text": text})
+                output_counter += 1
+                segment_start = time.time()
             
-            # Update words to keep for next segment
-            if words_to_keep:
-                time_offset = words_to_keep[0]['start']
-                for w in words_to_keep:
-                    w['start'] -= time_offset
-                    w['end'] -= time_offset
-                transcribed_words = words_to_keep
+            if to_keep:
+                offset = to_keep[0]['start']
+                for w in to_keep:
+                    w['start'] -= offset
+                    w['end'] -= offset
+                transcribed_words = to_keep
             else:
                 transcribed_words = []
         else:
-            # Send partial update - just show current segment being built
-            partial_id = f"s{output_segment_counter}"
-            current_text = ' '.join(w['word'] for w in transcribed_words)
-            display_text = capitalize_text(current_text)
-            await send_queue.put({"id": partial_id, "text": display_text})
+            text = capitalize_text(' '.join(w['word'] for w in transcribed_words))
+            await send_queue.put({"id": f"s{output_counter}", "text": text})
     
     async def receive_audio():
-        """Task: Receive audio from websocket (never blocks on transcription)."""
-        nonlocal running, configured, chunk_ms, audio_buffer, transcription_in_progress
-        nonlocal last_transcribe_time, last_speech_time
+        nonlocal running, chunk_ms, audio_buffer
         
         while running:
             try:
@@ -631,32 +454,13 @@ async def websocket_stream(websocket: WebSocket):
                     try:
                         msg = json.loads(data["text"])
                         if "chunk_ms" in msg:
-                            chunk_ms = max(MIN_CHUNK_MS, msg.get("chunk_ms", DEFAULT_CHUNK_MS))
-                            configured = True
-                            logger.info(f"Configured: chunk_ms={chunk_ms}")
-                        elif msg.get("action") == "clear":
-                            async with audio_lock:
-                                audio_buffer = bytearray()
-                            async with state_lock:
-                                nonlocal transcribed_words, segment_counter, current_segment_id
-                                transcribed_words = []
-                                segment_counter += 1
-                                current_segment_id = f"s{segment_counter}"
-                            await send_queue.put({"id": current_segment_id, "text": ""})
-                            logger.info("Session cleared")
+                            chunk_ms = max(MIN_CHUNK_MS, msg["chunk_ms"])
                     except json.JSONDecodeError:
                         pass
                     continue
                 
-                if "bytes" in data:
-                    audio_data = data["bytes"]
-                    if not configured:
-                        configured = True
-                        logger.info(f"Auto-configured: chunk_ms={chunk_ms}")
-                    
-                    if audio_data:
-                        async with audio_lock:
-                            audio_buffer.extend(audio_data)
+                if "bytes" in data and data["bytes"]:
+                    audio_buffer.extend(data["bytes"])
                             
             except WebSocketDisconnect:
                 running = False
@@ -667,53 +471,69 @@ async def websocket_stream(websocket: WebSocket):
                 break
     
     async def transcription_loop():
-        """Task: Periodically transcribe accumulated audio."""
-        nonlocal running, transcription_in_progress, audio_buffer
-        nonlocal last_transcribe_time, last_speech_time
+        nonlocal running, transcribing, audio_buffer, overlap_buffer, last_words_from_overlap
+        nonlocal transcribed_words, last_speech
         
         loop = asyncio.get_event_loop()
-        min_audio_bytes = int(0.3 * 16000 * 2)  # 300ms minimum
+        min_bytes = int(0.3 * 16000 * 2)
         
         while running:
             await asyncio.sleep(TRANSCRIBE_INTERVAL_MS / 1000.0)
             
-            if transcription_in_progress:
+            if transcribing or len(audio_buffer) < min_bytes:
                 continue
             
-            # Get audio to transcribe
-            async with audio_lock:
-                if len(audio_buffer) < min_audio_bytes:
-                    continue
-                audio_bytes = bytes(audio_buffer)
-                audio_buffer = bytearray()  # Clear buffer
+            new_audio = bytes(audio_buffer)
+            audio_buffer = bytearray()
             
-            audio_duration = len(audio_bytes) / (16000 * 2)
-            logger.debug(f"Transcribing {audio_duration:.2f}s of audio")
+            # Sliding window: combine overlap + new
+            if overlap_buffer:
+                combined = bytes(overlap_buffer) + new_audio
+                overlap_dur = len(overlap_buffer) / (16000 * 2)
+            else:
+                combined = new_audio
+                overlap_dur = 0.0
             
-            transcription_in_progress = True
+            transcribing = True
             try:
-                # Run transcription in thread pool (non-blocking)
-                chunk_words = await loop.run_in_executor(executor, do_transcription, audio_bytes)
+                words = await loop.run_in_executor(executor, transcribe_with_timestamps, combined)
                 
-                # Process results
-                async with state_lock:
-                    await process_transcription_result(chunk_words)
+                # Deduplicate overlap region
+                if overlap_dur > 0 and words and last_words_from_overlap:
+                    start_idx = 0
+                    for i, w in enumerate(words):
+                        if w['start'] >= overlap_dur - 0.1:
+                            start_idx = i
+                            break
+                        if last_words_from_overlap and w['word'].lower() == last_words_from_overlap[-1].lower():
+                            start_idx = i + 1
+                    
+                    if start_idx > 0:
+                        words = words[start_idx:]
+                        for w in words:
+                            w['start'] = max(0, w['start'] - overlap_dur)
+                            w['end'] = max(0, w['end'] - overlap_dur)
                 
-                last_transcribe_time = time.time()
+                # Save overlap for next iteration
+                if len(new_audio) >= OVERLAP_BYTES:
+                    overlap_buffer = bytearray(new_audio[-OVERLAP_BYTES:])
+                    last_words_from_overlap = [w['word'] for w in words[-3:]] if words else []
+                else:
+                    overlap_buffer = bytearray(new_audio)
+                    last_words_from_overlap = [w['word'] for w in words] if words else []
                 
-                # Check for silence
-                silence_duration = time.time() - last_speech_time
-                if transcribed_words and silence_duration > SILENCE_THRESHOLD_SEC:
-                    async with state_lock:
-                        await process_transcription_result([], is_final=True)
+                await process_result(words)
+                
+                # Check silence
+                if transcribed_words and time.time() - last_speech > SILENCE_THRESHOLD:
+                    await process_result([], is_final=True)
                         
             except Exception as e:
                 logger.error(f"Transcription error: {e}")
             finally:
-                transcription_in_progress = False
+                transcribing = False
     
     async def send_results():
-        """Task: Send queued results back to client."""
         nonlocal running
         
         while running:
@@ -727,59 +547,33 @@ async def websocket_stream(websocket: WebSocket):
                 break
     
     try:
-        # Run all tasks concurrently
-        receive_task = asyncio.create_task(receive_audio())
-        transcribe_task = asyncio.create_task(transcription_loop())
+        recv_task = asyncio.create_task(receive_audio())
+        trans_task = asyncio.create_task(transcription_loop())
         send_task = asyncio.create_task(send_results())
         
-        # Wait for receive to finish (disconnect)
-        await receive_task
+        await recv_task
         
-        # Final transcription of remaining audio
-        async with audio_lock:
-            if len(audio_buffer) >= int(0.1 * 16000 * 2):
-                audio_bytes = bytes(audio_buffer)
-                audio_buffer = bytearray()
-                loop = asyncio.get_event_loop()
-                chunk_words = await loop.run_in_executor(executor, do_transcription, audio_bytes)
-                async with state_lock:
-                    await process_transcription_result(chunk_words, is_final=True)
+        # Final transcription
+        if len(audio_buffer) >= int(0.1 * 16000 * 2):
+            loop = asyncio.get_event_loop()
+            words = await loop.run_in_executor(executor, transcribe_with_timestamps, bytes(audio_buffer))
+            await process_result(words, is_final=True)
         
-        # Clean up tasks
         running = False
-        transcribe_task.cancel()
+        trans_task.cancel()
         send_task.cancel()
         
-        # Send any remaining messages
         while not send_queue.empty():
             try:
-                msg = send_queue.get_nowait()
-                await websocket.send_json(msg)
+                await websocket.send_json(send_queue.get_nowait())
             except:
                 break
                 
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        running = False
     finally:
         executor.shutdown(wait=False)
 
 
-@app.post("/clear_session/{session_id}")
-async def clear_session(session_id: str):
-    """Clear audio buffer for a session"""
-    if session_id in audio_sessions:
-        audio_sessions[session_id]['audio'].clear()
-        audio_sessions[session_id]['words'] = []
-        audio_sessions[session_id]['last_transcribed_end'] = 0.0
-        return {"status": "cleared", "session_id": session_id}
-    return {"status": "not_found", "session_id": session_id}
-
-
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        log_level="info"
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

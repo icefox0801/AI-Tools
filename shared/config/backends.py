@@ -36,7 +36,7 @@ BACKENDS_LOCAL: Dict[str, Dict[str, Any]] = {
         "name": "Whisper",  # Will be updated from service
         "device": "GPU",
         "host": "localhost",
-        "port": 8004,
+        "port": 8003,
         "chunk_ms": 500,
         "mode": "500ms chunks",
         "description": "OpenAI Whisper Large V3 Turbo - fast, multilingual ASR",
