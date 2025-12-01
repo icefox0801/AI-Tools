@@ -26,6 +26,19 @@ import ctypes
 from pathlib import Path
 
 # ==============================================================================
+# Windows App Identity (must be set before any GUI/tray imports)
+# ==============================================================================
+
+# Set Windows App User Model ID so Windows treats this as a unique app
+# This allows proper taskbar grouping and notification settings
+APP_ID = "LiveCaptions.TrayApp.1.0"
+
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+except Exception:
+    pass
+
+# ==============================================================================
 # Windows DPI Awareness (must be set before any GUI imports)
 # ==============================================================================
 
@@ -408,11 +421,12 @@ class LiveCaptionsTray:
         logger.info("Double-click icon to start/stop")
         logger.info("Right-click for options")
         
-        # Create tray icon
+        # Create tray icon with a consistent name for Windows to identify
+        # Using APP_NAME ensures Windows can track this in taskbar settings
         self.icon = pystray.Icon(
-            APP_NAME,
-            self.create_icon_image(running=False),
-            f"{APP_NAME} - Stopped",
+            name=APP_NAME,  # Must be consistent for Windows taskbar settings
+            icon=self.create_icon_image(running=False),
+            title=f"{APP_NAME} - Stopped",
             menu=self.create_menu()
         )
         
