@@ -81,8 +81,43 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "Live Captions"
 DEFAULT_BACKEND = "whisper"
-SCRIPT_DIR = Path(__file__).parent
+
+# Detect if running as frozen executable (PyInstaller)
+IS_FROZEN = getattr(sys, 'frozen', False)
+
+# Always use the source location for live_captions.py
+# When frozen: .exe is in dist/, source is in parent (apps/live-captions/)
+# When script: source is in same directory
+if IS_FROZEN:
+    # .exe is in dist/, go up one level to find source
+    SCRIPT_DIR = Path(sys.executable).parent.parent
+else:
+    SCRIPT_DIR = Path(__file__).parent
+
 MAIN_SCRIPT = SCRIPT_DIR / "live_captions.py"
+
+# Find Python executable
+def find_python() -> str:
+    """Find a working Python executable."""
+    # Common Python locations on Windows
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps" / "python.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python312" / "python.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python311" / "python.exe",
+        Path("C:/Python312/python.exe"),
+        Path("C:/Python311/python.exe"),
+        Path("C:/Python310/python.exe"),
+    ]
+    
+    for path in candidates:
+        if path.exists():
+            return str(path)
+    
+    # Fall back to PATH
+    return "python"
+
+PYTHON_EXE = find_python()
+
 ICON_PATH = SCRIPT_DIR / "icon.ico"
 
 # Backend display names
@@ -236,9 +271,9 @@ class LiveCaptionsTray:
         
         self.current_backend = backend
         
-        # Build command
+        # Build command - use PYTHON_EXE for both frozen and script mode
         cmd = [
-            sys.executable,
+            PYTHON_EXE,
             str(MAIN_SCRIPT),
             "--backend", backend
         ]
