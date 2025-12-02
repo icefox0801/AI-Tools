@@ -369,7 +369,7 @@ def process_audio(audio_file, progress=gr.Progress()) -> tuple[str, str, str]:
     return transcript, summary, status
 
 
-def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> str:
+def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> tuple[str, str, str, str]:
     """Batch transcribe multiple audio files.
     
     Args:
@@ -377,17 +377,18 @@ def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> str:
         progress: Gradio progress tracker
         
     Returns:
-        Status message with results
+        Tuple of (status_message, combined_transcript, summary, transcript_for_chat)
     """
     if not selected_files:
-        return "⚠️ No files selected for batch transcription"
+        return "⚠️ No files selected for batch transcription", "", "", ""
     
     # Check Whisper service
     whisper_ok, whisper_msg = check_whisper_health()
     if not whisper_ok:
-        return f"❌ {whisper_msg}"
+        return f"❌ {whisper_msg}", "", "", ""
     
     results = []
+    all_transcripts = []
     total = len(selected_files)
     
     for i, file_path in enumerate(selected_files):
@@ -406,15 +407,31 @@ def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> str:
             txt_path.write_text(transcript, encoding='utf-8')
             
             results.append(f"✅ {file_name} → {txt_path.name} ({duration:.1f}s, {len(transcript)} chars)")
+            all_transcripts.append(f"### {file_name}\n\n{transcript}")
             logger.info(f"Batch transcribed: {file_name} -> {txt_path}")
             
         except Exception as e:
             results.append(f"❌ {file_name}: {e}")
             logger.error(f"Batch transcription error for {file_name}: {e}")
     
+    progress(0.9, desc="Generating summary...")
+    
+    # Combine all transcripts
+    combined_transcript = "\n\n---\n\n".join(all_transcripts) if all_transcripts else ""
+    
+    # Generate summary if we have transcripts
+    summary = ""
+    if combined_transcript:
+        ollama_ok, _ = check_ollama_health()
+        if ollama_ok:
+            summary = summarize_with_ollama(combined_transcript)
+        else:
+            summary = "*Ollama not available for summarization*"
+    
     progress(1.0, desc="Batch transcription complete!")
     
-    return "**Batch Transcription Results:**\n\n" + "\n".join(results)
+    status = "**Batch Transcription Results:**\n\n" + "\n\n".join(results)
+    return status, combined_transcript, summary, combined_transcript
 
 
 def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False):
@@ -439,24 +456,29 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             with gr.Column(scale=1):
                 # Recordings browser with batch selection
                 with gr.Accordion("📁 Recordings", open=True):
-                    with gr.Row(equal_height=True):
+                    with gr.Row():
                         select_all_checkbox = gr.Checkbox(
-                            label="Select All",
+                            label="",
                             value=False,
-                            interactive=True
+                            interactive=True,
+                            min_width=20,
+                            scale=0
                         )
+                        gr.Markdown("**Select recordings to transcribe**", elem_id="recordings-label")
                         refresh_recordings_btn = gr.Button(
                             "🔄",
                             variant="secondary",
                             size="sm",
-                            min_width=36
+                            min_width=32,
+                            scale=0
                         )
                     
                     recordings_checkboxes = gr.CheckboxGroup(
-                        label="Select recordings to transcribe",
+                        label="",
                         choices=[],
                         value=[],
-                        interactive=True
+                        interactive=True,
+                        show_label=False
                     )
                     
                     batch_transcribe_btn = gr.Button(
@@ -555,7 +577,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         def on_batch_transcribe(selected_files):
             """Handle batch transcription."""
             if not selected_files:
-                return "⚠️ No files selected. Check the boxes next to recordings to select them."
+                return "\u26a0\ufe0f No files selected. Check the boxes next to recordings to select them.", "", "", ""
             return batch_transcribe(selected_files)
         
         def on_file_upload(file):
@@ -643,7 +665,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         batch_transcribe_btn.click(
             on_batch_transcribe,
             inputs=[recordings_checkboxes],
-            outputs=[batch_status]
+            outputs=[batch_status, transcript_output, summary_output, transcript_state]
         )
         
         file_input.change(
