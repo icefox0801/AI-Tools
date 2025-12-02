@@ -234,6 +234,35 @@ services:
 # Note: audio-summary service removed - use local app (apps/audio-notes) instead
 # The local app calls whisper-asr and ollama services directly
 
+  # Audio Notes Service: Gradio Web UI for Transcription & AI Summarization
+  audio-notes:
+    build:
+      context: ./services/audio-notes
+      dockerfile: Dockerfile
+    image: audio-notes:latest
+    container_name: audio-notes
+    depends_on:
+      - whisper-asr
+      - ollama
+    ports:
+      - "7860:7860"                                 # Port mapping: Gradio web interface
+    volumes:
+      - ./recordings:/app/recordings               # Shared recordings directory (bind mount)
+    environment:
+      - WHISPER_URL=http://whisper-asr:8000
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
+      - RECORDINGS_DIR=/app/recordings
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt
 volumes:
