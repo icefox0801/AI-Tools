@@ -443,9 +443,15 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                         select_all_checkbox = gr.Checkbox(
                             label="Select All",
                             value=False,
-                            interactive=True
+                            interactive=True,
+                            scale=4
                         )
-                        refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
+                        refresh_recordings_btn = gr.Button(
+                            "🔄", 
+                            size="sm",
+                            min_width=40,
+                            scale=1
+                        )
                     
                     recordings_checkboxes = gr.CheckboxGroup(
                         label="Select recordings to transcribe",
@@ -463,39 +469,19 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 
                 gr.Markdown("---")
                 
-                # Single file selection for transcribe + summarize
-                with gr.Accordion("🎯 Transcribe & Summarize (Single File)", open=False):
-                    recordings_dropdown = gr.Dropdown(
-                        label="Select a recording",
-                        choices=[],
-                        value=None,
-                        interactive=True
-                    )
-                
                 # Upload section
                 with gr.Accordion("📤 Upload Audio", open=False):
-                    audio_input = gr.Audio(
-                        label="🎵 Record or Upload",
-                        type="filepath",
-                        sources=["upload", "microphone"]
-                    )
-                    
                     file_input = gr.File(
-                        label="📁 Or drop a file here",
-                        file_types=[".wav", ".mp3", ".m4a", ".ogg", ".flac"],
-                        visible=True
+                        label="Drop audio file here (saved as uploaded_XX.wav)",
+                        file_types=[".wav", ".mp3", ".m4a", ".ogg", ".flac"]
                     )
-                
-                process_btn = gr.Button(
-                    "📝 Transcribe & Summarize", 
-                    variant="primary", 
-                    size="lg"
-                )
+                    upload_status = gr.Markdown("")
                 
                 status_text = gr.Textbox(
                     label="Status", 
                     interactive=False,
-                    elem_classes=["status-box"]
+                    elem_classes=["status-box"],
+                    visible=False
                 )
                 
                 # Service status
@@ -549,14 +535,12 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         
         # Event handlers
         def refresh_recordings():
-            """Refresh the recordings list with checkboxes and dropdown."""
+            """Refresh the recordings list with checkboxes."""
             recordings = list_recordings()
-            # Format: "filename (duration, date)" -> path
+            # Format: "filename (duration, size)" -> path
             checkbox_choices = [(f"{r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in recordings]
-            dropdown_choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
             return (
                 gr.update(choices=checkbox_choices, value=[]),  # checkboxes
-                gr.update(choices=dropdown_choices, value=None),  # dropdown
                 ""  # clear batch status
             )
         
@@ -575,28 +559,54 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 return "⚠️ No files selected. Check the boxes next to recordings to select them."
             return batch_transcribe(selected_files)
         
-        def on_recording_select(selected):
-            """Handle recording selection."""
-            if selected:
-                return selected
-            return None
+        def get_next_upload_number():
+            """Get the next upload number for uploaded_XX naming."""
+            existing = list(RECORDINGS_DIR.glob("uploaded_*.wav"))
+            if not existing:
+                return 1
+            numbers = []
+            for f in existing:
+                try:
+                    num = int(f.stem.replace("uploaded_", ""))
+                    numbers.append(num)
+                except ValueError:
+                    pass
+            return max(numbers, default=0) + 1
         
-        def on_process(recording_path, audio, file):
-            """Process selected or uploaded audio."""
-            # Priority: recording_path > file > audio
-            audio_path = None
-            if recording_path:
-                audio_path = recording_path
-            elif file:
-                audio_path = file.name if hasattr(file, 'name') else file
-            elif audio:
-                audio_path = audio
+        def on_file_upload(file):
+            """Handle file upload - save to recordings folder with uploaded_XX name."""
+            if file is None:
+                return "", gr.update()
             
-            if not audio_path:
-                return "", "", "⚠️ Please select a recording or upload a file", ""
-            
-            transcript, summary, status = process_audio(audio_path)
-            return transcript, summary, status, transcript
+            try:
+                # Get next upload number
+                num = get_next_upload_number()
+                
+                # Get source file extension
+                src_path = Path(file.name if hasattr(file, 'name') else file)
+                ext = src_path.suffix.lower() or '.wav'
+                
+                # New filename: uploaded_XX.ext
+                new_name = f"uploaded_{num:02d}{ext}"
+                dest_path = RECORDINGS_DIR / new_name
+                
+                # Copy file to recordings directory
+                import shutil
+                shutil.copy2(src_path, dest_path)
+                
+                logger.info(f"Uploaded file saved as: {dest_path}")
+                
+                # Refresh recordings list
+                recordings = list_recordings()
+                checkbox_choices = [(f"{r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in recordings]
+                
+                return (
+                    f"✅ Saved as **{new_name}**",
+                    gr.update(choices=checkbox_choices, value=[])
+                )
+            except Exception as e:
+                logger.error(f"Upload error: {e}")
+                return f"❌ Upload failed: {e}", gr.update()
         
         def on_chat(message, history, transcript):
             if not message.strip():
@@ -638,7 +648,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         # Wire up events
         refresh_recordings_btn.click(
             refresh_recordings,
-            outputs=[recordings_checkboxes, recordings_dropdown, batch_status]
+            outputs=[recordings_checkboxes, batch_status]
         )
         
         select_all_checkbox.change(
@@ -653,10 +663,10 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             outputs=[batch_status]
         )
         
-        process_btn.click(
-            on_process,
-            inputs=[recordings_dropdown, audio_input, file_input],
-            outputs=[transcript_output, summary_output, status_text, transcript_state]
+        file_input.change(
+            on_file_upload,
+            inputs=[file_input],
+            outputs=[upload_status, recordings_checkboxes]
         )
         
         chat_btn.click(
@@ -697,33 +707,15 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             """Called when UI loads."""
             recordings = list_recordings()
             checkbox_choices = [(f"{r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in recordings]
-            dropdown_choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
-            
-            # If initial_audio is provided, select it
-            selected = None
-            if initial_audio and Path(initial_audio).exists():
-                selected = str(Path(initial_audio).resolve())
-            
-            return (
-                gr.update(choices=checkbox_choices, value=[]),
-                gr.update(choices=dropdown_choices, value=selected)
-            )
+            return gr.update(choices=checkbox_choices, value=[])
         
         demo.load(
             on_load,
-            outputs=[recordings_checkboxes, recordings_dropdown]
+            outputs=[recordings_checkboxes]
         )
         
-        # Auto-transcribe if initial_audio is provided
-        if initial_audio and auto_transcribe and Path(initial_audio).exists():
-            def auto_process():
-                transcript, summary, status = process_audio(initial_audio)
-                return transcript, summary, status, transcript
-            
-            demo.load(
-                auto_process,
-                outputs=[transcript_output, summary_output, status_text, transcript_state]
-            )
+        # Auto-transcribe if initial_audio is provided (not used in Docker mode)
+        pass
     
     return demo
 

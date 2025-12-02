@@ -233,7 +233,7 @@ async def transcribe_file(file: UploadFile = File(...)):
         
         # Optionally refine text
         if text and text_refiner.available:
-            text = await refine_text(text_refiner, text)
+            text = await refine_text(text)
         
         logger.info(f"Transcription complete: {len(text)} chars")
         
