@@ -393,7 +393,7 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
     
     Args:
         selected_files: List of file paths to transcribe
-        backend: "whisper" or "parakeet" (default: parakeet)
+        backend: "Whisper" or "Parakeet" (default: Parakeet)
         progress: Gradio progress tracker
         
     Returns:
@@ -402,8 +402,11 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
     if not selected_files:
         return "⚠️ No files selected for batch transcription", "", "", ""
     
+    # Normalize backend name
+    backend_lower = backend.lower() if backend else "parakeet"
+    
     # Check selected backend service
-    if backend == "whisper":
+    if backend_lower == "whisper":
         service_ok, service_msg = check_whisper_health()
     else:
         service_ok, service_msg = check_parakeet_health()
@@ -420,7 +423,7 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
         progress((i / total), desc=f"Transcribing {file_name} ({i+1}/{total})...")
         
         try:
-            transcript, duration = transcribe_audio(file_path, backend=backend)
+            transcript, duration = transcribe_audio(file_path, backend=backend_lower)
             
             if transcript.startswith("Error"):
                 results.append(f"❌ {file_name}: {transcript}")
@@ -438,12 +441,12 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
             results.append(f"❌ {file_name}: {e}")
             logger.error(f"Batch transcription error for {file_name}: {e}")
     
-    progress(0.85, desc="Transcription complete. Generating summary...")
+    progress(0.85, desc="Generating summary...")
     
     # Combine all transcripts
     combined_transcript = "\n\n---\n\n".join(all_transcripts) if all_transcripts else ""
     
-    # Generate summary if we have transcripts
+    # Generate summary
     summary = ""
     if combined_transcript:
         ollama_ok, _ = check_ollama_health()
@@ -491,20 +494,18 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                         select_all_checkbox = gr.Checkbox(
                             label="Select All",
                             value=False,
-                            interactive=True,
-                            scale=1
+                            interactive=True
                         )
                         refresh_recordings_btn = gr.Button(
-                            "🔄 Refresh",
-                            variant="secondary",
+                            "🔄",
                             size="sm",
-                            scale=0
+                            min_width=40
                         )
                     
                     # Backend selection
                     backend_radio = gr.Radio(
-                        choices=[("Parakeet (Best)", "parakeet"), ("Whisper", "whisper")],
-                        value="parakeet",
+                        choices=["Parakeet", "Whisper"],
+                        value="Parakeet",
                         label="ASR Backend",
                         interactive=True
                     )
@@ -657,7 +658,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
 **Status:**
 - Parakeet: {"✅" if parakeet_ok else "❌"} {parakeet_msg}
 - Whisper: {"✅" if whisper_ok else "❌"} {whisper_msg}
-- Ollama: {"✅" if ollama_ok else "❌"} {ollama_msg}
+- Ollama: {"\u2705" if ollama_ok else "\u274c"} {ollama_msg}
             """
         
         def on_example_question(question, history, transcript):
