@@ -388,7 +388,7 @@ def process_audio(audio_file, progress=gr.Progress()) -> tuple[str, str, str]:
     return transcript, summary, status
 
 
-def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progress=gr.Progress()) -> tuple[str, str, str, str]:
+def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progress=gr.Progress()) -> tuple[str, str, str, str, str]:
     """Batch transcribe multiple audio files.
     
     Args:
@@ -397,10 +397,10 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
         progress: Gradio progress tracker
         
     Returns:
-        Tuple of (status_message, combined_transcript, summary, transcript_for_chat)
+        Tuple of (status_message, combined_transcript, summary, transcript_for_chat, global_status)
     """
     if not selected_files:
-        return "⚠️ No files selected for batch transcription", "", "", ""
+        return "⚠️ No files selected for batch transcription", "", "", "", "⚠️ No files selected"
     
     # Normalize backend name
     backend_lower = backend.lower() if backend else "parakeet"
@@ -412,7 +412,7 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
         service_ok, service_msg = check_parakeet_health()
     
     if not service_ok:
-        return f"❌ {service_msg}", "", "", ""
+        return f"❌ {service_msg}", "", "", "", f"❌ {service_msg}"
     
     results = []
     all_transcripts = []
@@ -441,24 +441,24 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
             results.append(f"❌ {file_name}: {e}")
             logger.error(f"Batch transcription error for {file_name}: {e}")
     
-    progress(0.85, desc="Generating summary...")
-    
     # Combine all transcripts
     combined_transcript = "\n\n---\n\n".join(all_transcripts) if all_transcripts else ""
     
-    # Generate summary
+    # Generate summary (this may take a while)
     summary = ""
     if combined_transcript:
+        progress(0.9, desc="Transcription done. Generating summary (may take 1-2 min)...")
         ollama_ok, _ = check_ollama_health()
         if ollama_ok:
             summary = summarize_with_ollama(combined_transcript)
         else:
             summary = "*Ollama not available for summarization*"
     
-    progress(1.0, desc="Done!")
+    progress(1.0, desc="✅ Complete!")
     
     status = "**Batch Transcription Results:**\n\n" + "\n\n".join(results)
-    return status, combined_transcript, summary, combined_transcript
+    global_msg = f"✅ **Done!** Transcribed {len(all_transcripts)} file(s)"
+    return status, combined_transcript, summary, combined_transcript, global_msg
 
 
 def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False):
@@ -547,6 +547,12 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                     service_status = gr.Markdown("")
             
             with gr.Column(scale=2):
+                # Global status bar - visible regardless of tab
+                global_status = gr.Markdown(
+                    value="*Select recordings and click 'Batch Transcribe' to begin*",
+                    elem_id="global-status"
+                )
+                
                 with gr.Tabs():
                     with gr.TabItem("📋 Summary"):
                         summary_output = gr.Markdown(
@@ -606,7 +612,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         def on_batch_transcribe(selected_files, backend):
             """Handle batch transcription."""
             if not selected_files:
-                return "⚠️ No files selected. Check the boxes next to recordings to select them.", "", "", ""
+                return "⚠️ No files selected. Check the boxes next to recordings to select them.", "", "", "", "⚠️ No files selected"
             return batch_transcribe(selected_files, backend=backend)
         
         def on_file_upload(file):
@@ -654,11 +660,16 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             parakeet_ok, parakeet_msg = check_parakeet_health()
             whisper_ok, whisper_msg = check_whisper_health()
             ollama_ok, ollama_msg = check_ollama_health()
+            
+            parakeet_icon = "✅" if parakeet_ok else "❌"
+            whisper_icon = "✅" if whisper_ok else "❌"
+            ollama_icon = "✅" if ollama_ok else "❌"
+            
             return f"""
 **Status:**
-- Parakeet: {"✅" if parakeet_ok else "❌"} {parakeet_msg}
-- Whisper: {"✅" if whisper_ok else "❌"} {whisper_msg}
-- Ollama: {"\u2705" if ollama_ok else "\u274c"} {ollama_msg}
+- Parakeet: {parakeet_icon} {parakeet_msg}
+- Whisper: {whisper_icon} {whisper_msg}
+- Ollama: {ollama_icon} {ollama_msg}
             """
         
         def on_example_question(question, history, transcript):
@@ -696,7 +707,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         batch_transcribe_btn.click(
             on_batch_transcribe,
             inputs=[recordings_checkboxes, backend_radio],
-            outputs=[batch_status, transcript_output, summary_output, transcript_state]
+            outputs=[batch_status, transcript_output, summary_output, transcript_state, global_status]
         )
         
         file_input.change(
