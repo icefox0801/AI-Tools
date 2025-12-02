@@ -369,6 +369,54 @@ def process_audio(audio_file, progress=gr.Progress()) -> tuple[str, str, str]:
     return transcript, summary, status
 
 
+def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> str:
+    """Batch transcribe multiple audio files.
+    
+    Args:
+        selected_files: List of file paths to transcribe
+        progress: Gradio progress tracker
+        
+    Returns:
+        Status message with results
+    """
+    if not selected_files:
+        return "⚠️ No files selected for batch transcription"
+    
+    # Check Whisper service
+    whisper_ok, whisper_msg = check_whisper_health()
+    if not whisper_ok:
+        return f"❌ {whisper_msg}"
+    
+    results = []
+    total = len(selected_files)
+    
+    for i, file_path in enumerate(selected_files):
+        file_name = Path(file_path).name
+        progress((i / total), desc=f"Transcribing {file_name} ({i+1}/{total})...")
+        
+        try:
+            transcript, duration = transcribe_audio(file_path)
+            
+            if transcript.startswith("Error"):
+                results.append(f"❌ {file_name}: {transcript}")
+                continue
+            
+            # Save transcript to .txt file
+            txt_path = Path(file_path).with_suffix('.txt')
+            txt_path.write_text(transcript, encoding='utf-8')
+            
+            results.append(f"✅ {file_name} → {txt_path.name} ({duration:.1f}s, {len(transcript)} chars)")
+            logger.info(f"Batch transcribed: {file_name} -> {txt_path}")
+            
+        except Exception as e:
+            results.append(f"❌ {file_name}: {e}")
+            logger.error(f"Batch transcription error for {file_name}: {e}")
+    
+    progress(1.0, desc="Batch transcription complete!")
+    
+    return "**Batch Transcription Results:**\n\n" + "\n".join(results)
+
+
 def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False):
     """Create Gradio interface.
     
@@ -389,18 +437,38 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         
         with gr.Row():
             with gr.Column(scale=1):
-                # Recordings browser
+                # Recordings browser with batch selection
                 with gr.Accordion("📁 Recordings", open=True):
+                    recordings_checkboxes = gr.CheckboxGroup(
+                        label="Select recordings",
+                        choices=[],
+                        value=[],
+                        interactive=True
+                    )
+                    with gr.Row():
+                        refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
+                        select_all_btn = gr.Button("☑️ All", size="sm")
+                        clear_selection_btn = gr.Button("☐ None", size="sm")
+                    
+                    # Batch transcription
+                    with gr.Row():
+                        batch_transcribe_btn = gr.Button(
+                            "📝 Batch Transcribe Selected", 
+                            variant="secondary",
+                            size="sm"
+                        )
+                    batch_status = gr.Markdown("")
+                
+                gr.Markdown("---")
+                
+                # Single file selection for transcribe + summarize
+                with gr.Accordion("🎯 Single File Processing", open=True):
                     recordings_dropdown = gr.Dropdown(
-                        label="Select a recording",
+                        label="Select a recording to transcribe & summarize",
                         choices=[],
                         value=None,
                         interactive=True
                     )
-                    refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
-                    recordings_info = gr.Markdown("")
-                
-                gr.Markdown("---")
                 
                 # Upload section
                 with gr.Accordion("📤 Upload Audio", open=False):
@@ -479,11 +547,32 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         
         # Event handlers
         def refresh_recordings():
-            """Refresh the recordings list."""
+            """Refresh the recordings list with checkboxes and dropdown."""
             recordings = list_recordings()
-            choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
-            info = format_recordings_table(recordings)
-            return gr.update(choices=choices, value=None), info
+            # Format: "filename (duration, date)" -> path
+            checkbox_choices = [(f"{r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in recordings]
+            dropdown_choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
+            return (
+                gr.update(choices=checkbox_choices, value=[]),  # checkboxes
+                gr.update(choices=dropdown_choices, value=None),  # dropdown
+                ""  # clear batch status
+            )
+        
+        def select_all_recordings():
+            """Select all recordings."""
+            recordings = list_recordings()
+            all_paths = [r['path'] for r in recordings]
+            return all_paths
+        
+        def clear_selection():
+            """Clear all selections."""
+            return []
+        
+        def on_batch_transcribe(selected_files):
+            """Handle batch transcription."""
+            if not selected_files:
+                return "⚠️ No files selected. Check the boxes next to recordings to select them."
+            return batch_transcribe(selected_files)
         
         def on_recording_select(selected):
             """Handle recording selection."""
@@ -548,7 +637,23 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         # Wire up events
         refresh_recordings_btn.click(
             refresh_recordings,
-            outputs=[recordings_dropdown, recordings_info]
+            outputs=[recordings_checkboxes, recordings_dropdown, batch_status]
+        )
+        
+        select_all_btn.click(
+            select_all_recordings,
+            outputs=[recordings_checkboxes]
+        )
+        
+        clear_selection_btn.click(
+            clear_selection,
+            outputs=[recordings_checkboxes]
+        )
+        
+        batch_transcribe_btn.click(
+            on_batch_transcribe,
+            inputs=[recordings_checkboxes],
+            outputs=[batch_status]
         )
         
         process_btn.click(
@@ -594,19 +699,22 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         def on_load():
             """Called when UI loads."""
             recordings = list_recordings()
-            choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
-            info = format_recordings_table(recordings)
+            checkbox_choices = [(f"{r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in recordings]
+            dropdown_choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
             
             # If initial_audio is provided, select it
             selected = None
             if initial_audio and Path(initial_audio).exists():
                 selected = str(Path(initial_audio).resolve())
             
-            return gr.update(choices=choices, value=selected), info
+            return (
+                gr.update(choices=checkbox_choices, value=[]),
+                gr.update(choices=dropdown_choices, value=selected)
+            )
         
         demo.load(
             on_load,
-            outputs=[recordings_dropdown, recordings_info]
+            outputs=[recordings_checkboxes, recordings_dropdown]
         )
         
         # Auto-transcribe if initial_audio is provided
