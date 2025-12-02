@@ -231,31 +231,8 @@ services:
       retries: 3
       start_period: 90s                             # Allow time for model download
 
-  # Audio Summary Service: Transcription & AI Summarization Web UI
-  audio-summary:
-    build:
-      context: ./services/audio-summary
-      dockerfile: Dockerfile
-    image: audio-summary:latest
-    container_name: audio-summary
-    depends_on:
-      - whisper-asr
-      - ollama
-    ports:
-      - "7860:7860"                                 # Port mapping: Gradio web UI
-    environment:
-      - WHISPER_URL=http://whisper-asr:8000         # Whisper ASR service
-      - OLLAMA_URL=http://ollama:11434              # Ollama LLM service
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}      # Default LLM model
-    restart: always
-    networks:
-      - ai-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7860/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+# Note: audio-summary service removed - use local app (apps/audio-notes) instead
+# The local app calls whisper-asr and ollama services directly
 
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt

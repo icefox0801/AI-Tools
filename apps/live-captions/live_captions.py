@@ -257,6 +257,8 @@ def main():
                         help='Loopback device index for system audio')
     parser.add_argument('--list-devices', action='store_true',
                         help='List available audio devices')
+    parser.add_argument('--no-recording', action='store_true',
+                        help='Disable audio recording for later transcription')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging')
     parser.add_argument('--debug-save-audio', action='store_true',
@@ -289,6 +291,9 @@ def main():
     else:
         print("Audio: [Mic] Microphone")
     
+    if not args.no_recording:
+        print("Recording: ENABLED (for later transcription)")
+    
     if args.debug:
         print("Debug: ENABLED")
     print()
@@ -303,7 +308,8 @@ def main():
         backend=args.backend,
         use_system_audio=args.system_audio,
         device_index=device_index,
-        debug_save_audio=args.debug_save_audio
+        debug_save_audio=args.debug_save_audio,
+        enable_recording=not args.no_recording
     )
     app.run()
 

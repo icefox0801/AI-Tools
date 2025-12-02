@@ -216,6 +216,57 @@ class AudioRecorder:
             if not self._chunks:
                 return None
             return b''.join(self._chunks)
+    
+    def save(self, continue_recording: bool = True) -> Optional[Path]:
+        """Save current recording to a WAV file.
+        
+        Unlike stop(), this saves a snapshot of the current recording
+        and can optionally continue recording.
+        
+        Args:
+            continue_recording: If True, continue recording after save
+            
+        Returns:
+            Path to saved WAV file, or None if no audio recorded
+        """
+        with self._lock:
+            if not self._chunks:
+                logger.warning("No audio to save")
+                return None
+            
+            # Combine all chunks
+            audio_data = b''.join(self._chunks)
+            
+            # Generate output path
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = self.output_dir / f"recording_{timestamp}.wav"
+            
+            # Save as WAV
+            try:
+                with wave.open(str(output_path), 'wb') as wav:
+                    wav.setnchannels(CHANNELS)
+                    wav.setsampwidth(SAMPLE_WIDTH)
+                    wav.setframerate(SAMPLE_RATE)
+                    wav.writeframes(audio_data)
+                
+                duration = len(audio_data) / (SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS)
+                file_size_mb = len(audio_data) / (1024 * 1024)
+                
+                logger.info(
+                    f"Saved recording: {output_path} "
+                    f"({int(duration // 60):02d}:{int(duration % 60):02d}, {file_size_mb:.1f} MB)"
+                )
+                
+                if not continue_recording:
+                    self._recording = False
+                    self._chunks = []
+                    self._total_bytes = 0
+                
+                return output_path
+                
+            except Exception as e:
+                logger.error(f"Failed to save recording: {e}")
+                return None
 
 
 # Global recorder instance for use by tray app

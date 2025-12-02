@@ -68,9 +68,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shared.config import BACKENDS
 from src.audio.recorder import get_recorder
 
-# Audio Summary service URL (local Gradio app)
-AUDIO_SUMMARY_URL = "http://localhost:7860"
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -169,6 +166,11 @@ MAIN_SCRIPT = SCRIPT_DIR / "live_captions.py"
 # Find Python executable
 def find_python() -> str:
     """Find a working Python executable."""
+    # Prefer the project's venv first
+    venv_python = SCRIPT_DIR / ".venv" / "Scripts" / "python.exe"
+    if venv_python.exists():
+        return str(venv_python)
+    
     # Common Python locations on Windows
     candidates = [
         Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps" / "python.exe",
@@ -209,6 +211,7 @@ class LiveCaptionsTray:
         self.current_process = None
         self.current_backend = None
         self.use_system_audio = True  # Default to system audio
+        self.enable_recording = True  # Default to recording enabled
         self.icon = None
         self.backend_status: dict[str, tuple[bool, str]] = {}  # Cache backend health
         self._running = True  # For background thread
@@ -420,6 +423,9 @@ class LiveCaptionsTray:
         if self.use_system_audio:
             cmd.append("--system-audio")
         
+        if not self.enable_recording:
+            cmd.append("--no-recording")
+        
         logger.info(f"Starting Live Captions: {' '.join(cmd)}")
         
         try:
@@ -491,7 +497,7 @@ class LiveCaptionsTray:
             logger.error(f"Failed to clear recording: {e}")
     
     def transcribe_and_summarize(self):
-        """Save recording and open Audio Summary web UI."""
+        """Save recording and open Audio Notes app."""
         try:
             recorder = get_recorder()
             if not recorder or recorder.duration < 1.0:
@@ -501,26 +507,47 @@ class LiveCaptionsTray:
                 return
             
             # Save the recording
-            audio_path = recorder.stop()
+            audio_path = recorder.save()
             if not audio_path:
                 logger.error("Failed to save recording")
                 return
             
             logger.info(f"Saved recording: {audio_path}")
             
-            # Open Audio Summary web UI with the audio file
-            import webbrowser
-            url = f"{AUDIO_SUMMARY_URL}?audio={audio_path}"
-            webbrowser.open(url)
+            # Find the audio-notes app
+            audio_notes_script = SCRIPT_DIR.parent / "audio-notes" / "audio_notes.py"
             
-            if self.icon:
-                self.icon.notify(
-                    "Transcribing...", 
-                    f"Opening Audio Summary UI.\nFile: {audio_path.name}"
-                )
+            if audio_notes_script.exists():
+                # Launch Audio Notes app with the audio file
+                cmd = [
+                    PYTHON_EXE,
+                    str(audio_notes_script),
+                    "--audio", str(audio_path)
+                ]
+                
+                logger.info(f"Launching Audio Notes: {' '.join(cmd)}")
+                
+                # Start process (don't hide window for Gradio UI)
+                subprocess.Popen(cmd)
+                
+                if self.icon:
+                    self.icon.notify(
+                        "Opening Audio Notes", 
+                        f"Launching transcription UI.\nFile: {audio_path.name}"
+                    )
+            else:
+                # Fallback: just open the file location
+                import webbrowser
+                webbrowser.open(str(audio_path.parent))
+                
+                if self.icon:
+                    self.icon.notify(
+                        "Recording Saved", 
+                        f"Audio saved to:\n{audio_path}"
+                    )
             
-            # Start a new recording session
-            recorder.start()
+            # Clear the recording buffer (keep recording if still running)
+            recorder.clear()
             
         except Exception as e:
             logger.error(f"Failed to transcribe: {e}")
@@ -660,19 +687,27 @@ class LiveCaptionsTray:
             
             # Recording section
             pystray.MenuItem(
+                "🎙️ Enable Recording",
+                lambda icon, item: self.toggle_recording(),
+                checked=lambda item: self.enable_recording
+            ),
+            pystray.MenuItem(
                 lambda text: f"📼 Recording: {self.get_recording_info()[1]}" if self.get_recording_info()[0] else "📼 No recording",
                 None,
-                enabled=False
+                enabled=False,
+                visible=lambda item: self.enable_recording
             ),
             pystray.MenuItem(
                 "📝 Transcribe & Summarize",
                 lambda icon, item: self.transcribe_and_summarize(),
-                enabled=lambda item: self.get_recording_info()[2] >= 1.0
+                enabled=lambda item: self.get_recording_info()[2] >= 1.0,
+                visible=lambda item: self.enable_recording
             ),
             pystray.MenuItem(
                 "🗑️ Clear Recording",
                 lambda icon, item: self.clear_recording(),
-                enabled=lambda item: self.get_recording_info()[2] > 0
+                enabled=lambda item: self.get_recording_info()[2] > 0,
+                visible=lambda item: self.enable_recording
             ),
             
             pystray.Menu.SEPARATOR,
@@ -700,6 +735,15 @@ class LiveCaptionsTray:
         )
         
         return menu
+    
+    def toggle_recording(self):
+        """Toggle recording on/off."""
+        self.enable_recording = not self.enable_recording
+        logger.info(f"Recording: {'enabled' if self.enable_recording else 'disabled'}")
+        
+        # Restart if running to apply change
+        if self.is_running():
+            self.start_captions(self.current_backend)
     
     def quit(self, icon, item):
         """Exit the application."""
