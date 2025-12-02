@@ -240,7 +240,7 @@ Provide a comprehensive summary following the format specified."""
                 "system": system_prompt,
                 "stream": False
             },
-            timeout=120
+            timeout=300  # 5 minutes for long transcripts
         )
         
         if resp.status_code == 200:
@@ -439,32 +439,34 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             with gr.Column(scale=1):
                 # Recordings browser with batch selection
                 with gr.Accordion("📁 Recordings", open=True):
+                    with gr.Row():
+                        select_all_checkbox = gr.Checkbox(
+                            label="Select All",
+                            value=False,
+                            interactive=True
+                        )
+                        refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
+                    
                     recordings_checkboxes = gr.CheckboxGroup(
-                        label="Select recordings",
+                        label="Select recordings to transcribe",
                         choices=[],
                         value=[],
                         interactive=True
                     )
-                    with gr.Row():
-                        refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
-                        select_all_btn = gr.Button("☑️ All", size="sm")
-                        clear_selection_btn = gr.Button("☐ None", size="sm")
                     
-                    # Batch transcription
-                    with gr.Row():
-                        batch_transcribe_btn = gr.Button(
-                            "📝 Batch Transcribe Selected", 
-                            variant="secondary",
-                            size="sm"
-                        )
+                    batch_transcribe_btn = gr.Button(
+                        "📝 Batch Transcribe Selected", 
+                        variant="primary",
+                        size="lg"
+                    )
                     batch_status = gr.Markdown("")
                 
                 gr.Markdown("---")
                 
                 # Single file selection for transcribe + summarize
-                with gr.Accordion("🎯 Single File Processing", open=True):
+                with gr.Accordion("🎯 Transcribe & Summarize (Single File)", open=False):
                     recordings_dropdown = gr.Dropdown(
-                        label="Select a recording to transcribe & summarize",
+                        label="Select a recording",
                         choices=[],
                         value=None,
                         interactive=True
@@ -558,15 +560,14 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 ""  # clear batch status
             )
         
-        def select_all_recordings():
-            """Select all recordings."""
-            recordings = list_recordings()
-            all_paths = [r['path'] for r in recordings]
-            return all_paths
-        
-        def clear_selection():
-            """Clear all selections."""
-            return []
+        def on_select_all_change(select_all):
+            """Handle Select All checkbox change."""
+            if select_all:
+                recordings = list_recordings()
+                all_paths = [r['path'] for r in recordings]
+                return all_paths
+            else:
+                return []
         
         def on_batch_transcribe(selected_files):
             """Handle batch transcription."""
@@ -640,13 +641,9 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             outputs=[recordings_checkboxes, recordings_dropdown, batch_status]
         )
         
-        select_all_btn.click(
-            select_all_recordings,
-            outputs=[recordings_checkboxes]
-        )
-        
-        clear_selection_btn.click(
-            clear_selection,
+        select_all_checkbox.change(
+            on_select_all_change,
+            inputs=[select_all_checkbox],
             outputs=[recordings_checkboxes]
         )
         
