@@ -231,9 +231,6 @@ services:
       retries: 3
       start_period: 90s                             # Allow time for model download
 
-# Note: audio-summary service removed - use local app (apps/audio-notes) instead
-# The local app calls whisper-asr and ollama services directly
-
   # Audio Notes Service: Gradio Web UI for Transcription & AI Summarization
   audio-notes:
     build:
@@ -279,7 +276,7 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/recordings
+      device: ${PWD}/.recordings
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation

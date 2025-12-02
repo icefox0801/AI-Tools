@@ -51,3 +51,6 @@ Thumbs.db
 .env
 .env.local
 .pip-cache/
+
+# Audio recordings (local data, not tracked)
+.recordings/

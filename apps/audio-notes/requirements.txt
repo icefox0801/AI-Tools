@@ -1,4 +1,0 @@
-# Audio Notes - Gradio Web UI for Transcription & Summarization
-gradio>=4.0.0
-requests>=2.28.0
-numpy>=1.24.0

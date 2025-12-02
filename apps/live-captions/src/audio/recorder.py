@@ -57,9 +57,9 @@ class AudioRecorder:
         if output_dir:
             self.output_dir = Path(output_dir)
         else:
-            # Default to project's recordings/ folder (shared with Docker audio-notes service)
+            # Default to project's .recordings/ folder (shared with Docker audio-notes service)
             # Fall back to RECORDINGS_DIR env var or temp dir
-            project_recordings = Path(__file__).parent.parent.parent.parent.parent / 'recordings'
+            project_recordings = Path(__file__).parent.parent.parent.parent.parent / '.recordings'
             if project_recordings.exists():
                 self.output_dir = project_recordings
             else:
