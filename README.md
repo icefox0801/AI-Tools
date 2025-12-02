@@ -1,6 +1,7 @@
 # AI-Tools
 
 Docker-based AI services for real-time voice transcription and local LLM.
+<img width="3114" height="282" alt="image" src="https://github.com/user-attachments/assets/a1023366-516e-4de0-8f36-eeb6c6049e52" />
 
 ## Architecture
 
@@ -88,3 +89,4 @@ Or use command line:
 ```bash
 python live_captions.py --backend whisper --system-audio
 ```
+
