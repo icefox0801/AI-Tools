@@ -75,6 +75,72 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# ==============================================================================
+# Dependency Checking
+# ==============================================================================
+
+def check_backend_health(backend: str, timeout: float = 2.0) -> tuple[bool, str]:
+    """Check if a backend service is healthy.
+    
+    Args:
+        backend: Backend name ('whisper', 'parakeet', 'vosk')
+        timeout: Connection timeout in seconds
+        
+    Returns:
+        Tuple of (is_healthy, status_message)
+    """
+    import socket
+    import urllib.request
+    import urllib.error
+    
+    config = BACKENDS.get(backend)
+    if not config:
+        return False, "Unknown backend"
+    
+    host = config["host"]
+    port = config["port"]
+    
+    # First check if port is open
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        
+        if result != 0:
+            return False, f"Service not running (port {port} closed)"
+    except Exception as e:
+        return False, f"Connection failed: {e}"
+    
+    # Try to get service info via HTTP
+    try:
+        url = f"http://{host}:{port}/"
+        req = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            if response.status == 200:
+                return True, "Ready"
+    except urllib.error.HTTPError as e:
+        # HTTP error but server is responding
+        return True, "Ready"
+    except Exception:
+        # Port is open but HTTP failed - still consider it ready
+        return True, "Ready (no HTTP)"
+    
+    return True, "Ready"
+
+
+def check_all_backends() -> dict[str, tuple[bool, str]]:
+    """Check health of all backends.
+    
+    Returns:
+        Dict mapping backend name to (is_healthy, status_message)
+    """
+    results = {}
+    for backend in BACKENDS:
+        results[backend] = check_backend_health(backend)
+    return results
+
 # ==============================================================================
 # Configuration
 # ==============================================================================
@@ -140,6 +206,31 @@ class LiveCaptionsTray:
         self.current_backend = None
         self.use_system_audio = True  # Default to system audio
         self.icon = None
+        self.backend_status: dict[str, tuple[bool, str]] = {}  # Cache backend health
+        self._check_backends()  # Initial check
+    
+    def _check_backends(self):
+        """Check all backend services health."""
+        self.backend_status = check_all_backends()
+        for backend, (healthy, msg) in self.backend_status.items():
+            status = "✓" if healthy else "✗"
+            logger.info(f"Backend {backend}: {status} {msg}")
+    
+    def refresh_backend_status(self):
+        """Refresh backend status (called from menu)."""
+        logger.info("Refreshing backend status...")
+        self._check_backends()
+        self.update_icon()
+    
+    def is_backend_available(self, backend: str) -> bool:
+        """Check if a specific backend is available."""
+        healthy, _ = self.backend_status.get(backend, (False, "Unknown"))
+        return healthy
+    
+    def get_backend_status_text(self, backend: str) -> str:
+        """Get status text for a backend."""
+        healthy, msg = self.backend_status.get(backend, (False, "Unknown"))
+        return msg
         
     def create_icon_image(self, running: bool = False) -> Image.Image:
         """Create high-resolution tray icon image.
@@ -266,6 +357,27 @@ class LiveCaptionsTray:
         Args:
             backend: ASR backend name ('whisper', 'parakeet', 'vosk')
         """
+        # Always re-check backend availability before starting (don't use cache)
+        is_available, status = check_backend_health(backend)
+        
+        if not is_available:
+            logger.error(f"Cannot start: {backend} is not available ({status})")
+            # Update cached status
+            self.backend_status[backend] = (is_available, status)
+            # Show notification if possible
+            if self.icon:
+                try:
+                    self.icon.notify(
+                        f"{backend.title()} is not available",
+                        f"Status: {status}\n\nPlease start the Docker service first."
+                    )
+                except Exception:
+                    pass  # Notification not supported
+            return
+        
+        # Update cached status (it's available)
+        self.backend_status[backend] = (is_available, status)
+        
         # Stop existing process if running
         self.stop_captions()
         
@@ -357,11 +469,32 @@ class LiveCaptionsTray:
                 return self.is_running() and self.current_backend == backend
             return check
         
+        def is_backend_enabled(backend):
+            """Check if backend can be started (is available)."""
+            def check(item):
+                return self.is_backend_available(backend)
+            return check
+        
+        def get_backend_label(backend):
+            """Get backend label with status indicator."""
+            def label(item):
+                base_label = BACKEND_LABELS[backend]
+                if self.is_backend_available(backend):
+                    return f"✓ {base_label}"
+                else:
+                    status = self.get_backend_status_text(backend)
+                    return f"✗ {base_label} - {status}"
+            return label
+        
         def is_system_audio(item):
             return self.use_system_audio
         
         def is_microphone(item):
             return not self.use_system_audio
+        
+        # Count available backends
+        def get_available_count():
+            return sum(1 for b in BACKENDS if self.is_backend_available(b))
         
         # Build menu
         menu = pystray.Menu(
@@ -372,6 +505,11 @@ class LiveCaptionsTray:
                 None,
                 enabled=False
             ),
+            pystray.MenuItem(
+                lambda text: f"Services: {get_available_count()}/{len(BACKENDS)} available",
+                None,
+                enabled=False
+            ),
             pystray.Menu.SEPARATOR,
             
             # Backend selection submenu
@@ -379,22 +517,30 @@ class LiveCaptionsTray:
                 "Start with...",
                 pystray.Menu(
                     pystray.MenuItem(
-                        BACKEND_LABELS["whisper"],
+                        get_backend_label("whisper"),
                         make_start_handler("whisper"),
                         checked=is_backend_checked("whisper"),
+                        enabled=is_backend_enabled("whisper"),
                         radio=True
                     ),
                     pystray.MenuItem(
-                        BACKEND_LABELS["parakeet"],
+                        get_backend_label("parakeet"),
                         make_start_handler("parakeet"),
                         checked=is_backend_checked("parakeet"),
+                        enabled=is_backend_enabled("parakeet"),
                         radio=True
                     ),
                     pystray.MenuItem(
-                        BACKEND_LABELS["vosk"],
+                        get_backend_label("vosk"),
                         make_start_handler("vosk"),
                         checked=is_backend_checked("vosk"),
+                        enabled=is_backend_enabled("vosk"),
                         radio=True
+                    ),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        "🔄 Refresh Status",
+                        lambda icon, item: self.refresh_backend_status()
                     ),
                 )
             ),
@@ -429,10 +575,13 @@ class LiveCaptionsTray:
                 visible=lambda item: self.is_running()
             ),
             pystray.MenuItem(
-                f"Quick Start ({DEFAULT_BACKEND.title()})",
+                lambda text: f"Quick Start ({DEFAULT_BACKEND.title()})" 
+                             if self.is_backend_available(DEFAULT_BACKEND)
+                             else f"Quick Start ({DEFAULT_BACKEND.title()}) - Unavailable",
                 lambda icon, item: self.start_captions(DEFAULT_BACKEND),
                 default=True,  # Double-click action
-                visible=lambda item: not self.is_running()
+                visible=lambda item: not self.is_running(),
+                enabled=lambda item: self.is_backend_available(DEFAULT_BACKEND)
             ),
             
             pystray.Menu.SEPARATOR,
