@@ -218,9 +218,11 @@ class LiveCaptions:
         
         self._stop_audio_capture()
         
-        # Clear recording on close (user can save via tray menu before closing)
-        if self.recorder:
-            self.recorder.clear()
+        # Save recording on close
+        if self.recorder and self.recorder.is_recording:
+            saved_path = self.recorder.stop()
+            if saved_path:
+                logger.info(f"Recording saved: {saved_path}")
         
         self.window.close()
     

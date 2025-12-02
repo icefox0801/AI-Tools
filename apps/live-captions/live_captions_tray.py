@@ -777,6 +777,17 @@ class LiveCaptionsTray:
         """Exit the application."""
         logger.info("Exiting tray application")
         self._running = False  # Stop background thread
+        
+        # Save recording before exit
+        try:
+            recorder = get_recorder()
+            if recorder and recorder.is_recording and recorder.duration > 1.0:
+                saved_path = recorder.stop()
+                if saved_path:
+                    logger.info(f"Recording saved on exit: {saved_path}")
+        except Exception as e:
+            logger.error(f"Failed to save recording on exit: {e}")
+        
         self.stop_captions()
         icon.stop()
     
