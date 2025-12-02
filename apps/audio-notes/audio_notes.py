@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 # Configuration
 WHISPER_URL = os.getenv("WHISPER_URL", "http://localhost:8003")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:14b")  # Default to qwen3 (commonly available)
 
 # Shared recordings directory (same as Live Captions uses)
 RECORDINGS_DIR = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) / "recordings"
@@ -378,16 +378,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
     # State for transcript (used in chat)
     transcript_state = gr.State("")
     
-    with gr.Blocks(
-        title="Audio Notes",
-        theme=gr.themes.Soft(),
-        css="""
-        .transcript-box { font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
-        .summary-box { font-size: 1.1em; line-height: 1.6; }
-        .status-box { font-weight: bold; }
-        .recordings-list { max-height: 200px; overflow-y: auto; }
-        """
-    ) as demo:
+    with gr.Blocks(title="Audio Notes") as demo:
         gr.Markdown("""
         # 📝 Audio Notes
         
@@ -405,7 +396,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                         interactive=True
                     )
                     refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
-                    recordings_info = gr.Markdown("", elem_classes=["recordings-list"])
+                    recordings_info = gr.Markdown("")
                 
                 gr.Markdown("---")
                 
@@ -451,17 +442,14 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 with gr.Tabs():
                     with gr.TabItem("📋 Summary"):
                         summary_output = gr.Markdown(
-                            label="Summary",
-                            elem_classes=["summary-box"]
+                            label="Summary"
                         )
                     
                     with gr.TabItem("📜 Full Transcript"):
                         transcript_output = gr.Textbox(
                             label="Transcript",
                             lines=20,
-                            max_lines=50,
-                            show_copy_button=True,
-                            elem_classes=["transcript-box"]
+                            max_lines=50
                         )
                         
                         with gr.Row():
