@@ -6,13 +6,14 @@ Docker-based AI services for real-time voice transcription and local LLM.
 ## Architecture
 
 ```
-┌─────────────────────┐     WebSocket      ┌─────────────────────┐
-│   Client Apps       │ ──────────────────▶│   ASR Services      │
-│                     │    Audio Stream    │   (Docker)          │
-│  • Live Captions    │ ◀──────────────────│  • Vosk (CPU)       │
-│    (Desktop)        │    Transcripts     │  • Parakeet (GPU)   │
-└─────────────────────┘                    │  • Whisper (GPU)    │
-                                           └─────────────────────┘
++-------------------+       WebSocket       +---------------------+
+|                   |  ---------------->    |    ASR Services     |
+|   Client Apps     |     Audio Stream      |    (Docker)         |
+|                   |  <----------------    |                     |
+| - Live Captions   |     Transcripts       |  - Vosk (CPU)       |
+|   (Desktop)       |                       |  - Parakeet (GPU)   |
+|                   |                       |  - Whisper (GPU)    |
++-------------------+                       +---------------------+
 ```
 
 ## Services
