@@ -38,7 +38,8 @@ from shared.client import TranscriptManager
 # Import local modules
 from src.audio import (
     MicrophoneCapture, SystemAudioCapture,
-    list_devices, TARGET_SAMPLE_RATE
+    list_devices, TARGET_SAMPLE_RATE,
+    AudioRecorder, get_recorder, set_recorder
 )
 from src.ui import CaptionWindow
 from src.asr import ASRClient
@@ -62,7 +63,8 @@ class LiveCaptions:
         backend: Optional[str] = None,
         use_system_audio: bool = False,
         device_index: Optional[int] = None,
-        debug_save_audio: bool = False
+        debug_save_audio: bool = False,
+        enable_recording: bool = True
     ):
         """
         Initialize Live Captions application.
@@ -74,6 +76,7 @@ class LiveCaptions:
             use_system_audio: Use system audio instead of microphone
             device_index: Specific audio device index
             debug_save_audio: Save captured audio on exit
+            enable_recording: Enable audio recording for later transcription
         """
         # Backend config
         self.backend = backend or BACKEND
@@ -88,6 +91,13 @@ class LiveCaptions:
         self.use_system_audio = use_system_audio
         self.device_index = device_index
         self.audio_capture = None
+        
+        # Recording
+        self.enable_recording = enable_recording
+        self.recorder: Optional[AudioRecorder] = None
+        if enable_recording:
+            self.recorder = AudioRecorder()
+            set_recorder(self.recorder)  # Set as global for tray app access
         
         # Debug
         self.debug_save_audio = debug_save_audio
@@ -116,6 +126,10 @@ class LiveCaptions:
         """Handle audio data from capture."""
         if self.debug_save_audio:
             self.debug_audio_chunks.append(audio_bytes)
+        
+        # Record audio for later transcription
+        if self.recorder and self.recorder.is_recording:
+            self.recorder.add_chunk(audio_bytes)
         
         if self.asr_client:
             self.asr_client.queue_audio(audio_bytes)
@@ -147,6 +161,9 @@ class LiveCaptions:
         
         if self.audio_capture.start():
             self.window.set_audio_status(self.audio_capture.source_name)
+            # Start recording
+            if self.recorder:
+                self.recorder.start()
         else:
             self.window.set_message("❌ Audio capture failed")
     
@@ -188,6 +205,11 @@ class LiveCaptions:
             self.asr_client.stop()
         
         self._stop_audio_capture()
+        
+        # Clear recording on close (user can save via tray menu before closing)
+        if self.recorder:
+            self.recorder.clear()
+        
         self.window.close()
     
     def run(self):

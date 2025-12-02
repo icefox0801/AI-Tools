@@ -66,6 +66,10 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from shared.config import BACKENDS
+from src.audio.recorder import get_recorder
+
+# Audio Summary service URL (local Gradio app)
+AUDIO_SUMMARY_URL = "http://localhost:7860"
 
 # Setup logging
 logging.basicConfig(
@@ -460,6 +464,69 @@ class LiveCaptionsTray:
             # Update icon
             self.update_icon()
     
+    def get_recording_info(self) -> tuple[bool, str, float]:
+        """Get current recording info.
+        
+        Returns:
+            Tuple of (is_recording, duration_str, duration_seconds)
+        """
+        try:
+            recorder = get_recorder()
+            if recorder and recorder.is_recording:
+                return True, recorder.duration_str, recorder.duration
+            return False, "00:00", 0.0
+        except Exception:
+            return False, "00:00", 0.0
+    
+    def clear_recording(self):
+        """Clear the current recording."""
+        try:
+            recorder = get_recorder()
+            if recorder:
+                recorder.clear()
+                logger.info("Recording cleared")
+                if self.icon:
+                    self.icon.notify("Recording Cleared", "Audio recording has been cleared.")
+        except Exception as e:
+            logger.error(f"Failed to clear recording: {e}")
+    
+    def transcribe_and_summarize(self):
+        """Save recording and open Audio Summary web UI."""
+        try:
+            recorder = get_recorder()
+            if not recorder or recorder.duration < 1.0:
+                logger.warning("No recording to transcribe")
+                if self.icon:
+                    self.icon.notify("No Recording", "Record some audio first before transcribing.")
+                return
+            
+            # Save the recording
+            audio_path = recorder.stop()
+            if not audio_path:
+                logger.error("Failed to save recording")
+                return
+            
+            logger.info(f"Saved recording: {audio_path}")
+            
+            # Open Audio Summary web UI with the audio file
+            import webbrowser
+            url = f"{AUDIO_SUMMARY_URL}?audio={audio_path}"
+            webbrowser.open(url)
+            
+            if self.icon:
+                self.icon.notify(
+                    "Transcribing...", 
+                    f"Opening Audio Summary UI.\nFile: {audio_path.name}"
+                )
+            
+            # Start a new recording session
+            recorder.start()
+            
+        except Exception as e:
+            logger.error(f"Failed to transcribe: {e}")
+            if self.icon:
+                self.icon.notify("Error", f"Failed to transcribe: {e}")
+    
     def toggle_audio_source(self):
         """Toggle between system audio and microphone."""
         self.use_system_audio = not self.use_system_audio
@@ -587,6 +654,25 @@ class LiveCaptionsTray:
                         radio=True
                     ),
                 )
+            ),
+            
+            pystray.Menu.SEPARATOR,
+            
+            # Recording section
+            pystray.MenuItem(
+                lambda text: f"📼 Recording: {self.get_recording_info()[1]}" if self.get_recording_info()[0] else "📼 No recording",
+                None,
+                enabled=False
+            ),
+            pystray.MenuItem(
+                "📝 Transcribe & Summarize",
+                lambda icon, item: self.transcribe_and_summarize(),
+                enabled=lambda item: self.get_recording_info()[2] >= 1.0
+            ),
+            pystray.MenuItem(
+                "🗑️ Clear Recording",
+                lambda icon, item: self.clear_recording(),
+                enabled=lambda item: self.get_recording_info()[2] > 0
             ),
             
             pystray.Menu.SEPARATOR,

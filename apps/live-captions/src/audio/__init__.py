@@ -13,6 +13,7 @@ from .devices import (
     get_default_microphone_info, 
     get_default_loopback_info
 )
+from .recorder import AudioRecorder, get_recorder, set_recorder
 
 __all__ = [
     # Capture classes
@@ -27,6 +28,10 @@ __all__ = [
     'list_devices',
     'get_default_microphone_info',
     'get_default_loopback_info',
+    # Recorder
+    'AudioRecorder',
+    'get_recorder',
+    'set_recorder',
     # Constants
     'TARGET_SAMPLE_RATE',
     'CHUNK_DURATION_MS',

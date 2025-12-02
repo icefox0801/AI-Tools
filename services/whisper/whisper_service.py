@@ -26,7 +26,7 @@ import numpy as np
 import soundfile as sf
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -177,6 +177,75 @@ async def info():
         "model": WHISPER_MODEL,
         "device": DEVICE,
     }
+
+
+@app.post("/transcribe")
+async def transcribe_file(file: UploadFile = File(...)):
+    """
+    Transcribe an uploaded audio file.
+    
+    Args:
+        file: Audio file (WAV, MP3, etc.)
+        
+    Returns:
+        JSON with text transcription
+    """
+    if whisper_pipe is None:
+        return {"error": "Model not loaded", "text": ""}
+    
+    try:
+        # Read audio file
+        contents = await file.read()
+        
+        # Load audio using soundfile
+        audio_array, sample_rate = sf.read(io.BytesIO(contents))
+        
+        # Convert to mono if stereo
+        if len(audio_array.shape) > 1:
+            audio_array = audio_array.mean(axis=1)
+        
+        # Resample to 16kHz if needed
+        if sample_rate != SAMPLE_RATE:
+            import scipy.signal
+            num_samples = int(len(audio_array) * SAMPLE_RATE / sample_rate)
+            audio_array = scipy.signal.resample(audio_array, num_samples)
+        
+        # Ensure float32
+        audio_array = audio_array.astype(np.float32)
+        
+        # Normalize if needed
+        if np.abs(audio_array).max() > 1.0:
+            audio_array = audio_array / 32768.0
+        
+        logger.info(f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s")
+        
+        # Transcribe with timestamps for longer audio
+        result = whisper_pipe(
+            audio_array,
+            generate_kwargs={
+                "task": "transcribe",
+                "language": "en",
+            },
+            return_timestamps=True,
+        )
+        
+        text = result.get("text", "").strip()
+        
+        # Optionally refine text
+        if text and text_refiner.available:
+            text = await refine_text(text_refiner, text)
+        
+        logger.info(f"Transcription complete: {len(text)} chars")
+        
+        return {
+            "text": text,
+            "duration": len(audio_array) / SAMPLE_RATE,
+            "chunks": result.get("chunks", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        return {"error": str(e), "text": ""}
 
 
 def transcribe_audio(audio_array: np.ndarray) -> str:
