@@ -51,13 +51,20 @@ class AudioRecorder:
         """Initialize recorder.
         
         Args:
-            output_dir: Directory for saving recordings. Defaults to temp dir.
+            output_dir: Directory for saving recordings. Defaults to project's recordings/ folder.
             on_duration_change: Callback when duration changes (for UI updates)
         """
         if output_dir:
             self.output_dir = Path(output_dir)
         else:
-            self.output_dir = Path(os.environ.get('TEMP', '/tmp')) / 'live-captions-recordings'
+            # Default to project's recordings/ folder (shared with Docker audio-notes service)
+            # Fall back to RECORDINGS_DIR env var or temp dir
+            project_recordings = Path(__file__).parent.parent.parent.parent.parent / 'recordings'
+            if project_recordings.exists():
+                self.output_dir = project_recordings
+            else:
+                self.output_dir = Path(os.environ.get('RECORDINGS_DIR', 
+                    os.path.join(os.environ.get('TEMP', '/tmp'), 'live-captions-recordings')))
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
         

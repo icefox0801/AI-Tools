@@ -274,7 +274,12 @@ volumes:
   parakeet-model-data:        # Stores HuggingFace/NeMo model cache for Parakeet (15GB cached)
   whisper-hf-cache:           # Stores HuggingFace model cache for Whisper (~3GB)
   text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (T5, etc.)
-  audio-notes-data:           # Stores audio recordings and transcripts
+  audio-notes-data:           # Shared recordings & transcripts (accessible from host)
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/recordings
 
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
