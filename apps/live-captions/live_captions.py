@@ -64,7 +64,9 @@ class LiveCaptions:
         use_system_audio: bool = False,
         device_index: Optional[int] = None,
         debug_save_audio: bool = False,
-        enable_recording: bool = True
+        enable_recording: bool = True,
+        enable_transcription: bool = True,
+        recordings_dir: Optional[str] = None
     ):
         """
         Initialize Live Captions application.
@@ -77,6 +79,8 @@ class LiveCaptions:
             device_index: Specific audio device index
             debug_save_audio: Save captured audio on exit
             enable_recording: Enable audio recording for later transcription
+            enable_transcription: Enable live transcription (can be disabled if using external ASR)
+            recordings_dir: Directory for saving recordings
         """
         # Backend config
         self.backend = backend or BACKEND
@@ -86,6 +90,7 @@ class LiveCaptions:
         
         # State
         self.running = True
+        self.enable_transcription = enable_transcription
         
         # Audio settings
         self.use_system_audio = use_system_audio
@@ -96,7 +101,7 @@ class LiveCaptions:
         self.enable_recording = enable_recording
         self.recorder: Optional[AudioRecorder] = None
         if enable_recording:
-            self.recorder = AudioRecorder()
+            self.recorder = AudioRecorder(output_dir=recordings_dir)
             set_recorder(self.recorder)  # Set as global for tray app access
         
         # Debug
@@ -131,11 +136,18 @@ class LiveCaptions:
         if self.recorder and self.recorder.is_recording:
             self.recorder.add_chunk(audio_bytes)
         
-        if self.asr_client:
+        # Only send to ASR if live transcription is enabled
+        if self.enable_transcription and self.asr_client:
             self.asr_client.queue_audio(audio_bytes)
     
     def _on_asr_connected(self, connected: bool):
         """Handle ASR connection status change."""
+        if not self.enable_transcription:
+            # Transcription disabled - show recording-only mode
+            self.window.set_connection_status(True)  # Show as "connected" (recording)
+            self.window.set_message("📼 Recording only (live transcription disabled)")
+            return
+        
         self.window.set_connection_status(connected)
         if connected:
             self.window.set_message("🎙️ Speak now...")
@@ -259,6 +271,10 @@ def main():
                         help='List available audio devices')
     parser.add_argument('--no-recording', action='store_true',
                         help='Disable audio recording for later transcription')
+    parser.add_argument('--no-transcription', action='store_true',
+                        help='Disable live transcription (recording only mode)')
+    parser.add_argument('--recordings-dir', type=str,
+                        help='Directory for saving recordings')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging')
     parser.add_argument('--debug-save-audio', action='store_true',
@@ -293,6 +309,11 @@ def main():
     
     if not args.no_recording:
         print("Recording: ENABLED (for later transcription)")
+        if args.recordings_dir:
+            print(f"Recordings: {args.recordings_dir}")
+    
+    if args.no_transcription:
+        print("Mode: RECORDING ONLY (live transcription disabled)")
     
     if args.debug:
         print("Debug: ENABLED")
@@ -309,7 +330,9 @@ def main():
         use_system_audio=args.system_audio,
         device_index=device_index,
         debug_save_audio=args.debug_save_audio,
-        enable_recording=not args.no_recording
+        enable_recording=not args.no_recording,
+        enable_transcription=not args.no_transcription,
+        recordings_dir=args.recordings_dir
     )
     app.run()
 

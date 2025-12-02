@@ -3,15 +3,16 @@
 Audio Notes - Transcription & AI Summarization App
 
 A Gradio web UI that:
-1. Receives audio files (from Live Captions or direct upload)
-2. Transcribes using Whisper ASR service
-3. Summarizes using Ollama LLM
-4. Provides interactive chat for Q&A about the content
+1. Lists available recordings from the shared recordings directory
+2. Receives audio files (from Live Captions or direct upload)
+3. Transcribes using Whisper ASR service
+4. Summarizes using Ollama LLM
+5. Provides interactive chat for Q&A about the content
 
 Usage:
   python audio_notes.py                    # Start web UI
   python audio_notes.py --port 7860        # Custom port
-  python audio_notes.py --audio file.wav   # Open with audio file
+  python audio_notes.py --audio file.wav   # Open with audio file and auto-transcribe
 """
 
 import os
@@ -24,7 +25,7 @@ import logging
 import tempfile
 import webbrowser
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
@@ -40,6 +41,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 WHISPER_URL = os.getenv("WHISPER_URL", "http://localhost:8003")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+# Shared recordings directory (same as Live Captions uses)
+RECORDINGS_DIR = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) / "recordings"
 
 # Logging
 logging.basicConfig(
@@ -76,11 +80,78 @@ def check_ollama_health() -> tuple[bool, str]:
         return False, f"Ollama not available: {e}"
 
 
+def get_audio_duration(audio_path: str) -> float:
+    """Get audio file duration in seconds."""
+    try:
+        with wave.open(audio_path, 'rb') as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            return frames / rate
+    except Exception:
+        # Estimate from file size for non-WAV files
+        try:
+            size = os.path.getsize(audio_path)
+            return size / 32000  # Rough estimate for 16kHz 16-bit mono
+        except Exception:
+            return 0.0
+
+
+def list_recordings() -> List[dict]:
+    """List all recordings in the shared recordings directory.
+    
+    Returns:
+        List of dicts with recording info: {path, name, size_mb, duration, date}
+    """
+    recordings = []
+    
+    if not RECORDINGS_DIR.exists():
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        return recordings
+    
+    # Find all audio files
+    extensions = ['.wav', '.mp3', '.m4a', '.ogg', '.flac']
+    for ext in extensions:
+        for audio_file in RECORDINGS_DIR.glob(f"*{ext}"):
+            try:
+                stat = audio_file.stat()
+                size_mb = stat.st_size / (1024 * 1024)
+                mod_time = datetime.fromtimestamp(stat.st_mtime)
+                duration = get_audio_duration(str(audio_file))
+                
+                recordings.append({
+                    'path': str(audio_file),
+                    'name': audio_file.name,
+                    'size_mb': size_mb,
+                    'duration': duration,
+                    'duration_str': f"{int(duration // 60):02d}:{int(duration % 60):02d}",
+                    'date': mod_time.strftime("%Y-%m-%d %H:%M"),
+                    'timestamp': stat.st_mtime
+                })
+            except Exception as e:
+                logger.warning(f"Error reading {audio_file}: {e}")
+    
+    # Sort by newest first
+    recordings.sort(key=lambda x: x['timestamp'], reverse=True)
+    return recordings
+
+
+def format_recordings_table(recordings: List[dict]) -> str:
+    """Format recordings list as markdown table."""
+    if not recordings:
+        return "📁 *No recordings found*\n\nRecord audio using Live Captions or upload a file."
+    
+    lines = ["| File | Duration | Size | Date |", "| --- | --- | --- | --- |"]
+    for r in recordings:
+        lines.append(f"| {r['name']} | {r['duration_str']} | {r['size_mb']:.1f} MB | {r['date']} |")
+    
+    return "\n".join(lines)
+
+
 def transcribe_audio(audio_path: str) -> tuple[str, float]:
     """Transcribe audio file using Whisper service.
     
     Args:
-        audio_path: Path to WAV file
+        audio_path: Path to audio file
         
     Returns:
         Tuple of (transcript_text, duration_seconds)
@@ -92,17 +163,21 @@ def transcribe_audio(audio_path: str) -> tuple[str, float]:
         audio_data = f.read()
     
     # Get duration
-    try:
-        with wave.open(audio_path, 'rb') as wf:
-            frames = wf.getnframes()
-            rate = wf.getframerate()
-            duration = frames / rate
-    except Exception:
-        # Estimate duration from file size (rough estimate for non-WAV)
-        duration = len(audio_data) / 32000  # Assume 16kHz 16-bit mono
+    duration = get_audio_duration(audio_path)
+    
+    # Determine content type
+    ext = Path(audio_path).suffix.lower()
+    content_types = {
+        '.wav': 'audio/wav',
+        '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.ogg': 'audio/ogg',
+        '.flac': 'audio/flac'
+    }
+    content_type = content_types.get(ext, 'audio/wav')
     
     # Send to Whisper /transcribe endpoint
-    files = {'file': ('audio.wav', audio_data, 'audio/wav')}
+    files = {'file': (Path(audio_path).name, audio_data, content_type)}
     
     try:
         resp = requests.post(
@@ -242,7 +317,7 @@ def process_audio(audio_file, progress=gr.Progress()) -> tuple[str, str, str]:
         Tuple of (transcript, summary, status)
     """
     if audio_file is None:
-        return "", "", "⚠️ Please upload an audio file"
+        return "", "", "⚠️ Please select or upload an audio file"
     
     progress(0, desc="Checking services...")
     
@@ -292,11 +367,12 @@ def process_audio(audio_file, progress=gr.Progress()) -> tuple[str, str, str]:
     return transcript, summary, status
 
 
-def create_ui(initial_audio: Optional[str] = None):
+def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False):
     """Create Gradio interface.
     
     Args:
         initial_audio: Optional path to audio file to load on startup
+        auto_transcribe: If True and initial_audio is provided, auto-start transcription
     """
     
     # State for transcript (used in chat)
@@ -309,33 +385,43 @@ def create_ui(initial_audio: Optional[str] = None):
         .transcript-box { font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; }
         .summary-box { font-size: 1.1em; line-height: 1.6; }
         .status-box { font-weight: bold; }
+        .recordings-list { max-height: 200px; overflow-y: auto; }
         """
     ) as demo:
         gr.Markdown("""
         # 📝 Audio Notes
         
         Transform audio recordings into searchable notes with AI-powered summarization.
-        
-        **Features:**
-        - 🎙️ **Full Transcript** - Complete text transcription via Whisper
-        - 📋 **AI Summary** - Key points and overview via Ollama
-        - 💬 **Interactive Chat** - Ask questions about the content
         """)
         
         with gr.Row():
             with gr.Column(scale=1):
-                # Input section
-                audio_input = gr.Audio(
-                    label="🎵 Audio File",
-                    type="filepath",
-                    sources=["upload", "microphone"]
-                )
+                # Recordings browser
+                with gr.Accordion("📁 Recordings", open=True):
+                    recordings_dropdown = gr.Dropdown(
+                        label="Select a recording",
+                        choices=[],
+                        value=None,
+                        interactive=True
+                    )
+                    refresh_recordings_btn = gr.Button("🔄 Refresh", size="sm")
+                    recordings_info = gr.Markdown("", elem_classes=["recordings-list"])
                 
-                file_input = gr.File(
-                    label="📁 Or drop a file here",
-                    file_types=[".wav", ".mp3", ".m4a", ".ogg", ".flac"],
-                    visible=True
-                )
+                gr.Markdown("---")
+                
+                # Upload section
+                with gr.Accordion("📤 Upload Audio", open=False):
+                    audio_input = gr.Audio(
+                        label="🎵 Record or Upload",
+                        type="filepath",
+                        sources=["upload", "microphone"]
+                    )
+                    
+                    file_input = gr.File(
+                        label="📁 Or drop a file here",
+                        file_types=[".wav", ".mp3", ".m4a", ".ogg", ".flac"],
+                        visible=True
+                    )
                 
                 process_btn = gr.Button(
                     "📝 Transcribe & Summarize", 
@@ -356,6 +442,7 @@ def create_ui(initial_audio: Optional[str] = None):
                     - Whisper ASR: `{WHISPER_URL}`
                     - Ollama LLM: `{OLLAMA_URL}`
                     - Model: `{OLLAMA_MODEL}`
+                    - Recordings: `{RECORDINGS_DIR}`
                     """)
                     refresh_btn = gr.Button("🔄 Check Services")
                     service_status = gr.Markdown("")
@@ -378,8 +465,7 @@ def create_ui(initial_audio: Optional[str] = None):
                         )
                         
                         with gr.Row():
-                            copy_btn = gr.Button("📋 Copy All", size="sm")
-                            download_btn = gr.Button("💾 Download .txt", size="sm")
+                            save_transcript_btn = gr.Button("💾 Save as .txt", size="sm")
                     
                     with gr.TabItem("💬 Chat"):
                         chatbot = gr.Chatbot(
@@ -402,9 +488,33 @@ def create_ui(initial_audio: Optional[str] = None):
                             example_q2 = gr.Button("Summarize in 3 sentences", size="sm")
         
         # Event handlers
-        def on_process(audio, file):
-            # Prefer file input over audio input
-            audio_path = file.name if file else audio
+        def refresh_recordings():
+            """Refresh the recordings list."""
+            recordings = list_recordings()
+            choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
+            info = format_recordings_table(recordings)
+            return gr.update(choices=choices, value=None), info
+        
+        def on_recording_select(selected):
+            """Handle recording selection."""
+            if selected:
+                return selected
+            return None
+        
+        def on_process(recording_path, audio, file):
+            """Process selected or uploaded audio."""
+            # Priority: recording_path > file > audio
+            audio_path = None
+            if recording_path:
+                audio_path = recording_path
+            elif file:
+                audio_path = file.name if hasattr(file, 'name') else file
+            elif audio:
+                audio_path = audio
+            
+            if not audio_path:
+                return "", "", "⚠️ Please select a recording or upload a file", ""
+            
             transcript, summary, status = process_audio(audio_path)
             return transcript, summary, status, transcript
         
@@ -431,10 +541,29 @@ def create_ui(initial_audio: Optional[str] = None):
             response = chat_with_context(question, history, transcript)
             return history + [[question, response]], ""
         
+        def save_transcript(transcript):
+            """Save transcript to file."""
+            if not transcript:
+                return "⚠️ No transcript to save"
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = RECORDINGS_DIR / f"transcript_{timestamp}.txt"
+            
+            try:
+                output_path.write_text(transcript, encoding='utf-8')
+                return f"✅ Saved to: {output_path}"
+            except Exception as e:
+                return f"❌ Failed to save: {e}"
+        
         # Wire up events
+        refresh_recordings_btn.click(
+            refresh_recordings,
+            outputs=[recordings_dropdown, recordings_info]
+        )
+        
         process_btn.click(
             on_process,
-            inputs=[audio_input, file_input],
+            inputs=[recordings_dropdown, audio_input, file_input],
             outputs=[transcript_output, summary_output, status_text, transcript_state]
         )
         
@@ -448,6 +577,12 @@ def create_ui(initial_audio: Optional[str] = None):
             on_chat,
             inputs=[chat_input, chatbot, transcript_state],
             outputs=[chatbot, chat_input]
+        )
+        
+        save_transcript_btn.click(
+            save_transcript,
+            inputs=[transcript_output],
+            outputs=[status_text]
         )
         
         clear_btn.click(lambda: [], None, chatbot)
@@ -465,11 +600,34 @@ def create_ui(initial_audio: Optional[str] = None):
             outputs=[chatbot, chat_input]
         )
         
-        # Auto-load audio if provided
-        if initial_audio and Path(initial_audio).exists():
+        # Initial load - populate recordings list
+        def on_load():
+            """Called when UI loads."""
+            recordings = list_recordings()
+            choices = [(f"{r['name']} ({r['duration_str']}, {r['date']})", r['path']) for r in recordings]
+            info = format_recordings_table(recordings)
+            
+            # If initial_audio is provided, select it
+            selected = None
+            if initial_audio and Path(initial_audio).exists():
+                selected = str(Path(initial_audio).resolve())
+            
+            return gr.update(choices=choices, value=selected), info
+        
+        demo.load(
+            on_load,
+            outputs=[recordings_dropdown, recordings_info]
+        )
+        
+        # Auto-transcribe if initial_audio is provided
+        if initial_audio and auto_transcribe and Path(initial_audio).exists():
+            def auto_process():
+                transcript, summary, status = process_audio(initial_audio)
+                return transcript, summary, status, transcript
+            
             demo.load(
-                lambda: initial_audio,
-                outputs=[audio_input]
+                auto_process,
+                outputs=[transcript_output, summary_output, status_text, transcript_state]
             )
     
     return demo
@@ -484,6 +642,8 @@ def main():
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--share', action='store_true', help='Create public link')
     parser.add_argument('--audio', type=str, help='Audio file to load on startup')
+    parser.add_argument('--auto-transcribe', action='store_true', 
+                        help='Automatically transcribe when --audio is provided')
     args = parser.parse_args()
     
     print("=" * 50)
@@ -491,6 +651,7 @@ def main():
     print("=" * 50)
     print(f"Whisper ASR: {WHISPER_URL}")
     print(f"Ollama LLM:  {OLLAMA_URL} (model: {OLLAMA_MODEL})")
+    print(f"Recordings:  {RECORDINGS_DIR}")
     print(f"Web UI:      http://localhost:{args.port}")
     print("=" * 50)
     
@@ -501,10 +662,19 @@ def main():
     print(f"Ollama:  {'✅' if ollama_ok else '❌'} {ollama_msg}")
     print()
     
+    # Check recordings
+    recordings = list_recordings()
+    print(f"Recordings: {len(recordings)} files found")
+    
     if args.audio:
         print(f"Loading audio: {args.audio}")
+        if args.auto_transcribe:
+            print("Auto-transcribe: ENABLED")
     
-    demo = create_ui(initial_audio=args.audio)
+    demo = create_ui(
+        initial_audio=args.audio,
+        auto_transcribe=args.auto_transcribe
+    )
     demo.launch(
         server_name=args.host,
         server_port=args.port,

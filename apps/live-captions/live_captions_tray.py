@@ -204,6 +204,10 @@ BACKEND_LABELS = {
 # Tray Application
 # ==============================================================================
 
+# Shared recordings directory (accessible by Audio Notes app)
+RECORDINGS_DIR = SCRIPT_DIR.parent.parent / "recordings"
+
+
 class LiveCaptionsTray:
     """System tray application for Live Captions."""
     
@@ -212,6 +216,7 @@ class LiveCaptionsTray:
         self.current_backend = None
         self.use_system_audio = True  # Default to system audio
         self.enable_recording = True  # Default to recording enabled
+        self.enable_transcription = True  # Default to live transcription enabled
         self.icon = None
         self.backend_status: dict[str, tuple[bool, str]] = {}  # Cache backend health
         self._running = True  # For background thread
@@ -426,6 +431,12 @@ class LiveCaptionsTray:
         if not self.enable_recording:
             cmd.append("--no-recording")
         
+        if not self.enable_transcription:
+            cmd.append("--no-transcription")
+        
+        # Use shared recordings directory
+        cmd.extend(["--recordings-dir", str(RECORDINGS_DIR)])
+        
         logger.info(f"Starting Live Captions: {' '.join(cmd)}")
         
         try:
@@ -506,7 +517,7 @@ class LiveCaptionsTray:
                     self.icon.notify("No Recording", "Record some audio first before transcribing.")
                 return
             
-            # Save the recording
+            # Save the recording to the shared recordings directory
             audio_path = recorder.save()
             if not audio_path:
                 logger.error("Failed to save recording")
@@ -518,11 +529,12 @@ class LiveCaptionsTray:
             audio_notes_script = SCRIPT_DIR.parent / "audio-notes" / "audio_notes.py"
             
             if audio_notes_script.exists():
-                # Launch Audio Notes app with the audio file
+                # Launch Audio Notes app with the audio file and auto-transcribe
                 cmd = [
                     PYTHON_EXE,
                     str(audio_notes_script),
-                    "--audio", str(audio_path)
+                    "--audio", str(audio_path),
+                    "--auto-transcribe"  # Auto-start transcription
                 ]
                 
                 logger.info(f"Launching Audio Notes: {' '.join(cmd)}")
@@ -533,7 +545,7 @@ class LiveCaptionsTray:
                 if self.icon:
                     self.icon.notify(
                         "Opening Audio Notes", 
-                        f"Launching transcription UI.\nFile: {audio_path.name}"
+                        f"Auto-transcribing...\nFile: {audio_path.name}"
                     )
             else:
                 # Fallback: just open the file location
@@ -561,6 +573,15 @@ class LiveCaptionsTray:
         logger.info(f"Audio source: {source}")
         
         # Restart if running
+        if self.is_running():
+            self.start_captions(self.current_backend)
+    
+    def toggle_transcription(self):
+        """Toggle live transcription on/off."""
+        self.enable_transcription = not self.enable_transcription
+        logger.info(f"Live transcription: {'enabled' if self.enable_transcription else 'disabled'}")
+        
+        # Restart if running to apply change
         if self.is_running():
             self.start_captions(self.current_backend)
     
@@ -681,6 +702,13 @@ class LiveCaptionsTray:
                         radio=True
                     ),
                 )
+            ),
+            
+            # Live transcription toggle
+            pystray.MenuItem(
+                "📝 Live Transcription",
+                lambda icon, item: self.toggle_transcription(),
+                checked=lambda item: self.enable_transcription
             ),
             
             pystray.Menu.SEPARATOR,
