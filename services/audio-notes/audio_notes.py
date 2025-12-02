@@ -439,18 +439,17 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             with gr.Column(scale=1):
                 # Recordings browser with batch selection
                 with gr.Accordion("📁 Recordings", open=True):
-                    with gr.Row():
+                    with gr.Row(equal_height=True):
                         select_all_checkbox = gr.Checkbox(
                             label="Select All",
                             value=False,
-                            interactive=True,
-                            scale=4
+                            interactive=True
                         )
                         refresh_recordings_btn = gr.Button(
-                            "🔄", 
+                            "🔄",
+                            variant="secondary",
                             size="sm",
-                            min_width=40,
-                            scale=1
+                            min_width=36
                         )
                     
                     recordings_checkboxes = gr.CheckboxGroup(
@@ -472,7 +471,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 # Upload section
                 with gr.Accordion("📤 Upload Audio", open=False):
                     file_input = gr.File(
-                        label="Drop audio file here (saved as uploaded_XX.wav)",
+                        label="Drop audio file here",
                         file_types=[".wav", ".mp3", ".m4a", ".ogg", ".flac"]
                     )
                     upload_status = gr.Markdown("")
@@ -559,35 +558,19 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 return "⚠️ No files selected. Check the boxes next to recordings to select them."
             return batch_transcribe(selected_files)
         
-        def get_next_upload_number():
-            """Get the next upload number for uploaded_XX naming."""
-            existing = list(RECORDINGS_DIR.glob("uploaded_*.wav"))
-            if not existing:
-                return 1
-            numbers = []
-            for f in existing:
-                try:
-                    num = int(f.stem.replace("uploaded_", ""))
-                    numbers.append(num)
-                except ValueError:
-                    pass
-            return max(numbers, default=0) + 1
-        
         def on_file_upload(file):
-            """Handle file upload - save to recordings folder with uploaded_XX name."""
+            """Handle file upload - save to recordings folder with recording_YYYYMMDD_HHMMSS name."""
             if file is None:
                 return "", gr.update()
             
             try:
-                # Get next upload number
-                num = get_next_upload_number()
-                
                 # Get source file extension
                 src_path = Path(file.name if hasattr(file, 'name') else file)
                 ext = src_path.suffix.lower() or '.wav'
                 
-                # New filename: uploaded_XX.ext
-                new_name = f"uploaded_{num:02d}{ext}"
+                # New filename: recording_YYYYMMDD_HHMMSS.ext (same pattern as Live Captions)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                new_name = f"recording_{timestamp}{ext}"
                 dest_path = RECORDINGS_DIR / new_name
                 
                 # Copy file to recordings directory
