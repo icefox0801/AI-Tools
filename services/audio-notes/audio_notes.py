@@ -438,7 +438,7 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
             results.append(f"❌ {file_name}: {e}")
             logger.error(f"Batch transcription error for {file_name}: {e}")
     
-    progress(0.9, desc="Generating summary...")
+    progress(0.85, desc="Transcription complete. Generating summary...")
     
     # Combine all transcripts
     combined_transcript = "\n\n---\n\n".join(all_transcripts) if all_transcripts else ""
@@ -452,7 +452,7 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progr
         else:
             summary = "*Ollama not available for summarization*"
     
-    progress(1.0, desc="Batch transcription complete!")
+    progress(1.0, desc="Done!")
     
     status = "**Batch Transcription Results:**\n\n" + "\n\n".join(results)
     return status, combined_transcript, summary, combined_transcript
@@ -480,30 +480,26 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             with gr.Column(scale=1):
                 # Recordings browser with batch selection
                 with gr.Accordion("📁 Recordings", open=True):
-                    with gr.Row():
-                        select_all_checkbox = gr.Checkbox(
-                            label="",
-                            value=False,
-                            interactive=True,
-                            min_width=20,
-                            scale=0
-                        )
-                        gr.Markdown("**Select recordings to transcribe**", elem_id="recordings-label")
-                        refresh_recordings_btn = gr.Button(
-                            "🔄",
-                            variant="secondary",
-                            size="sm",
-                            min_width=32,
-                            scale=0
-                        )
-                    
                     recordings_checkboxes = gr.CheckboxGroup(
-                        label="",
+                        label="Select recordings to transcribe",
                         choices=[],
                         value=[],
-                        interactive=True,
-                        show_label=False
+                        interactive=True
                     )
+                    
+                    with gr.Row():
+                        select_all_checkbox = gr.Checkbox(
+                            label="Select All",
+                            value=False,
+                            interactive=True,
+                            scale=1
+                        )
+                        refresh_recordings_btn = gr.Button(
+                            "🔄 Refresh",
+                            variant="secondary",
+                            size="sm",
+                            scale=0
+                        )
                     
                     # Backend selection
                     backend_radio = gr.Radio(
