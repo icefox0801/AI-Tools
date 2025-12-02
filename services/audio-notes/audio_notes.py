@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 # Configuration
 WHISPER_URL = os.getenv("WHISPER_URL", "http://localhost:8003")
+PARAKEET_URL = os.getenv("PARAKEET_URL", "http://localhost:8002")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:14b")  # Default to qwen3 (commonly available)
 
@@ -65,6 +66,17 @@ def check_whisper_health() -> tuple[bool, str]:
         return False, f"Whisper returned status {resp.status_code}"
     except Exception as e:
         return False, f"Whisper not available: {e}"
+
+
+def check_parakeet_health() -> tuple[bool, str]:
+    """Check if Parakeet service is available."""
+    try:
+        resp = requests.get(f"{PARAKEET_URL}/health", timeout=2)
+        if resp.status_code == 200:
+            return True, "Parakeet ASR ready"
+        return False, f"Parakeet returned status {resp.status_code}"
+    except Exception as e:
+        return False, f"Parakeet not available: {e}"
 
 
 def check_ollama_health() -> tuple[bool, str]:
@@ -149,16 +161,23 @@ def format_recordings_table(recordings: List[dict]) -> str:
     return "\n".join(lines)
 
 
-def transcribe_audio(audio_path: str) -> tuple[str, float]:
-    """Transcribe audio file using Whisper service.
+def transcribe_audio(audio_path: str, backend: str = "parakeet") -> tuple[str, float]:
+    """Transcribe audio file using selected ASR backend.
     
     Args:
         audio_path: Path to audio file
+        backend: "whisper" or "parakeet" (default: parakeet - best accuracy)
         
     Returns:
         Tuple of (transcript_text, duration_seconds)
     """
-    logger.info(f"Transcribing: {audio_path}")
+    # Select backend URL
+    if backend == "whisper":
+        base_url = WHISPER_URL
+    else:
+        base_url = PARAKEET_URL
+    
+    logger.info(f"Transcribing with {backend}: {audio_path}")
     
     # Read audio file
     with open(audio_path, 'rb') as f:
@@ -178,12 +197,12 @@ def transcribe_audio(audio_path: str) -> tuple[str, float]:
     }
     content_type = content_types.get(ext, 'audio/wav')
     
-    # Send to Whisper /transcribe endpoint
+    # Send to /transcribe endpoint
     files = {'file': (Path(audio_path).name, audio_data, content_type)}
     
     try:
         resp = requests.post(
-            f"{WHISPER_URL}/transcribe",
+            f"{base_url}/transcribe",
             files=files,
             timeout=300  # 5 minutes for long audio
         )
@@ -192,7 +211,7 @@ def transcribe_audio(audio_path: str) -> tuple[str, float]:
             data = resp.json()
             text = data.get("text", "")
             duration = data.get("duration", duration)
-            logger.info(f"Transcription complete: {len(text)} chars, {duration:.1f}s")
+            logger.info(f"Transcription complete ({backend}): {len(text)} chars, {duration:.1f}s")
             return text, duration
         else:
             logger.error(f"Transcription failed: {resp.status_code} - {resp.text}")
@@ -369,11 +388,12 @@ def process_audio(audio_file, progress=gr.Progress()) -> tuple[str, str, str]:
     return transcript, summary, status
 
 
-def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> tuple[str, str, str, str]:
+def batch_transcribe(selected_files: List[str], backend: str = "parakeet", progress=gr.Progress()) -> tuple[str, str, str, str]:
     """Batch transcribe multiple audio files.
     
     Args:
         selected_files: List of file paths to transcribe
+        backend: "whisper" or "parakeet" (default: parakeet)
         progress: Gradio progress tracker
         
     Returns:
@@ -382,10 +402,14 @@ def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> tuple
     if not selected_files:
         return "⚠️ No files selected for batch transcription", "", "", ""
     
-    # Check Whisper service
-    whisper_ok, whisper_msg = check_whisper_health()
-    if not whisper_ok:
-        return f"❌ {whisper_msg}", "", "", ""
+    # Check selected backend service
+    if backend == "whisper":
+        service_ok, service_msg = check_whisper_health()
+    else:
+        service_ok, service_msg = check_parakeet_health()
+    
+    if not service_ok:
+        return f"❌ {service_msg}", "", "", ""
     
     results = []
     all_transcripts = []
@@ -396,7 +420,7 @@ def batch_transcribe(selected_files: List[str], progress=gr.Progress()) -> tuple
         progress((i / total), desc=f"Transcribing {file_name} ({i+1}/{total})...")
         
         try:
-            transcript, duration = transcribe_audio(file_path)
+            transcript, duration = transcribe_audio(file_path, backend=backend)
             
             if transcript.startswith("Error"):
                 results.append(f"❌ {file_name}: {transcript}")
@@ -481,6 +505,14 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                         show_label=False
                     )
                     
+                    # Backend selection
+                    backend_radio = gr.Radio(
+                        choices=[("Parakeet (Best)", "parakeet"), ("Whisper", "whisper")],
+                        value="parakeet",
+                        label="ASR Backend",
+                        interactive=True
+                    )
+                    
                     batch_transcribe_btn = gr.Button(
                         "📝 Batch Transcribe Selected", 
                         variant="primary",
@@ -509,9 +541,9 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 with gr.Accordion("⚙️ Service Status", open=False):
                     gr.Markdown(f"""
                     **Backend Services:**
+                    - Parakeet ASR: `{PARAKEET_URL}`
                     - Whisper ASR: `{WHISPER_URL}`
-                    - Ollama LLM: `{OLLAMA_URL}`
-                    - Model: `{OLLAMA_MODEL}`
+                    - Ollama LLM: `{OLLAMA_URL}` (model: `{OLLAMA_MODEL}`)
                     - Recordings: `{RECORDINGS_DIR}`
                     """)
                     refresh_btn = gr.Button("🔄 Check Services")
@@ -574,11 +606,11 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             else:
                 return []
         
-        def on_batch_transcribe(selected_files):
+        def on_batch_transcribe(selected_files, backend):
             """Handle batch transcription."""
             if not selected_files:
-                return "\u26a0\ufe0f No files selected. Check the boxes next to recordings to select them.", "", "", ""
-            return batch_transcribe(selected_files)
+                return "⚠️ No files selected. Check the boxes next to recordings to select them.", "", "", ""
+            return batch_transcribe(selected_files, backend=backend)
         
         def on_file_upload(file):
             """Handle file upload - save to recordings folder with recording_YYYYMMDD_HHMMSS name."""
@@ -622,10 +654,12 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             return history + [[message, response]], ""
         
         def on_refresh():
+            parakeet_ok, parakeet_msg = check_parakeet_health()
             whisper_ok, whisper_msg = check_whisper_health()
             ollama_ok, ollama_msg = check_ollama_health()
             return f"""
 **Status:**
+- Parakeet: {"✅" if parakeet_ok else "❌"} {parakeet_msg}
 - Whisper: {"✅" if whisper_ok else "❌"} {whisper_msg}
 - Ollama: {"✅" if ollama_ok else "❌"} {ollama_msg}
             """
@@ -664,7 +698,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         
         batch_transcribe_btn.click(
             on_batch_transcribe,
-            inputs=[recordings_checkboxes],
+            inputs=[recordings_checkboxes, backend_radio],
             outputs=[batch_status, transcript_output, summary_output, transcript_state]
         )
         

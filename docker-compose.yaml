@@ -240,12 +240,14 @@ services:
     container_name: audio-notes
     depends_on:
       - whisper-asr
+      - parakeet-asr
       - ollama
     ports:
       - "7860:7860"                                 # Port mapping: Gradio web interface
     volumes:
       - ./.recordings:/app/recordings              # Shared recordings folder (bind mount for Windows)
     environment:
+      - PARAKEET_URL=http://parakeet-asr:8000
       - WHISPER_URL=http://whisper-asr:8000
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
