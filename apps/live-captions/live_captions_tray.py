@@ -207,7 +207,13 @@ class LiveCaptionsTray:
         self.use_system_audio = True  # Default to system audio
         self.icon = None
         self.backend_status: dict[str, tuple[bool, str]] = {}  # Cache backend health
+        self._running = True  # For background thread
+        self._last_running_state = False  # Track state changes
         self._check_backends()  # Initial check
+        
+        # Start background status monitor
+        self._status_thread = threading.Thread(target=self._monitor_status, daemon=True)
+        self._status_thread.start()
     
     def _check_backends(self):
         """Check all backend services health."""
@@ -221,6 +227,23 @@ class LiveCaptionsTray:
         logger.info("Refreshing backend status...")
         self._check_backends()
         self.update_icon()
+    
+    def _monitor_status(self):
+        """Background thread to monitor process status and sync icon."""
+        import time
+        while self._running:
+            try:
+                # Check if running state changed
+                current_running = self.is_running()
+                if current_running != self._last_running_state:
+                    logger.info(f"Status changed: {'Running' if current_running else 'Stopped'}")
+                    self._last_running_state = current_running
+                    self.update_icon()
+            except Exception as e:
+                logger.debug(f"Status monitor error: {e}")
+            
+            # Check every 1 second
+            time.sleep(1)
     
     def is_backend_available(self, backend: str) -> bool:
         """Check if a specific backend is available."""
@@ -595,6 +618,7 @@ class LiveCaptionsTray:
     def quit(self, icon, item):
         """Exit the application."""
         logger.info("Exiting tray application")
+        self._running = False  # Stop background thread
         self.stop_captions()
         icon.stop()
     
