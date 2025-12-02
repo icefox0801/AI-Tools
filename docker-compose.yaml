@@ -244,7 +244,7 @@ services:
     ports:
       - "7860:7860"                                 # Port mapping: Gradio web interface
     volumes:
-      - audio-notes-data:/app/recordings           # Persistent storage for recordings & transcripts
+      - ./.recordings:/app/recordings              # Shared recordings folder (bind mount for Windows)
     environment:
       - WHISPER_URL=http://whisper-asr:8000
       - OLLAMA_URL=http://ollama:11434
@@ -271,13 +271,6 @@ volumes:
   parakeet-model-data:        # Stores HuggingFace/NeMo model cache for Parakeet (15GB cached)
   whisper-hf-cache:           # Stores HuggingFace model cache for Whisper (~3GB)
   text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (T5, etc.)
-  audio-notes-data:           # Shared recordings & transcripts (accessible from host)
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/.recordings
-
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
 networks:
