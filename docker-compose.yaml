@@ -245,13 +245,12 @@ services:
     ports:
       - "7860:7860"                                 # Port mapping: Gradio web interface
     volumes:
-      - ./.recordings:/app/recordings              # Shared recordings folder (bind mount for Windows)
+      - audio-notes-data:/app/recordings              # Persistent storage for audio recordings
     environment:
       - PARAKEET_URL=http://parakeet-asr:8000
       - WHISPER_URL=http://whisper-asr:8000
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
-      - RECORDINGS_DIR=/app/recordings
     restart: always
     networks:
       - ai-network
@@ -267,6 +266,12 @@ services:
 volumes:
   ollama-data:                # Stores Ollama's models, chat logs, and runtime data
   lobe-chat-data:             # Stores Lobe Chat's user preferences and chat history
+  audio-notes-data:           # Stores audio recordings from Live Captions
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/.recordings
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
   vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
   vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
