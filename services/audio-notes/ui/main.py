@@ -18,7 +18,7 @@ from services import (
     check_whisper_health, check_parakeet_health, check_ollama_health,
     list_recordings, get_audio_duration,
     transcribe_audio, unload_asr_model,
-    summarize_streaming, chat_with_context, generate_chat_title
+    summarize_streaming, chat_with_context, chat_with_context_streaming, generate_chat_title
 )
 from ui.styles import CUSTOM_CSS, CUSTOM_JS
 from ui.sections import (
@@ -35,6 +35,41 @@ from ui.tabs import (
 )
 
 
+def format_recording_title(filename: str) -> str:
+    """Format a recording filename into a human-readable title.
+    
+    Examples:
+        recording_20251203_205252.wav -> Recording - Dec 3, 2025 8:52 PM
+        uploaded_20251201_143000.mp3 -> Uploaded - Dec 1, 2025 2:30 PM  
+        my_audio.wav -> my_audio
+    """
+    from datetime import datetime
+    import re
+    
+    name = Path(filename).stem
+    
+    # Try to parse recording_YYYYMMDD_HHMMSS or uploaded_YYYYMMDD_HHMMSS pattern
+    match = re.match(r'(recording|uploaded)_(\d{8})_(\d{6})', name, re.IGNORECASE)
+    if match:
+        prefix = match.group(1).capitalize()
+        date_str = match.group(2)
+        time_str = match.group(3)
+        try:
+            dt = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+            formatted_date = dt.strftime("%b %-d, %Y %-I:%M %p").replace(" 0", " ")
+            # Windows compatibility - use %#d and %#I instead of %-d and %-I
+            try:
+                formatted_date = dt.strftime("%b %d, %Y %I:%M %p").lstrip("0").replace(" 0", " ")
+            except:
+                pass
+            return f"{prefix} - {formatted_date}"
+        except ValueError:
+            pass
+    
+    # Fallback: clean up underscores and return the name
+    return name.replace('_', ' ').title()
+
+
 def batch_transcribe_streaming(selected_files: List[str], backend: str = "parakeet"):
     """Batch transcribe multiple audio files with streaming progress.
     
@@ -47,9 +82,15 @@ def batch_transcribe_streaming(selected_files: List[str], backend: str = "parake
     
     backend_lower = backend.lower() if backend else "parakeet"
     
+    # Optimize GPU memory: unload the other ASR backend before starting
+    yield "⏳ Preparing GPU memory...", "", ""
     if backend_lower == "whisper":
+        # Unload Parakeet to free memory for Whisper
+        unload_asr_model("Parakeet")
         service_ok, service_msg = check_whisper_health()
     else:
+        # Unload Whisper to free memory for Parakeet
+        unload_asr_model("Whisper")
         service_ok, service_msg = check_parakeet_health()
     
     if not service_ok:
@@ -80,7 +121,8 @@ def batch_transcribe_streaming(selected_files: List[str], backend: str = "parake
             txt_path.write_text(transcript, encoding='utf-8')
             
             results.append(f"✅ {file_name} ➜ {txt_path.name} ({duration:.1f}s, {len(transcript)} chars)")
-            all_transcripts.append(f"### {file_name}\n\n{transcript}")
+            # Use markdown heading for better readability in transcript
+            all_transcripts.append(f"## 🎙️ {file_name}\n\n{transcript}")
             logger.info(f"Batch transcribed: {file_name} -> {txt_path}")
             
         except Exception as e:
@@ -223,9 +265,9 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 recordings = list_recordings()
                 new_paths = [r['path'] for r in recordings if not r['has_transcript']]
                 transcribed_paths = [r['path'] for r in recordings if r['has_transcript']]
-                return new_paths, transcribed_paths
+                return new_paths, transcribed_paths, True, "☐ Unselect All"
             else:
-                return [], []
+                return [], [], False, "☑ Select All"
         
         def get_combined_selections(new_selected, transcribed_selected):
             """Combine selections from both groups."""
@@ -253,14 +295,17 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 return
             
             # Stream transcription progress
+            # NOTE: gr.State doesn't work with gr.update() in generators,
+            # so we must yield actual values for transcript_state at each step
             final_status, final_transcript, final_state = "", "", ""
             for status, transcript, state in batch_transcribe_streaming(selected_files, backend=backend):
                 final_status, final_transcript, final_state = status, transcript, state
-                # During progress, just update status, keep other outputs unchanged
+                # During progress, update status and keep state in sync
+                # Important: gr.State needs actual value, not gr.update()
                 yield (
                     status, 
                     gr.update(),  # transcript_output - don't update yet
-                    gr.update(),  # transcript_state - don't update yet
+                    state,        # transcript_state - must be actual value for gr.State!
                     gr.update(),  # recordings_accordion
                     gr.update(),  # batch_transcribe_btn
                     gr.update(),  # summarize_btn
@@ -297,8 +342,12 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 return
             
             try:
+                first_chunk = True
                 for chunk in generate_summary(transcript, prompt, model):
-                    yield chunk
+                    if first_chunk:
+                        first_chunk = False
+                    # Compact status indicator
+                    yield f"⏳ Summarizing...\n\n{chunk}"
             except Exception as e:
                 logger.error(f"Summarization error: {e}")
                 yield f"❌ Error during summarization: {str(e)}"
@@ -339,30 +388,45 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 return f"❌ Upload failed: {e}", gr.update(), gr.update(), gr.update(), gr.update()
         
         def on_chat(message, history, transcript, summary, model):
-            """Handle chat message."""
+            """Handle chat message with streaming response."""
             logger.info(f"on_chat called - transcript len: {len(transcript) if transcript else 0}, summary len: {len(summary) if summary else 0}")
-            logger.info(f"on_chat - transcript preview: {transcript[:200] if transcript else 'EMPTY'}...")
-            logger.info(f"on_chat - summary preview: {summary[:200] if summary else 'EMPTY'}...")
+            if transcript:
+                logger.info(f"on_chat - transcript preview: {transcript[:200]}...")
+            else:
+                logger.warning("on_chat - transcript is EMPTY!")
+            if summary:
+                logger.info(f"on_chat - summary preview: {summary[:200]}...")
+            
             if not message.strip():
-                return history, "", gr.update()
+                yield history, "", gr.update()
+                return
+            
             if not transcript:
                 error_history = history + [
                     {"role": "user", "content": message},
-                    {"role": "assistant", "content": "⚠️ Please transcribe audio first"}
+                    {"role": "assistant", "content": "⚠️ Please transcribe audio first. The transcript was not found in context."}
                 ]
-                return error_history, "", gr.update()
+                yield error_history, "", gr.update()
+                return
             
-            response = chat_with_context(message, history, transcript, summary, model)
+            # Add user message and placeholder for assistant
             new_history = history + [
                 {"role": "user", "content": message},
-                {"role": "assistant", "content": response}
+                {"role": "assistant", "content": ""}
             ]
             
+            # Generate title on first message
+            title_update = gr.update()
             if len(history) == 0:
-                title = generate_chat_title(message, model)
-                return new_history, "", title
+                title_update = generate_chat_title(message, model)
             
-            return new_history, "", gr.update()
+            # Stream the response
+            for response_chunk in chat_with_context_streaming(message, history, transcript, summary, model):
+                new_history[-1]["content"] = response_chunk
+                yield new_history, "", title_update
+            
+            # Final yield with cleared input
+            yield new_history, "", title_update
         
         def on_refresh():
             parakeet_ok, parakeet_msg = check_parakeet_health()
@@ -392,7 +456,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         select_all_btn.click(
             toggle_select_all,
             inputs=[select_all_state],
-            outputs=[new_recordings_checkboxes, transcribed_checkboxes]
+            outputs=[new_recordings_checkboxes, transcribed_checkboxes, select_all_state, select_all_btn]
         )
         
         new_recordings_checkboxes.change(
@@ -433,12 +497,17 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 gr.update(interactive=False),
                 gr.update(selected=1),
                 gr.update(interactive=True),
-                "⏳ *Generating summary...*",
+                "⏳ Connecting to LLM...",
             )
         
         def finish_summarize(summary_text):
+            # Remove the "Summarizing..." prefix if present
+            clean_summary = summary_text
+            if summary_text and summary_text.startswith("⏳ Summarizing..."):
+                clean_summary = summary_text.replace("⏳ Summarizing...\n\n", "")
             return (
-                summary_text,
+                clean_summary,  # summary_output - show clean version
+                clean_summary,  # summary_state - store clean version
                 gr.update(interactive=True),
                 gr.update(interactive=True),
                 gr.update(interactive=True),
@@ -456,7 +525,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         ).then(
             finish_summarize,
             inputs=[summary_output],
-            outputs=[summary_state, batch_transcribe_btn, summarize_btn, reset_btn, chat_tab, summarize_accordion]
+            outputs=[summary_output, summary_state, batch_transcribe_btn, summarize_btn, reset_btn, chat_tab, summarize_accordion]
         )
         
         file_input.change(
@@ -476,7 +545,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 gr.update(choices=new_choices, value=[]),
                 gr.update(choices=transcribed_choices, value=[]),
                 False,
-                gr.update(value="☑️ Select All"),
+                gr.update(value="☑ Select All"),
                 "*Select recordings and click Transcribe.*",
                 "", "", "", "",
                 [],
