@@ -1,22 +1,22 @@
-"""Audio recorder for saving streamed audio to WAV file.
+"""Audio recorder that uploads to Audio Notes API.
 
-This module provides a simple recorder that accumulates audio chunks
-and saves them to a WAV file for later full transcription.
+This module captures audio and uploads it to the Audio Notes service.
+Audio Notes handles all file storage - Live Captions just sends the audio.
 
-The audio is saved as 16-bit PCM WAV at 16kHz mono, which is:
-- ~1.92 MB per minute (uncompressed)
-- Compatible with all ASR services
+Features:
+- Upload to Audio Notes API every 60 seconds
+- Initial upload after 3 seconds of audio
+- No local file handling - that's Audio Notes' job
 """
 
 import os
 import io
 import wave
-import time
 import threading
 import logging
-from pathlib import Path
+import requests
 from typing import Optional, Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,16 @@ SAMPLE_RATE = 16000
 SAMPLE_WIDTH = 2  # 16-bit = 2 bytes
 CHANNELS = 1
 
+# Auto-upload timing
+INITIAL_UPLOAD_DELAY = 3   # First upload after 3 seconds of audio
+AUTO_UPLOAD_INTERVAL = 60  # Then upload every 60 seconds (1 minute)
+
+# Audio Notes API URL (default for local development)
+AUDIO_NOTES_API = os.getenv("AUDIO_NOTES_URL", "http://localhost:7860")
+
 
 class AudioRecorder:
-    """Records streamed audio to a WAV file.
+    """Records audio and uploads to Audio Notes API.
     
     Usage:
         recorder = AudioRecorder()
@@ -37,48 +44,39 @@ class AudioRecorder:
         recorder.add_chunk(audio_bytes)
         
         # When done:
-        path = recorder.stop()  # Returns path to saved WAV
-        
-        # Or to clear without saving:
-        recorder.clear()
+        recorder.stop()
     """
     
     def __init__(
         self,
-        output_dir: Optional[str] = None,
+        api_url: Optional[str] = None,
         on_duration_change: Optional[Callable[[float], None]] = None
     ):
         """Initialize recorder.
         
         Args:
-            output_dir: Directory for saving recordings. Defaults to project's recordings/ folder.
+            api_url: Audio Notes API URL
             on_duration_change: Callback when duration changes (for UI updates)
         """
-        if output_dir:
-            self.output_dir = Path(output_dir)
-        else:
-            # Default to project's .recordings/ folder (shared with Docker audio-notes service)
-            # Fall back to RECORDINGS_DIR env var or temp dir
-            project_recordings = Path(__file__).parent.parent.parent.parent.parent / '.recordings'
-            if project_recordings.exists():
-                self.output_dir = project_recordings
-            else:
-                self.output_dir = Path(os.environ.get('RECORDINGS_DIR', 
-                    os.path.join(os.environ.get('TEMP', '/tmp'), 'live-captions-recordings')))
-        
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+        self.api_url = api_url or AUDIO_NOTES_API
         self.on_duration_change = on_duration_change
         
         # Recording state
         self._chunks: list[bytes] = []
         self._recording = False
         self._start_time: Optional[datetime] = None
-        self._current_file: Optional[Path] = None
+        self._current_filename: Optional[str] = None
         self._lock = threading.Lock()
         
         # Track total bytes for duration calculation
         self._total_bytes = 0
+        
+        # Auto-upload state
+        self._upload_timer: Optional[threading.Timer] = None
+        self._last_upload_bytes = 0
+        self._first_upload_done = False
+        
+        logger.info(f"Audio Notes API: {self.api_url}")
     
     @property
     def is_recording(self) -> bool:
@@ -90,7 +88,6 @@ class AudioRecorder:
         """Get current recording duration in seconds."""
         if self._total_bytes == 0:
             return 0.0
-        # Calculate from bytes: bytes / (sample_rate * sample_width * channels)
         return self._total_bytes / (SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS)
     
     @property
@@ -105,11 +102,6 @@ class AudioRecorder:
     def file_size_mb(self) -> float:
         """Get approximate file size in MB."""
         return self._total_bytes / (1024 * 1024)
-    
-    @property
-    def current_file(self) -> Optional[Path]:
-        """Get path to current recording file (if any)."""
-        return self._current_file
     
     def start(self) -> bool:
         """Start recording.
@@ -126,13 +118,110 @@ class AudioRecorder:
             self._total_bytes = 0
             self._start_time = datetime.now()
             self._recording = True
+            self._first_upload_done = False
+            self._last_upload_bytes = 0
             
             # Generate filename with timestamp
             timestamp = self._start_time.strftime("%Y%m%d_%H%M%S")
-            self._current_file = self.output_dir / f"recording_{timestamp}.wav"
+            self._current_filename = f"recording_{timestamp}.wav"
             
-            logger.info(f"Started recording: {self._current_file}")
+            logger.info(f"Started recording: {self._current_filename}")
+            
+            # Start auto-upload timer
+            self._start_upload_timer()
+            
             return True
+    
+    def _create_wav_bytes(self, audio_data: bytes) -> bytes:
+        """Create a WAV file in memory from raw PCM data."""
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav:
+            wav.setnchannels(CHANNELS)
+            wav.setsampwidth(SAMPLE_WIDTH)
+            wav.setframerate(SAMPLE_RATE)
+            wav.writeframes(audio_data)
+        wav_buffer.seek(0)
+        return wav_buffer.read()
+    
+    def _upload_to_api(self, audio_data: bytes) -> bool:
+        """Upload audio to Audio Notes API.
+        
+        Returns:
+            True if upload succeeded
+        """
+        try:
+            wav_bytes = self._create_wav_bytes(audio_data)
+            
+            files = {'audio': (self._current_filename, wav_bytes, 'audio/wav')}
+            data = {'filename': self._current_filename, 'append': 'false'}
+            
+            resp = requests.post(
+                f"{self.api_url}/api/upload-audio",
+                files=files,
+                data=data,
+                timeout=30
+            )
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                logger.info(
+                    f"Uploaded: {result.get('filename')} "
+                    f"({result.get('duration', 0):.1f}s, {result.get('size_mb', 0):.2f} MB)"
+                )
+                return True
+            else:
+                logger.warning(f"Upload failed: {resp.status_code}")
+                return False
+        except requests.exceptions.ConnectionError:
+            logger.debug("Audio Notes API not available")
+            return False
+        except Exception as e:
+            logger.warning(f"Upload error: {e}")
+            return False
+    
+    def _start_upload_timer(self):
+        """Start the auto-upload timer."""
+        if self._upload_timer:
+            self._upload_timer.cancel()
+        
+        # Use shorter delay for first upload, then regular interval
+        delay = INITIAL_UPLOAD_DELAY if not self._first_upload_done else AUTO_UPLOAD_INTERVAL
+        
+        self._upload_timer = threading.Timer(delay, self._auto_upload)
+        self._upload_timer.daemon = True
+        self._upload_timer.start()
+    
+    def _auto_upload(self):
+        """Auto-upload callback."""
+        if not self._recording:
+            return
+        
+        with self._lock:
+            # Check minimum duration for first upload
+            min_bytes = INITIAL_UPLOAD_DELAY * SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS
+            
+            # Skip if not enough audio yet
+            if not self._first_upload_done and self._total_bytes < min_bytes:
+                if self._recording:
+                    self._upload_timer = threading.Timer(1, self._auto_upload)
+                    self._upload_timer.daemon = True
+                    self._upload_timer.start()
+                return
+            
+            # Only upload if we have new data
+            if self._total_bytes > self._last_upload_bytes and self._chunks:
+                audio_data = b''.join(self._chunks)
+                
+                if self._upload_to_api(audio_data):
+                    self._last_upload_bytes = self._total_bytes
+                    upload_type = "Initial" if not self._first_upload_done else "Auto"
+                    logger.info(f"{upload_type} upload: {self.duration_str}, {self.file_size_mb:.1f} MB")
+                
+                self._first_upload_done = True
+        
+        # Schedule next upload
+        if self._recording:
+            self._start_upload_timer()
     
     def add_chunk(self, audio_bytes: bytes):
         """Add an audio chunk to the recording.
@@ -147,19 +236,23 @@ class AudioRecorder:
             self._chunks.append(audio_bytes)
             self._total_bytes += len(audio_bytes)
         
-        # Notify duration change (for UI updates)
+        # Notify duration change
         if self.on_duration_change:
             try:
                 self.on_duration_change(self.duration)
             except Exception:
                 pass
     
-    def stop(self) -> Optional[Path]:
-        """Stop recording and save to WAV file.
+    def stop(self) -> Optional[str]:
+        """Stop recording and upload final audio.
         
         Returns:
-            Path to saved WAV file, or None if no audio recorded
+            Filename if uploaded successfully, None otherwise
         """
+        if self._upload_timer:
+            self._upload_timer.cancel()
+            self._upload_timer = None
+        
         with self._lock:
             if not self._recording:
                 return None
@@ -170,125 +263,39 @@ class AudioRecorder:
                 logger.warning("No audio recorded")
                 return None
             
-            # Combine all chunks
+            # Final upload
             audio_data = b''.join(self._chunks)
             
-            # Save as WAV
-            try:
-                with wave.open(str(self._current_file), 'wb') as wav:
-                    wav.setnchannels(CHANNELS)
-                    wav.setsampwidth(SAMPLE_WIDTH)
-                    wav.setframerate(SAMPLE_RATE)
-                    wav.writeframes(audio_data)
-                
-                logger.info(
-                    f"Saved recording: {self._current_file} "
-                    f"({self.duration_str}, {self.file_size_mb:.1f} MB)"
-                )
-                return self._current_file
-                
-            except Exception as e:
-                logger.error(f"Failed to save recording: {e}")
+            if self._upload_to_api(audio_data):
+                logger.info(f"Final upload: {self._current_filename} ({self.duration_str})")
+                return self._current_filename
+            else:
+                logger.warning("Final upload failed - audio not saved")
                 return None
     
     def clear(self):
-        """Clear current recording without saving."""
+        """Clear recording without uploading."""
+        if self._upload_timer:
+            self._upload_timer.cancel()
+            self._upload_timer = None
+        
         with self._lock:
-            was_recording = self._recording
             self._recording = False
             self._chunks = []
             self._total_bytes = 0
-            self._start_time = None
-            
-            # Delete file if exists
-            if self._current_file and self._current_file.exists():
-                try:
-                    self._current_file.unlink()
-                    logger.info(f"Deleted recording: {self._current_file}")
-                except Exception as e:
-                    logger.error(f"Failed to delete recording: {e}")
-            
-            self._current_file = None
-            
-            if was_recording:
-                logger.info("Recording cleared")
-    
-    def get_audio_bytes(self) -> Optional[bytes]:
-        """Get all recorded audio as raw bytes (without saving to file).
-        
-        Returns:
-            Raw PCM audio data, or None if no recording
-        """
-        with self._lock:
-            if not self._chunks:
-                return None
-            return b''.join(self._chunks)
-    
-    def save(self, continue_recording: bool = True) -> Optional[Path]:
-        """Save current recording to a WAV file.
-        
-        Unlike stop(), this saves a snapshot of the current recording
-        and can optionally continue recording.
-        
-        Args:
-            continue_recording: If True, continue recording after save
-            
-        Returns:
-            Path to saved WAV file, or None if no audio recorded
-        """
-        with self._lock:
-            if not self._chunks:
-                logger.warning("No audio to save")
-                return None
-            
-            # Combine all chunks
-            audio_data = b''.join(self._chunks)
-            
-            # Generate output path
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = self.output_dir / f"recording_{timestamp}.wav"
-            
-            # Save as WAV
-            try:
-                with wave.open(str(output_path), 'wb') as wav:
-                    wav.setnchannels(CHANNELS)
-                    wav.setsampwidth(SAMPLE_WIDTH)
-                    wav.setframerate(SAMPLE_RATE)
-                    wav.writeframes(audio_data)
-                
-                duration = len(audio_data) / (SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS)
-                file_size_mb = len(audio_data) / (1024 * 1024)
-                
-                logger.info(
-                    f"Saved recording: {output_path} "
-                    f"({int(duration // 60):02d}:{int(duration % 60):02d}, {file_size_mb:.1f} MB)"
-                )
-                
-                if not continue_recording:
-                    self._recording = False
-                    self._chunks = []
-                    self._total_bytes = 0
-                
-                return output_path
-                
-            except Exception as e:
-                logger.error(f"Failed to save recording: {e}")
-                return None
+            self._current_filename = None
 
 
-# Global recorder instance for use by tray app
+# Global recorder instance for tray app access
 _global_recorder: Optional[AudioRecorder] = None
 
 
-def get_recorder() -> AudioRecorder:
+def get_recorder() -> Optional[AudioRecorder]:
     """Get the global recorder instance."""
-    global _global_recorder
-    if _global_recorder is None:
-        _global_recorder = AudioRecorder()
     return _global_recorder
 
 
-def set_recorder(recorder: AudioRecorder):
+def set_recorder(recorder: Optional[AudioRecorder]):
     """Set the global recorder instance."""
     global _global_recorder
     _global_recorder = recorder
