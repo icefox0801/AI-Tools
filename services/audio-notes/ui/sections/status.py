@@ -19,7 +19,7 @@ def create_status_section():
         - Ollama LLM: `{OLLAMA_URL}` (model: `{OLLAMA_MODEL}`)
         - Recordings: `{RECORDINGS_DIR}`
         """)
-        refresh_btn = gr.Button("🔄 Check Services")
+        refresh_btn = gr.Button("↻ Check Services")
         service_status = gr.Markdown("")
     
     return {

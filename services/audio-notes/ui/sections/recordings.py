@@ -33,8 +33,8 @@ def create_recordings_section():
             )
         
         with gr.Row():
-            select_all_btn = gr.Button("☑️ Select All", size="sm", scale=1)
-            refresh_trigger_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
+            select_all_btn = gr.Button("☑ Select All", size="sm", scale=1)
+            refresh_trigger_btn = gr.Button("↻ Refresh", size="sm", scale=1)
     
     return {
         'recordings_accordion': recordings_accordion,
