@@ -92,16 +92,18 @@ _model_state = ModelState()
 
 
 def get_model():
-    """Get the loaded ASR model."""
+    """Get the loaded ASR model. Auto-loads if not loaded."""
     if not _model_state.loaded:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        logger.info("Model not loaded, auto-loading...")
+        load_model()
     return _model_state.model
 
 
 def get_preprocessor():
-    """Get the audio preprocessor."""
+    """Get the audio preprocessor. Auto-loads if not loaded."""
     if not _model_state.loaded:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        logger.info("Model not loaded, auto-loading...")
+        load_model()
     return _model_state.preprocessor
 
 
@@ -497,6 +499,54 @@ async def model_info():
             "url": text_refiner.url,
         },
     }
+
+
+@app.post("/unload")
+async def unload_model():
+    """Unload model from GPU to free memory for other services."""
+    global _model_state
+    
+    if not _model_state.loaded:
+        return {"status": "not_loaded", "message": "Model was not loaded"}
+    
+    try:
+        # Delete model references
+        if _model_state.model is not None:
+            del _model_state.model
+        if _model_state.preprocessor is not None:
+            del _model_state.preprocessor
+        
+        _model_state.model = None
+        _model_state.preprocessor = None
+        _model_state.loaded = False
+        
+        # Force garbage collection and clear CUDA cache
+        import gc
+        gc.collect()
+        
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            
+            # Get memory info
+            free_mem = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
+            total_mem = torch.cuda.get_device_properties(0).total_memory
+            
+            logger.info(f"Model unloaded. GPU memory freed. Available: {free_mem/1e9:.2f}GB / {total_mem/1e9:.2f}GB")
+            
+            return {
+                "status": "unloaded",
+                "message": "Model unloaded from GPU",
+                "gpu_memory_free_gb": round(free_mem/1e9, 2),
+                "gpu_memory_total_gb": round(total_mem/1e9, 2)
+            }
+        else:
+            logger.info("Model unloaded from CPU")
+            return {"status": "unloaded", "message": "Model unloaded from CPU"}
+            
+    except Exception as e:
+        logger.error(f"Error unloading model: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/transcribe")

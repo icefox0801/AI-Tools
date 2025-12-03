@@ -179,6 +179,48 @@ async def info():
     }
 
 
+@app.post("/unload")
+async def unload_model():
+    """Unload model from GPU to free memory for other services."""
+    global whisper_pipe
+    
+    if whisper_pipe is None:
+        return {"status": "not_loaded", "message": "Model was not loaded"}
+    
+    try:
+        # Delete pipeline and model
+        del whisper_pipe
+        whisper_pipe = None
+        
+        # Force garbage collection and clear CUDA cache
+        import gc
+        gc.collect()
+        
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            
+            # Get memory info
+            free_mem = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
+            total_mem = torch.cuda.get_device_properties(0).total_memory
+            
+            logger.info(f"Whisper model unloaded. GPU memory freed. Available: {free_mem/1e9:.2f}GB / {total_mem/1e9:.2f}GB")
+            
+            return {
+                "status": "unloaded",
+                "message": "Whisper model unloaded from GPU",
+                "gpu_memory_free_gb": round(free_mem/1e9, 2),
+                "gpu_memory_total_gb": round(total_mem/1e9, 2)
+            }
+        else:
+            logger.info("Whisper model unloaded from CPU")
+            return {"status": "unloaded", "message": "Model unloaded from CPU"}
+            
+    except Exception as e:
+        logger.error(f"Error unloading model: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/transcribe")
 async def transcribe_file(file: UploadFile = File(...)):
     """
@@ -231,9 +273,9 @@ async def transcribe_file(file: UploadFile = File(...)):
         
         text = result.get("text", "").strip()
         
-        # Optionally refine text
+        # Optionally refine text (punctuation only, no spelling correction)
         if text and text_refiner.available:
-            text = await refine_text(text)
+            text = await refine_text(text, punctuate=True, correct=False)
         
         logger.info(f"Transcription complete: {len(text)} chars")
         
@@ -330,6 +372,8 @@ async def stream_transcribe(websocket: WebSocket):
                 )
                 
                 if should_process and buffer_samples >= min_samples:
+                    logger.info(f"Processing {buffer_samples} samples ({buffer_samples/SAMPLE_RATE:.2f}s)")
+                    
                     # Convert to numpy array
                     audio_array = np.frombuffer(
                         bytes(audio_buffer), dtype=np.int16
@@ -337,6 +381,7 @@ async def stream_transcribe(websocket: WebSocket):
                     
                     # Transcribe
                     text = transcribe_audio(audio_array)
+                    logger.info(f"Transcribed: '{text[:100] if text else '(empty)'}'")
                     
                     if text:
                         # Apply text refinement (spelling correction only)
@@ -344,6 +389,7 @@ async def stream_transcribe(websocket: WebSocket):
                         refined_text = await refine_text(text, punctuate=False, correct=True)
                         
                         # Send result
+                        logger.info(f"Sending segment s{segment_counter}: '{refined_text[:50]}'")
                         await websocket.send_json({
                             "id": f"s{segment_counter}",
                             "text": refined_text
