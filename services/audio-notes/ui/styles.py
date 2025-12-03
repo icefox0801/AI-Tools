@@ -2,26 +2,24 @@
 
 # CSS to hide all Gradio progress bars/spinners
 CUSTOM_CSS = """
-/* Hide ALL progress indicators globally */
+/* Hide ALL progress indicators globally - but not radio/checkbox inputs */
 .progress-bar, .progress-text, .eta-bar { display: none !important; }
-.generating { display: none !important; }
-.pending { display: none !important; }
-div[class*="progress"] { display: none !important; }
-span[class*="progress"] { display: none !important; }
+div.generating { display: none !important; }
+div.pending { display: none !important; }
+div[class*="progress"]:not([class*="radio"]):not([class*="checkbox"]) { display: none !important; }
+span[class*="progress"]:not([class*="radio"]):not([class*="checkbox"]) { display: none !important; }
 .progress-level { display: none !important; }
 .progress-level-inner { display: none !important; }
 .meta-text { display: none !important; }
 .meta-text-center { display: none !important; }
-.wrap.center.full { display: none !important; }
-.wrap.default.center.full { display: none !important; }
+.wrap.center.full.generating { display: none !important; }
+.wrap.default.center.full.generating { display: none !important; }
 /* Hide spinners */
 .loader { display: none !important; }
-.loading { display: none !important; }
+div.loading { display: none !important; }
 /* Hide processing overlay */
-.processing { display: none !important; }
+div.processing { display: none !important; }
 [data-testid="progress"] { display: none !important; }
-/* Svelte specific */
-.svelte-1txqlrd { display: none !important; }
 """
 
 # JavaScript to enable Ctrl+Enter to submit chat
