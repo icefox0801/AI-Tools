@@ -91,21 +91,22 @@ def summarize_streaming(transcript: str, system_prompt: Optional[str] = None, mo
             yield f"⏳ {prep_result['message']}\\n\\n"
     
     if not system_prompt:
-        system_prompt = """You are an expert summarizer. Analyze the following transcript and provide:
+        system_prompt = """You are a concise summarizer. Summarize the transcript directly without filler or excessive elaboration.
 
-1. **Summary** (1-2 paragraphs): A concise overview of the main content
-2. **Key Points** (3-5 bullets): The most important takeaways
-3. **Topics Discussed** (bullet list): Main subjects covered
+Rules:
+- Keep summary length proportional to transcript length (short transcript = short summary)
+- Only include information actually present in the transcript
+- No introductory phrases like "This transcript discusses..." or "The speaker talks about..."
+- Use bullet points for key points if there are multiple distinct topics
+- If transcript is under 100 words, summary should be 1-2 sentences
+- If transcript is 100-500 words, summary should be a short paragraph
+- If transcript is longer, provide a brief summary followed by key points
 
-Format your response in clean Markdown. Keep your response under 300 words."""
+Format in clean Markdown. Be direct and factual."""
 
-    prompt = f"""Please analyze this transcript:
+    prompt = f"""Summarize this transcript:
 
----
-{transcript}
----
-
-Provide a concise summary following the format specified."""
+{transcript}"""
 
     try:
         resp = requests.post(
@@ -181,8 +182,8 @@ Here is the transcript for context:
 
 Answer the user's questions based on this content. If the answer is not in the transcript or summary, say so."""
 
-    # Build messages from history
-    messages = []
+    # Build messages from history - include system prompt as first message
+    messages = [{"role": "system", "content": system_prompt}]
     for msg in history:
         if isinstance(msg, dict):
             role = msg.get("role", "user")
@@ -207,6 +208,7 @@ Answer the user's questions based on this content. If the answer is not in the t
     messages.append({"role": "user", "content": message})
     
     logger.info(f"Chat request with {len(messages)} messages to model {use_model}")
+    logger.info(f"System prompt length: {len(system_prompt)}")
     
     try:
         resp = requests.post(
@@ -214,7 +216,6 @@ Answer the user's questions based on this content. If the answer is not in the t
             json={
                 "model": use_model,
                 "messages": messages,
-                "system": system_prompt,
                 "stream": True
             },
             timeout=120,
@@ -289,8 +290,8 @@ Here is the transcript for context:
 
 Answer the user's questions based on this content. If the answer is not in the transcript or summary, say so."""
 
-    # Build messages from history - ensure content is always a string
-    messages = []
+    # Build messages from history - include system prompt as first message
+    messages = [{"role": "system", "content": system_prompt}]
     for msg in history:
         if isinstance(msg, dict):
             role = msg.get("role", "user")
@@ -319,7 +320,7 @@ Answer the user's questions based on this content. If the answer is not in the t
     messages.append({"role": "user", "content": message})
     
     logger.info(f"Chat request with {len(messages)} messages to model {use_model}")
-    logger.info(f"System prompt length: {len(system_prompt)}, first 200 chars: {system_prompt[:200]}")
+    logger.info(f"System prompt length: {len(system_prompt)}")
     
     try:
         resp = requests.post(
@@ -327,7 +328,6 @@ Answer the user's questions based on this content. If the answer is not in the t
             json={
                 "model": use_model,
                 "messages": messages,
-                "system": system_prompt,
                 "stream": False
             },
             timeout=60
