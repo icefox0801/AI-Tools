@@ -18,8 +18,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.docker.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (modular structure)
+COPY config.py .
+COPY api/ ./api/
+COPY services/ ./services/
+COPY ui/ ./ui/
 COPY audio_notes.py .
+COPY favicon.ico .
+COPY icon-192.png .
+COPY icon-512.png .
 
 # Create recordings directory
 RUN mkdir -p /app/recordings
@@ -35,7 +42,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 ENV WHISPER_URL=http://whisper-asr:8000
 ENV OLLAMA_URL=http://ollama:11434
 ENV OLLAMA_MODEL=qwen3:14b
-ENV RECORDINGS_DIR=/app/recordings
 ENV GRADIO_SERVER_NAME=0.0.0.0
 ENV GRADIO_SERVER_PORT=7860
 
