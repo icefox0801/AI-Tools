@@ -204,8 +204,8 @@ BACKEND_LABELS = {
 # Tray Application
 # ==============================================================================
 
-# Shared recordings directory (accessible by Audio Notes app)
-RECORDINGS_DIR = SCRIPT_DIR.parent.parent / "recordings"
+# Audio Notes API URL (for uploading recordings)
+AUDIO_NOTES_URL = os.getenv("AUDIO_NOTES_URL", "http://localhost:7860")
 
 
 class LiveCaptionsTray:
@@ -434,8 +434,8 @@ class LiveCaptionsTray:
         if not self.enable_transcription:
             cmd.append("--no-transcription")
         
-        # Use shared recordings directory
-        cmd.extend(["--recordings-dir", str(RECORDINGS_DIR)])
+        # Use Audio Notes API for saving recordings
+        cmd.extend(["--audio-notes-url", AUDIO_NOTES_URL])
         
         logger.info(f"Starting Live Captions: {' '.join(cmd)}")
         
@@ -506,65 +506,6 @@ class LiveCaptionsTray:
                     self.icon.notify("Recording Cleared", "Audio recording has been cleared.")
         except Exception as e:
             logger.error(f"Failed to clear recording: {e}")
-    
-    def transcribe_and_summarize(self):
-        """Save recording and open Audio Notes app."""
-        try:
-            recorder = get_recorder()
-            if not recorder or recorder.duration < 1.0:
-                logger.warning("No recording to transcribe")
-                if self.icon:
-                    self.icon.notify("No Recording", "Record some audio first before transcribing.")
-                return
-            
-            # Save the recording to the shared recordings directory
-            audio_path = recorder.save()
-            if not audio_path:
-                logger.error("Failed to save recording")
-                return
-            
-            logger.info(f"Saved recording: {audio_path}")
-            
-            # Find the audio-notes app
-            audio_notes_script = SCRIPT_DIR.parent / "audio-notes" / "audio_notes.py"
-            
-            if audio_notes_script.exists():
-                # Launch Audio Notes app with the audio file and auto-transcribe
-                cmd = [
-                    PYTHON_EXE,
-                    str(audio_notes_script),
-                    "--audio", str(audio_path),
-                    "--auto-transcribe"  # Auto-start transcription
-                ]
-                
-                logger.info(f"Launching Audio Notes: {' '.join(cmd)}")
-                
-                # Start process (don't hide window for Gradio UI)
-                subprocess.Popen(cmd)
-                
-                if self.icon:
-                    self.icon.notify(
-                        "Opening Audio Notes", 
-                        f"Auto-transcribing...\nFile: {audio_path.name}"
-                    )
-            else:
-                # Fallback: just open the file location
-                import webbrowser
-                webbrowser.open(str(audio_path.parent))
-                
-                if self.icon:
-                    self.icon.notify(
-                        "Recording Saved", 
-                        f"Audio saved to:\n{audio_path}"
-                    )
-            
-            # Clear the recording buffer (keep recording if still running)
-            recorder.clear()
-            
-        except Exception as e:
-            logger.error(f"Failed to transcribe: {e}")
-            if self.icon:
-                self.icon.notify("Error", f"Failed to transcribe: {e}")
     
     def toggle_audio_source(self):
         """Toggle between system audio and microphone."""
@@ -723,12 +664,6 @@ class LiveCaptionsTray:
                 lambda text: f"📼 Recording: {self.get_recording_info()[1]}" if self.get_recording_info()[0] else "📼 No recording",
                 None,
                 enabled=False,
-                visible=lambda item: self.enable_recording
-            ),
-            pystray.MenuItem(
-                "📝 Transcribe & Summarize",
-                lambda icon, item: self.transcribe_and_summarize(),
-                enabled=lambda item: self.get_recording_info()[2] >= 1.0,
                 visible=lambda item: self.enable_recording
             ),
             pystray.MenuItem(

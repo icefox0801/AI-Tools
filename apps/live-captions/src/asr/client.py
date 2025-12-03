@@ -136,7 +136,7 @@ class ASRClient:
         try:
             data = json.loads(message)
             
-            # ID-based protocol (Parakeet)
+            # ID-based protocol (Parakeet/Whisper)
             if 'id' in data:
                 segment_id = data['id']
                 text = data.get('text', '').strip()

@@ -66,7 +66,7 @@ class LiveCaptions:
         debug_save_audio: bool = False,
         enable_recording: bool = True,
         enable_transcription: bool = True,
-        recordings_dir: Optional[str] = None
+        audio_notes_url: Optional[str] = None
     ):
         """
         Initialize Live Captions application.
@@ -80,7 +80,7 @@ class LiveCaptions:
             debug_save_audio: Save captured audio on exit
             enable_recording: Enable audio recording for later transcription
             enable_transcription: Enable live transcription (can be disabled if using external ASR)
-            recordings_dir: Directory for saving recordings
+            audio_notes_url: Audio Notes API URL for uploading recordings
         """
         # Backend config
         self.backend = backend or BACKEND
@@ -101,7 +101,7 @@ class LiveCaptions:
         self.enable_recording = enable_recording
         self.recorder: Optional[AudioRecorder] = None
         if enable_recording:
-            self.recorder = AudioRecorder(output_dir=recordings_dir)
+            self.recorder = AudioRecorder(api_url=audio_notes_url)
             set_recorder(self.recorder)  # Set as global for tray app access
         
         # Debug
@@ -275,8 +275,8 @@ def main():
                         help='Disable audio recording for later transcription')
     parser.add_argument('--no-transcription', action='store_true',
                         help='Disable live transcription (recording only mode)')
-    parser.add_argument('--recordings-dir', type=str,
-                        help='Directory for saving recordings')
+    parser.add_argument('--audio-notes-url', type=str,
+                        help='Audio Notes API URL (default: http://localhost:7860)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging')
     parser.add_argument('--debug-save-audio', action='store_true',
@@ -310,9 +310,11 @@ def main():
         print("Audio: [Mic] Microphone")
     
     if not args.no_recording:
-        print("Recording: ENABLED (for later transcription)")
-        if args.recordings_dir:
-            print(f"Recordings: {args.recordings_dir}")
+        print("Recording: ENABLED (uploads to Audio Notes)")
+        if args.audio_notes_url:
+            print(f"Audio Notes URL: {args.audio_notes_url}")
+        else:
+            print("Audio Notes URL: http://localhost:7860 (default)")
     
     if args.no_transcription:
         print("Mode: RECORDING ONLY (live transcription disabled)")
@@ -334,7 +336,7 @@ def main():
         debug_save_audio=args.debug_save_audio,
         enable_recording=not args.no_recording,
         enable_transcription=not args.no_transcription,
-        recordings_dir=args.recordings_dir
+        audio_notes_url=args.audio_notes_url
     )
     app.run()
 
