@@ -5,6 +5,10 @@
         "reportMissingImports": "none",
         "reportMissingModuleSource": "none"
     },
+    "[plaintext]": {
+        "editor.wordWrap": "on",
+        "editor.wordWrapColumn": 120
+    },
     "actionButtons": {
         "defaultColor": "#4ade80",
         "reloadButton": null,
