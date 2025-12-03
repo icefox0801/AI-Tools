@@ -1,25 +1,39 @@
 # AI-Tools
 
-Docker-based AI services for real-time voice transcription and local LLM.
+Docker-based AI toolkit for real-time speech-to-text, audio transcription, and LLM-powered summarization.
+
 <img width="3114" height="282" alt="image" src="https://github.com/user-attachments/assets/a1023366-516e-4de0-8f36-eeb6c6049e52" />
+
+## Features
+
+- **Real-time Speech-to-Text**: Multiple ASR backends (Vosk CPU, Parakeet GPU, Whisper GPU)
+- **Audio Notes Web App**: Upload recordings, transcribe with AI, summarize with LLM, chat about content
+- **Live Captions Desktop App**: Real-time overlay for meetings, videos, and calls
+- **Local LLM Integration**: Ollama-powered summarization and chat (Qwen, Llama, etc.)
 
 ## Architecture
 
 ```
 +-------------------+       WebSocket       +---------------------+
-|                   |  ---------------->    |    ASR Services     |
-|   Client Apps     |     Audio Stream      |    (Docker)         |
-|                   |  <----------------    |                     |
-| - Live Captions   |     Transcripts       |  - Vosk (CPU)       |
-|   (Desktop)       |                       |  - Parakeet (GPU)   |
-|                   |                       |  - Whisper (GPU)    |
-+-------------------+                       +---------------------+
+|   Client Apps     |  ---------------->    |    ASR Services     |
+|                   |     Audio Stream      |    (Docker)         |
+| - Audio Notes     |  <----------------    |  - Vosk (CPU)       |
+|   (Web UI)        |     Transcripts       |  - Parakeet (GPU)   |
+| - Live Captions   |                       |  - Whisper (GPU)    |
+|   (Desktop)       |                       +---------------------+
++-------------------+                                |
+        |                                            v
+        |                               +---------------------+
+        +-----------------------------> |   Ollama LLM        |
+              Chat & Summarize          |   (Local Models)    |
+                                        +---------------------+
 ```
 
 ## Services
 
 | Service | Port | Description |
 |---------|------|--------------|
+| `audio-notes` | 7860 | Web UI for transcription & summarization |
 | `vosk-asr` | 8001 | Vosk streaming ASR (CPU, lightweight) |
 | `parakeet-asr` | 8002 | NVIDIA NeMo Parakeet (GPU, high accuracy) |
 | `whisper-asr` | 8003 | OpenAI Whisper Large V3 Turbo (GPU, multilingual) |
@@ -31,16 +45,35 @@ Docker-based AI services for real-time voice transcription and local LLM.
 ## Quick Start
 
 ```bash
-# Start ASR service (choose one)
+# Start Audio Notes (includes ASR + LLM services)
+docker compose up -d audio-notes ollama
+
+# Or start individual ASR services
 docker compose up -d vosk-asr      # CPU-based (lightweight)
 docker compose up -d parakeet-asr  # GPU-based (high accuracy)
 docker compose up -d whisper-asr   # GPU-based (multilingual)
+
+# Access Audio Notes web UI
+open http://localhost:7860
 
 # Check service health
 curl http://localhost:8001/health  # Vosk ASR
 curl http://localhost:8002/health  # Parakeet ASR
 curl http://localhost:8003/health  # Whisper ASR
 ```
+
+## Audio Notes (Web App)
+
+Full-featured web UI for audio transcription and AI-powered analysis.
+
+**Features:**
+- Upload audio files or use recordings from Live Captions
+- Choose ASR backend (Whisper or Parakeet)
+- AI summarization with local LLM (Ollama)
+- Chat about transcript content
+- Batch transcription support
+
+Access at: http://localhost:7860
 
 ## Live Captions (Desktop App)
 
@@ -62,6 +95,7 @@ AI-Tools/
 ├── apps/
 │   └── live-captions/       # Desktop caption overlay
 ├── services/
+│   ├── audio-notes/         # Web UI for transcription & summarization
 │   ├── vosk/                # CPU ASR (Vosk)
 │   ├── parakeet/            # GPU ASR (NVIDIA NeMo)
 │   ├── whisper/             # GPU ASR (OpenAI Whisper)

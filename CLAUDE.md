@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-AI-Tools is a Docker-based suite of AI services for voice transcription with a focus on real-time streaming ASR (Automatic Speech Recognition).
+AI-Tools is a Docker-based AI toolkit for real-time speech-to-text, audio transcription, and LLM-powered summarization. It includes ASR services, a web UI for audio analysis, and a desktop live captions app.
 
 ## Architecture
 
@@ -10,15 +10,27 @@ AI-Tools is a Docker-based suite of AI services for voice transcription with a f
 +---------------------+     WebSocket      +---------------------+
 |   Client Apps       | -----------------> |   ASR Services      |
 |                     |    Audio Stream    |                     |
-|  - Live Captions    | <----------------- |  - Vosk (CPU:8001)  |
-|    (Desktop)        |    {id, text}      |  - Parakeet (:8002) |
-+---------------------+                    |  - Whisper (:8003)  |
-                                           |                     |
-                                           |  Text Refiner:8010  |
-                                           +---------------------+
+|  - Audio Notes      | <----------------- |  - Vosk (CPU:8001)  |
+|    (Web UI :7860)   |    {id, text}      |  - Parakeet (:8002) |
+|  - Live Captions    |                    |  - Whisper (:8003)  |
+|    (Desktop)        |                    |                     |
++---------------------+                    |  Text Refiner:8010  |
+        |                                  +---------------------+
+        |
+        +----------------> Ollama LLM (:11434)
+              Chat &       (Qwen, Llama, etc.)
+              Summarize
 ```
 
 ## Key Components
+
+### Web Applications (Docker)
+- **Audio Notes** (`services/audio-notes/`) - Gradio web UI, port 7860
+  - Upload/record audio files for transcription
+  - ASR backend selection (Whisper or Parakeet)
+  - AI summarization with local LLM (Ollama)
+  - Chat about transcript content with context
+  - Batch transcription support
 
 ### ASR Services (Docker)
 - **Vosk** (`services/vosk/`) - CPU-based, lightweight, port 8001
@@ -55,10 +67,16 @@ Client logic (TranscriptManager):
 ## Running Commands
 
 ```bash
+# Start Audio Notes with dependencies
+docker compose up -d audio-notes ollama
+
 # Start ASR services (choose one)
 docker compose up -d vosk-asr      # CPU
 docker compose up -d parakeet-asr  # GPU
 docker compose up -d whisper-asr   # GPU (multilingual)
+
+# Access Audio Notes
+open http://localhost:7860
 
 # Run Live Captions with debug logging
 cd apps/live-captions
@@ -116,6 +134,11 @@ AI-Tools/
 │       ├── build_tray.bat         # Build Windows executable
 │       └── requirements.txt
 ├── services/
+│   ├── audio-notes/         # Gradio Web UI for transcription & summarization
+│   │   ├── audio_notes.py         # FastAPI entry point
+│   │   ├── ui/                    # Gradio UI components
+│   │   ├── services/              # LLM, recordings, ASR services
+│   │   └── api/                   # REST API endpoints
 │   ├── vosk/                # CPU ASR service
 │   ├── parakeet/            # GPU ASR service (NVIDIA NeMo TDT)
 │   ├── whisper/             # GPU ASR service (OpenAI Whisper)
