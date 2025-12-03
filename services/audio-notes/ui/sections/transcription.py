@@ -12,7 +12,7 @@ def create_transcription_section():
     with gr.Accordion("📝 Transcription", open=True) as transcription_accordion:
         backend_radio = gr.Radio(
             choices=["Parakeet", "Whisper"],
-            value="Parakeet",
+            value="Whisper",
             label="ASR Backend",
             interactive=True
         )

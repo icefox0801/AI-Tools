@@ -6,14 +6,89 @@ from typing import Optional
 
 import requests
 
-from config import OLLAMA_URL, OLLAMA_MODEL
+from config import OLLAMA_URL, OLLAMA_MODEL, PARAKEET_URL, WHISPER_URL
 
 logger = logging.getLogger(__name__)
 
 
-def summarize_streaming(transcript: str, system_prompt: Optional[str] = None, model: Optional[str] = None):
-    """Summarize transcript using Ollama with streaming output."""
+def prepare_gpu_for_llm(required_memory_gb: float = 8.0) -> dict:
+    """
+    Prepare GPU memory for LLM by unloading ASR models if needed.
+    
+    This is a synchronous version that can be called before summarization.
+    It unloads Parakeet/Whisper models to free GPU memory for the LLM.
+    
+    Args:
+        required_memory_gb: Approximate memory needed for LLM
+        
+    Returns:
+        Dict with preparation status
+    """
+    result = {
+        "actions": [],
+        "memory_freed_gb": 0.0,
+        "message": ""
+    }
+    
+    # Try to unload Parakeet
+    try:
+        resp = requests.post(f"{PARAKEET_URL}/unload", timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("status") == "unloaded":
+                freed = data.get("gpu_memory_used_gb", 0) or 6.0  # Estimate 6GB if not reported
+                result["actions"].append(f"Unloaded Parakeet ASR (freed ~{freed:.1f}GB)")
+                result["memory_freed_gb"] += freed
+                logger.info(f"Unloaded Parakeet ASR to free GPU memory")
+            else:
+                result["actions"].append(f"Parakeet: {data.get('message', 'already unloaded')}")
+    except Exception as e:
+        logger.debug(f"Could not unload Parakeet: {e}")
+        result["actions"].append(f"Parakeet unavailable: {e}")
+    
+    # Try to unload Whisper
+    try:
+        resp = requests.post(f"{WHISPER_URL}/unload", timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("status") == "unloaded":
+                freed = data.get("gpu_memory_used_gb", 0) or 4.0  # Estimate 4GB if not reported
+                result["actions"].append(f"Unloaded Whisper ASR (freed ~{freed:.1f}GB)")
+                result["memory_freed_gb"] += freed
+                logger.info(f"Unloaded Whisper ASR to free GPU memory")
+            else:
+                result["actions"].append(f"Whisper: {data.get('message', 'already unloaded')}")
+    except Exception as e:
+        logger.debug(f"Could not unload Whisper: {e}")
+        result["actions"].append(f"Whisper unavailable: {e}")
+    
+    if result["memory_freed_gb"] > 0:
+        result["message"] = f"Freed ~{result['memory_freed_gb']:.1f}GB GPU memory for LLM"
+    else:
+        result["message"] = "No ASR models to unload (GPU memory already available)"
+    
+    logger.info(result["message"])
+    return result
+
+
+def summarize_streaming(transcript: str, system_prompt: Optional[str] = None, model: Optional[str] = None, prepare_gpu: bool = True):
+    """
+    Summarize transcript using Ollama with streaming output.
+    
+    Args:
+        transcript: The text to summarize
+        system_prompt: Optional custom system prompt
+        model: Optional model name override
+        prepare_gpu: If True, unload ASR models first to free GPU memory
+    """
     use_model = model if model else OLLAMA_MODEL
+    
+    # Prepare GPU memory by unloading ASR models
+    if prepare_gpu:
+        logger.info("Preparing GPU memory for LLM summarization...")
+        prep_result = prepare_gpu_for_llm(required_memory_gb=8.0)
+        if prep_result["memory_freed_gb"] > 0:
+            yield f"⏳ {prep_result['message']}\\n\\n"
     
     if not system_prompt:
         system_prompt = """You are an expert summarizer. Analyze the following transcript and provide:
@@ -66,9 +141,24 @@ Provide a concise summary following the format specified."""
         yield f"Error: {e}"
 
 
-def chat_with_context(message: str, history: list, transcript: str, summary: str = "", model: Optional[str] = None) -> str:
-    """Chat with Ollama using transcript and summary as context."""
+def chat_with_context(message: str, history: list, transcript: str, summary: str = "", model: Optional[str] = None, prepare_gpu: bool = True) -> str:
+    """
+    Chat with Ollama using transcript and summary as context.
+    
+    Args:
+        message: User's message
+        history: Conversation history
+        transcript: Full transcript for context
+        summary: Summary for context
+        model: Optional model name override
+        prepare_gpu: If True, unload ASR models first to free GPU memory
+    """
     use_model = model if model else OLLAMA_MODEL
+    
+    # Prepare GPU memory by unloading ASR models (only on first chat message)
+    if prepare_gpu and len(history) == 0:
+        logger.info("Preparing GPU memory for LLM chat...")
+        prepare_gpu_for_llm(required_memory_gb=8.0)
     
     logger.info(f"chat_with_context called - transcript len: {len(transcript) if transcript else 0}, summary len: {len(summary) if summary else 0}")
     

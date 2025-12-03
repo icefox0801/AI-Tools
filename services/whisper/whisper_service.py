@@ -232,8 +232,15 @@ async def transcribe_file(file: UploadFile = File(...)):
     Returns:
         JSON with text transcription
     """
+    global whisper_pipe
+    
+    # Auto-reload model if it was unloaded
     if whisper_pipe is None:
-        return {"error": "Model not loaded", "text": ""}
+        logger.info("Model not loaded, auto-reloading...")
+        load_model()
+    
+    if whisper_pipe is None:
+        return {"error": "Failed to load model", "text": ""}
     
     try:
         # Read audio file
@@ -292,7 +299,15 @@ async def transcribe_file(file: UploadFile = File(...)):
 
 def transcribe_audio(audio_array: np.ndarray) -> str:
     """Transcribe audio array to text."""
+    global whisper_pipe
+    
+    # Auto-reload model if needed
     if whisper_pipe is None:
+        logger.info("Model not loaded for transcribe_audio, auto-reloading...")
+        load_model()
+    
+    if whisper_pipe is None:
+        logger.error("Failed to load model for transcription")
         return ""
     
     if len(audio_array) < SAMPLE_RATE * MIN_AUDIO_SEC:

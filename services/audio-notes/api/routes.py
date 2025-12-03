@@ -5,14 +5,49 @@ import wave
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from config import RECORDINGS_DIR, logger
 from services.recordings import list_recordings, get_audio_duration
 
+# Get app directory for static files
+APP_DIR = Path(__file__).parent.parent
+
 
 def setup_api_routes(app: FastAPI):
     """Setup custom API routes for audio upload."""
+    
+    @app.get("/favicon.ico")
+    async def favicon():
+        """Serve favicon."""
+        favicon_path = APP_DIR / "favicon.ico"
+        if favicon_path.exists():
+            return FileResponse(favicon_path, media_type="image/x-icon")
+        raise HTTPException(status_code=404, detail="Favicon not found")
+    
+    @app.get("/icon-192.png")
+    async def icon_192():
+        """Serve 192x192 icon for PWA."""
+        icon_path = APP_DIR / "icon-192.png"
+        if icon_path.exists():
+            return FileResponse(icon_path, media_type="image/png")
+        raise HTTPException(status_code=404, detail="Icon not found")
+    
+    @app.get("/icon-512.png")
+    async def icon_512():
+        """Serve 512x512 icon for PWA."""
+        icon_path = APP_DIR / "icon-512.png"
+        if icon_path.exists():
+            return FileResponse(icon_path, media_type="image/png")
+        raise HTTPException(status_code=404, detail="Icon not found")
+    
+    @app.get("/manifest.json")
+    async def manifest():
+        """Serve PWA manifest."""
+        manifest_path = APP_DIR / "manifest.json"
+        if manifest_path.exists():
+            return FileResponse(manifest_path, media_type="application/manifest+json")
+        raise HTTPException(status_code=404, detail="Manifest not found")
     
     @app.post("/api/upload-audio")
     async def upload_audio(

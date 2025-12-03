@@ -12,7 +12,7 @@ def create_recordings_section():
     with gr.Accordion("📁 Recordings", open=True) as recordings_accordion:
         select_all_state = gr.State(False)
         
-        with gr.Accordion("🆕 New Recordings", open=True) as new_recordings_accordion:
+        with gr.Accordion("🎵 New Recordings", open=True) as new_recordings_accordion:
             new_recordings_checkboxes = gr.CheckboxGroup(
                 label="",
                 choices=[],

@@ -35,10 +35,15 @@ from ui.tabs import (
 )
 
 
-def batch_transcribe(selected_files: List[str], backend: str = "parakeet") -> tuple[str, str, str]:
-    """Batch transcribe multiple audio files."""
+def batch_transcribe_streaming(selected_files: List[str], backend: str = "parakeet"):
+    """Batch transcribe multiple audio files with streaming progress.
+    
+    Yields:
+        tuple: (status_text, transcript, state) - intermediate and final results
+    """
     if not selected_files:
-        return "⚠️ No files selected for batch transcription", "", ""
+        yield "⚠️ No files selected for batch transcription", "", ""
+        return
     
     backend_lower = backend.lower() if backend else "parakeet"
     
@@ -48,13 +53,21 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet") -> tu
         service_ok, service_msg = check_parakeet_health()
     
     if not service_ok:
-        return f"❌ {service_msg}", "", ""
+        yield f"❌ {service_msg}", "", ""
+        return
     
     results = []
     all_transcripts = []
+    total_files = len(selected_files)
     
-    for file_path in selected_files:
+    for idx, file_path in enumerate(selected_files, 1):
         file_name = Path(file_path).name
+        
+        # Show progress for current file
+        progress = f"⏳ **Transcribing** ({idx}/{total_files}): `{file_name}`..."
+        if results:
+            progress = "\n\n".join(results) + "\n\n" + progress
+        yield progress, "", ""
         
         try:
             transcript, duration = transcribe_audio(file_path, backend=backend_lower)
@@ -82,7 +95,7 @@ def batch_transcribe(selected_files: List[str], backend: str = "parakeet") -> tu
     
     status = "\n\n".join(results)
     logger.info(f"batch_transcribe returning transcript of length: {len(combined_transcript)}")
-    return status, combined_transcript, combined_transcript
+    yield status, combined_transcript, combined_transcript
 
 
 def generate_summary(transcript: str, custom_prompt: str = "", model: str = ""):
@@ -107,7 +120,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
     """Create Gradio interface."""
     
     with gr.Blocks(title="Audio Notes") as demo:
-        # Inject CSS to hide progress bars
+        # Inject CSS
         gr.HTML(f"<style>{CUSTOM_CSS}</style>")
         
         # State
@@ -164,16 +177,16 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             
             with gr.Column(scale=2):
                 # ===== RIGHT PANEL TABS =====
-                with gr.Tabs(selected=1) as result_tabs:
-                    # Summary tab
-                    summary_components = create_summary_tab()
-                    summary_tab = summary_components['summary_tab']
-                    summary_output = summary_components['summary_output']
-                    
-                    # Transcript tab
+                with gr.Tabs(selected=0) as result_tabs:
+                    # Transcript tab (first)
                     transcript_components = create_transcript_tab()
                     transcript_tab = transcript_components['transcript_tab']
                     transcript_output = transcript_components['transcript_output']
+                    
+                    # Summary tab (second)
+                    summary_components = create_summary_tab()
+                    summary_tab = summary_components['summary_tab']
+                    summary_output = summary_components['summary_output']
                     
                     # Chat tab
                     chat_components = create_chat_tab()
@@ -224,10 +237,10 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             return all_selected
         
         def on_batch_transcribe(new_selected, transcribed_selected, backend):
-            """Handle batch transcription."""
+            """Handle batch transcription with streaming progress."""
             selected_files = get_combined_selections(new_selected, transcribed_selected)
             if not selected_files:
-                return (
+                yield (
                     "⚠️ No files selected. Check the boxes next to recordings to select them.", 
                     "", "",
                     gr.update(open=True),
@@ -237,19 +250,36 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                     gr.update(), gr.update(),
                     gr.update(), gr.update(),
                 )
+                return
             
-            status, transcript, state = batch_transcribe(selected_files, backend=backend)
-            logger.info(f"on_batch_transcribe got transcript of length: {len(transcript)}, state length: {len(state)}")
+            # Stream transcription progress
+            final_status, final_transcript, final_state = "", "", ""
+            for status, transcript, state in batch_transcribe_streaming(selected_files, backend=backend):
+                final_status, final_transcript, final_state = status, transcript, state
+                # During progress, just update status, keep other outputs unchanged
+                yield (
+                    status, 
+                    gr.update(),  # transcript_output - don't update yet
+                    gr.update(),  # transcript_state - don't update yet
+                    gr.update(),  # recordings_accordion
+                    gr.update(),  # batch_transcribe_btn
+                    gr.update(),  # summarize_btn
+                    gr.update(),  # reset_btn
+                    gr.update(), gr.update(),  # checkboxes
+                    gr.update(), gr.update(),  # accordions
+                )
             
-            # Refresh recordings list
+            logger.info(f"on_batch_transcribe got transcript of length: {len(final_transcript)}, state length: {len(final_state)}")
+            
+            # Refresh recordings list at the end
             recordings = list_recordings()
             new_recordings = [r for r in recordings if not r['has_transcript']]
             transcribed_recordings = [r for r in recordings if r['has_transcript']]
             new_choices = [(f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in new_recordings]
             transcribed_choices = [(f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in transcribed_recordings]
             
-            return (
-                status, transcript, state,
+            yield (
+                final_status, final_transcript, final_state,
                 gr.update(open=False),
                 gr.update(interactive=True),
                 gr.update(interactive=True),
@@ -311,6 +341,8 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         def on_chat(message, history, transcript, summary, model):
             """Handle chat message."""
             logger.info(f"on_chat called - transcript len: {len(transcript) if transcript else 0}, summary len: {len(summary) if summary else 0}")
+            logger.info(f"on_chat - transcript preview: {transcript[:200] if transcript else 'EMPTY'}...")
+            logger.info(f"on_chat - summary preview: {summary[:200] if summary else 'EMPTY'}...")
             if not message.strip():
                 return history, "", gr.update()
             if not transcript:
@@ -399,7 +431,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 gr.update(interactive=False),
                 gr.update(interactive=False),
                 gr.update(interactive=False),
-                gr.update(selected=0),
+                gr.update(selected=1),
                 gr.update(interactive=True),
                 "⏳ *Generating summary...*",
             )
@@ -449,7 +481,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 "", "", "", "",
                 [],
                 "*Start a conversation to generate a title...*",
-                gr.update(selected=1),
+                gr.update(selected=0),
                 gr.update(interactive=False),
                 gr.update(interactive=False),
                 gr.update(interactive=False),

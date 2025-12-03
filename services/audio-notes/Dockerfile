@@ -27,6 +27,7 @@ COPY audio_notes.py .
 COPY favicon.ico .
 COPY icon-192.png .
 COPY icon-512.png .
+COPY manifest.json .
 
 # Create recordings directory
 RUN mkdir -p /app/recordings
