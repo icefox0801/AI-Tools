@@ -188,6 +188,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
                 transcribed_checkboxes = recordings['transcribed_checkboxes']
                 select_all_btn = recordings['select_all_btn']
                 refresh_trigger_btn = recordings['refresh_trigger_btn']
+                no_recordings_msg = recordings['no_recordings_msg']
                 select_all_state = gr.State(False)
                 
                 # Transcription section
@@ -250,12 +251,15 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             new_choices = [(f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in new_recordings]
             transcribed_choices = [(f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in transcribed_recordings]
             
+            has_any_recordings = len(new_choices) > 0 or len(transcribed_choices) > 0
+            
             return (
                 gr.update(choices=new_choices, value=[], interactive=True),
                 gr.update(choices=transcribed_choices, value=[], interactive=True),
                 "*Select recordings and click Transcribe.*",
                 gr.update(visible=len(new_choices) > 0),
                 gr.update(visible=len(transcribed_choices) > 0),
+                gr.update(visible=not has_any_recordings),
             )
         
         def toggle_select_all(current_state):
@@ -450,7 +454,7 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
         
         refresh_trigger_btn.click(
             refresh_recordings,
-            outputs=[new_recordings_checkboxes, transcribed_checkboxes, batch_status, new_recordings_accordion, transcribed_accordion]
+            outputs=[new_recordings_checkboxes, transcribed_checkboxes, batch_status, new_recordings_accordion, transcribed_accordion, no_recordings_msg]
         )
         
         select_all_btn.click(
@@ -591,16 +595,18 @@ def create_ui(initial_audio: Optional[str] = None, auto_transcribe: bool = False
             transcribed_recordings = [r for r in recordings if r['has_transcript']]
             new_choices = [(f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in new_recordings]
             transcribed_choices = [(f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)", r['path']) for r in transcribed_recordings]
+            has_any_recordings = len(new_choices) > 0 or len(transcribed_choices) > 0
             return (
                 gr.update(choices=new_choices, value=[], interactive=True),
                 gr.update(choices=transcribed_choices, value=[], interactive=True),
                 gr.update(visible=len(new_choices) > 0),
                 gr.update(visible=len(transcribed_choices) > 0),
+                gr.update(visible=not has_any_recordings),
             )
         
         demo.load(
             on_load,
-            outputs=[new_recordings_checkboxes, transcribed_checkboxes, new_recordings_accordion, transcribed_accordion],
+            outputs=[new_recordings_checkboxes, transcribed_checkboxes, new_recordings_accordion, transcribed_accordion, no_recordings_msg],
             js=CUSTOM_JS
         )
     

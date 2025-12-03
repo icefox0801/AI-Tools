@@ -12,7 +12,12 @@ def create_recordings_section():
     with gr.Accordion("📁 Recordings", open=True) as recordings_accordion:
         select_all_state = gr.State(False)
         
-        with gr.Accordion("🎵 New Recordings", open=True) as new_recordings_accordion:
+        no_recordings_msg = gr.Markdown(
+            "*No recordings found. Upload audio files to the recordings folder.*",
+            visible=False
+        )
+        
+        with gr.Accordion("🎵 New Recordings", open=True, visible=True) as new_recordings_accordion:
             new_recordings_checkboxes = gr.CheckboxGroup(
                 label="",
                 choices=[],
@@ -22,7 +27,7 @@ def create_recordings_section():
                 container=False
             )
         
-        with gr.Accordion("📄 Already Transcribed (re-transcribe)", open=False) as transcribed_accordion:
+        with gr.Accordion("📄 Already Transcribed (re-transcribe)", open=False, visible=True) as transcribed_accordion:
             transcribed_checkboxes = gr.CheckboxGroup(
                 label="",
                 choices=[],
@@ -39,6 +44,7 @@ def create_recordings_section():
     return {
         'recordings_accordion': recordings_accordion,
         'select_all_state': select_all_state,
+        'no_recordings_msg': no_recordings_msg,
         'new_recordings_accordion': new_recordings_accordion,
         'new_recordings_checkboxes': new_recordings_checkboxes,
         'transcribed_accordion': transcribed_accordion,
