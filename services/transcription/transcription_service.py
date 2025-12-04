@@ -4,30 +4,6 @@ Transcription Gateway Service
 Unified API for all transcription needs - routes to appropriate model backends.
 Manages GPU memory, model loading/unloading, and provides consistent API surface.
 
-Architecture:
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Transcription Gateway                            │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │
-│  │  /stream        │  │  /transcribe    │  │  /models/*          │ │
-│  │  (Real-time)    │  │  (Offline)      │  │  (Management)       │ │
-│  └────────┬────────┘  └────────┬────────┘  └─────────┬───────────┘ │
-│           │                    │                     │             │
-│           ▼                    ▼                     ▼             │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Model Router                              │   │
-│  │   - Routes to streaming model (TDT) for /stream             │   │
-│  │   - Routes to offline model (RNNT/Whisper) for /transcribe  │   │
-│  │   - Manages model loading/unloading based on usage          │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-   ┌────────────┐      ┌────────────┐      ┌────────────┐
-   │  Parakeet  │      │  Whisper   │      │   Vosk     │
-   │  (GPU)     │      │  (GPU)     │      │   (CPU)    │
-   └────────────┘      └────────────┘      └────────────┘
-
 API Endpoints:
 - GET  /health            - Service health check
 - GET  /info              - Service information and available models
