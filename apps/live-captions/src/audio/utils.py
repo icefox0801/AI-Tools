@@ -1,35 +1,38 @@
 """Audio utility functions for resampling and format conversion."""
 
-import numpy as np
 import logging
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 # Audio settings
 TARGET_SAMPLE_RATE = 16000
-CHUNK_DURATION_MS = 200
+CHUNK_DURATION_MS = 100  # 100ms chunks for faster real-time updates (was 200ms)
 
 
 def resample_audio(audio_data: bytes, from_rate: int, to_rate: int) -> bytes:
     """
     Resample audio using polyphase filtering for better quality.
-    
+
     Args:
         audio_data: Raw 16-bit PCM audio bytes
         from_rate: Source sample rate in Hz
         to_rate: Target sample rate in Hz
-        
+
     Returns:
         Resampled audio as bytes
     """
     if from_rate == to_rate:
         return audio_data
-    
+
     audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-    
+
     try:
-        from scipy import signal
         from math import gcd
+
+        from scipy import signal
+
         g = gcd(from_rate, to_rate)
         up = to_rate // g
         down = from_rate // g
@@ -41,17 +44,17 @@ def resample_audio(audio_data: bytes, from_rate: int, to_rate: int) -> bytes:
         new_length = int(len(audio_np) * ratio)
         indices = np.linspace(0, len(audio_np) - 1, new_length)
         resampled = np.interp(indices, np.arange(len(audio_np)), audio_np)
-    
+
     return np.clip(resampled, -32768, 32767).astype(np.int16).tobytes()
 
 
 def stereo_to_mono(audio_data: bytes) -> bytes:
     """
     Convert stereo audio to mono by averaging channels.
-    
+
     Args:
         audio_data: Stereo 16-bit PCM audio bytes (interleaved L/R)
-        
+
     Returns:
         Mono audio as bytes
     """

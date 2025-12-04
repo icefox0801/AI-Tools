@@ -9,24 +9,24 @@ Protocol:
 
 Usage:
     from shared.client import TranscriptManager
-    
+
     manager = TranscriptManager()
     manager.on_change = lambda: update_ui(manager.get_text())
-    
+
     # On receiving message from server:
     manager.update(msg['id'], msg['text'])
 """
 
+from .result import ASRResult
 from .transcript import TranscriptManager
 
 # Legacy imports for backward compatibility
 from .websocket_client import ASRClient
-from .result import ASRResult
 
 __all__ = [
-    # Simple API
-    'TranscriptManager',
     # Legacy
-    'ASRClient',
-    'ASRResult',
+    "ASRClient",
+    "ASRResult",
+    # Simple API
+    "TranscriptManager",
 ]

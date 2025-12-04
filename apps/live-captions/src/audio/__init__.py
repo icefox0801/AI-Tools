@@ -1,38 +1,34 @@
 """Audio capture module for Live Captions."""
 
-from .capture import MicrophoneCapture, SystemAudioCapture, AudioCapture
-from .utils import (
-    resample_audio, 
-    stereo_to_mono, 
-    calculate_chunk_size,
-    TARGET_SAMPLE_RATE, 
-    CHUNK_DURATION_MS
-)
-from .devices import (
-    list_devices, 
-    get_default_microphone_info, 
-    get_default_loopback_info
-)
+from .capture import AudioCapture, MicrophoneCapture, SystemAudioCapture
+from .devices import get_default_loopback_info, get_default_microphone_info, list_devices
 from .recorder import AudioRecorder, get_recorder, set_recorder
+from .utils import (
+    CHUNK_DURATION_MS,
+    TARGET_SAMPLE_RATE,
+    calculate_chunk_size,
+    resample_audio,
+    stereo_to_mono,
+)
 
 __all__ = [
-    # Capture classes
-    'AudioCapture',
-    'MicrophoneCapture',
-    'SystemAudioCapture', 
-    # Utility functions
-    'resample_audio',
-    'stereo_to_mono',
-    'calculate_chunk_size',
-    # Device functions
-    'list_devices',
-    'get_default_microphone_info',
-    'get_default_loopback_info',
-    # Recorder
-    'AudioRecorder',
-    'get_recorder',
-    'set_recorder',
+    "CHUNK_DURATION_MS",
     # Constants
-    'TARGET_SAMPLE_RATE',
-    'CHUNK_DURATION_MS',
+    "TARGET_SAMPLE_RATE",
+    # Capture classes
+    "AudioCapture",
+    # Recorder
+    "AudioRecorder",
+    "MicrophoneCapture",
+    "SystemAudioCapture",
+    "calculate_chunk_size",
+    "get_default_loopback_info",
+    "get_default_microphone_info",
+    "get_recorder",
+    # Device functions
+    "list_devices",
+    # Utility functions
+    "resample_audio",
+    "set_recorder",
+    "stereo_to_mono",
 ]

@@ -1,6 +1,16 @@
-# Development dependencies for testing
+# Development dependencies for testing and code quality
 # NOT used in Docker builds - only for local development
 
+# Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-cov>=4.1.0
+
+# Linting (Ruff for fast linting)
+ruff>=0.8.0
+
+# Formatting (Black for consistent code style)
+black>=24.0.0
+
+# Type checking
+mypy>=1.10.0

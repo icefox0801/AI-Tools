@@ -2,4 +2,4 @@
 
 from .window import CaptionWindow
 
-__all__ = ['CaptionWindow']
+__all__ = ["CaptionWindow"]

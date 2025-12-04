@@ -2,4 +2,4 @@
 
 from .client import ASRClient
 
-__all__ = ['ASRClient']
+__all__ = ["ASRClient"]

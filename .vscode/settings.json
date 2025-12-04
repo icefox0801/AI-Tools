@@ -1,10 +1,47 @@
 {
+    // Python environment - always use .venv
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    
+    // Python testing - pytest
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "."
+    ],
+    
+    // Terminal - auto-activate venv in bash
+    "terminal.integrated.defaultProfile.windows": "Git Bash",
+    "terminal.integrated.env.windows": {
+        "PATH": "${workspaceFolder}\\.venv\\Scripts;${env:PATH}",
+        "VIRTUAL_ENV": "${workspaceFolder}\\.venv"
+    },
+    "terminal.integrated.profiles.windows": {
+        "Git Bash": {
+            "source": "Git Bash",
+            "args": ["--login", "-i"]
+        }
+    },
+    
+    // Pylance settings
     "python.analysis.extraPaths": [],
     "python.languageServer": "Pylance",
     "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingImports": "none",
         "reportMissingModuleSource": "none"
     },
+    
+    // Formatting - use Black
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+    },
+    "black-formatter.path": ["${workspaceFolder}/.venv/Scripts/python.exe", "-m", "black"],
+    
+    // Linting - use Ruff
+    "ruff.path": ["${workspaceFolder}/.venv/Scripts/python.exe", "-m", "ruff"],
+    
     "[plaintext]": {
         "editor.wordWrap": "on",
         "editor.wordWrapColumn": 120
