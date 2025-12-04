@@ -47,10 +47,21 @@ env/
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Local environment files (not used by project)
 .env
 .env.local
+.envrc
 .pip-cache/
 
 # Audio recordings (local data, not tracked)
 .recordings/
+
+# Ruff cache
+.ruff_cache/
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
