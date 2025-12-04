@@ -20,6 +20,7 @@ import io
 import json
 import os
 import time
+from contextlib import asynccontextmanager
 
 import numpy as np
 import soundfile as sf
@@ -57,11 +58,22 @@ MIN_AUDIO_SEC = 0.3  # Minimum audio to process
 # API version
 API_VERSION = "1.0"
 
+
 # =============================================================================
 # FastAPI App
 # =============================================================================
 
-app = FastAPI(title="Whisper ASR Service", version=API_VERSION)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup/shutdown."""
+    # Startup
+    logger.info("Service ready, models will load on first request")
+    yield
+    # Shutdown (if needed)
+
+
+app = FastAPI(title="Whisper ASR Service", version=API_VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,6 +94,9 @@ def load_vad_model():
 
     if vad_model is not None:
         return vad_model
+
+    if not USE_VAD:
+        return None
 
     try:
         logger.info("Loading Silero VAD model...")
@@ -218,12 +233,6 @@ def load_model():
 
     logger.info("Whisper model loaded successfully")
     return whisper_pipe
-
-
-@app.on_event("startup")
-async def startup():
-    """Initialize service - models load lazily on first request."""
-    logger.info("Service ready, models will load on first request")
 
 
 @app.get("/health")
