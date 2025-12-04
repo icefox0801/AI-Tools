@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install Cython && pip install -r requirements.docker.txt
 
 # Copy application code LAST (changes here won't re-download pip packages)
-COPY parakeet_service.py parakeet_service.py
+COPY parakeet_service.py audio.py model.py ./
 
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/
