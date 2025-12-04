@@ -82,6 +82,26 @@ mock_vosk.Model = MockModel
 mock_vosk.KaldiRecognizer = MockKaldiRecognizer
 mock_vosk.SetLogLevel = MagicMock()
 
+# Create mock shared modules
+mock_shared_logging = MagicMock()
+mock_shared_logging.setup_logging = MagicMock(return_value=MagicMock())
+
+mock_text_refiner_client = MagicMock()
+mock_text_refiner_client.enabled = True
+mock_text_refiner_client.available = False
+mock_text_refiner_client.url = "http://text-refiner:8000"
+
+mock_shared_text_refiner = MagicMock()
+mock_shared_text_refiner.get_client = MagicMock(return_value=mock_text_refiner_client)
+
+
+async def mock_refine_text(text, punctuate=True, correct=False):
+    """Mock refine_text that just returns input."""
+    return text
+
+
+mock_shared_text_refiner.refine_text = mock_refine_text
+
 
 # ==============================================================================
 # Fixtures
@@ -90,8 +110,16 @@ mock_vosk.SetLogLevel = MagicMock()
 
 @pytest.fixture
 def mock_vosk_module():
-    """Patch vosk module before importing the service."""
-    with patch.dict("sys.modules", {"vosk": mock_vosk}):
+    """Patch vosk and shared modules before importing the service."""
+    with patch.dict(
+        "sys.modules",
+        {
+            "vosk": mock_vosk,
+            "shared": MagicMock(),
+            "shared.logging": mock_shared_logging,
+            "shared.text_refiner": mock_shared_text_refiner,
+        },
+    ):
         yield mock_vosk
 
 
@@ -115,12 +143,6 @@ def app(mock_vosk_module):
 
         # Mock get_model_name to return a test value
         vosk_service.get_model_name = lambda: "vosk-model-test"
-
-        # Mock refine_text to just return the input (no actual HTTP call)
-        async def mock_refine_text(text, punctuate=True, correct=False):
-            return text
-
-        vosk_service.refine_text = mock_refine_text
 
         yield vosk_service.app
 
@@ -169,7 +191,7 @@ class TestHealthEndpoint:
         data = response.json()
 
         assert "api_version" in data
-        assert data["api_version"] == "1.1.0"
+        assert data["api_version"] == "1.0"
 
 
 # ==============================================================================
