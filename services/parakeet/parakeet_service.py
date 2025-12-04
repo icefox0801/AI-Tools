@@ -1,21 +1,16 @@
 """
-NVIDIA NeMo Parakeet ASR Service v4.0
+Parakeet ASR Service - GPU-accelerated streaming with NeMo cache-aware conformer
 
-GPU-accelerated streaming ASR using NeMo's cache-aware conformer streaming.
-
-Model: nvidia/parakeet-tdt-1.1b (TDT - optimized for streaming)
-
-Key Features:
-- NeMo's native conformer_stream_step() for proper streaming
-- Cache-aware encoder maintains context across chunks
-- No duplicate words - incremental output only
+Features:
+- Dual models: TDT for streaming, RNNT for offline (better accuracy)
+- Cache-aware encoder for incremental output without duplicates
+- Long audio chunking with overlap for >20s files
 - Text refinement via text-refiner service
 
-Endpoints:
-- GET  /health     - Health check
-- GET  /info       - Service information
-- POST /transcribe - Transcribe audio file
-- WS   /stream     - Real-time streaming transcription
+Protocol:
+1. Client connects to /stream
+2. Client streams raw PCM audio (int16, 16kHz, mono)
+3. Server sends: {"id": "s1", "text": "..."} for segments
 """
 
 import asyncio
@@ -58,8 +53,7 @@ STREAMING_MODEL = os.environ["PARAKEET_STREAMING_MODEL"]  # Required: set in doc
 OFFLINE_MODEL = os.environ["PARAKEET_OFFLINE_MODEL"]  # Required: set in docker-compose.yaml
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-USE_FP16 = True  # TDT/streaming can use FP16
-# Note: RNNT requires FP32, TDT/CTC can use FP16
+USE_FP16 = True  # TDT streaming model
 OFFLINE_USE_FP16 = False  # RNNT offline model requires FP32
 
 # Streaming parameters
