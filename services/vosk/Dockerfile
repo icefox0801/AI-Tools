@@ -16,7 +16,7 @@ COPY requirements.docker.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.docker.txt
 
-# Copy service code (includes model download script)
+# Copy service code
 COPY vosk_service.py .
 COPY download_model.sh .
 RUN chmod +x download_model.sh
