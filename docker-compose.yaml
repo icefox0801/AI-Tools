@@ -203,6 +203,36 @@ services:
       retries: 3
       start_period: 120s                            # Allow time for model download on first run
 
+  # Transcription Gateway: Unified API for all transcription (routes to model backends)
+  transcription:
+    build:
+      context: ./services/transcription
+      dockerfile: Dockerfile
+    image: transcription-gateway:latest
+    container_name: transcription
+    depends_on:
+      - parakeet-asr
+      - whisper-asr
+      - vosk-asr
+    ports:
+      - "8000:8000"                                 # Port mapping: Main transcription API
+    environment:
+      - PARAKEET_URL=http://parakeet-asr:8000
+      - WHISPER_URL=http://whisper-asr:8000
+      - VOSK_URL=http://vosk-asr:8000
+      - DEFAULT_STREAMING_MODEL=parakeet-streaming
+      - DEFAULT_OFFLINE_MODEL=parakeet-offline
+      - IDLE_UNLOAD_SECONDS=300                     # Unload models after 5 minutes idle
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   # Text Refiner Service: Punctuation + ASR Error Correction
   text-refiner:
     build:
@@ -247,16 +277,16 @@ services:
     image: audio-notes:latest
     container_name: audio-notes
     depends_on:
-      - whisper-asr
-      - parakeet-asr
+      - transcription
       - ollama
     ports:
       - "7860:7860"                                 # Port mapping: Gradio web interface
     volumes:
       - audio-notes-data:/app/recordings              # Persistent storage for audio recordings
     environment:
-      - PARAKEET_URL=http://parakeet-asr:8000
-      - WHISPER_URL=http://whisper-asr:8000
+      - TRANSCRIPTION_URL=http://transcription:8000   # Use transcription gateway
+      - PARAKEET_URL=http://parakeet-asr:8000         # Direct access (fallback)
+      - WHISPER_URL=http://whisper-asr:8000           # Direct access (fallback)
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
     restart: always

@@ -3,6 +3,10 @@ Backend Definitions
 
 Single source of truth for ASR backend configurations.
 Change BACKEND constant to switch between services.
+
+Architecture:
+- transcription: Unified gateway (recommended) - routes to appropriate model
+- vosk, parakeet, whisper: Direct backend access (for advanced use)
 """
 
 import os
@@ -14,6 +18,15 @@ from typing import Dict, Any, Optional
 # ============== Backend Definitions ==============
 # Local development settings (localhost)
 BACKENDS_LOCAL: Dict[str, Dict[str, Any]] = {
+    "transcription": {
+        "name": "Transcription Gateway",
+        "device": "Gateway",
+        "host": "localhost",
+        "port": 8000,
+        "chunk_ms": 300,
+        "mode": "unified",
+        "description": "Unified API - routes to optimal model backend",
+    },
     "vosk": {
         "name": "Vosk small-en",
         "device": "CPU",
@@ -45,6 +58,15 @@ BACKENDS_LOCAL: Dict[str, Dict[str, Any]] = {
 
 # Docker internal settings (service names)
 BACKENDS_DOCKER: Dict[str, Dict[str, Any]] = {
+    "transcription": {
+        "name": "Transcription Gateway",
+        "device": "Gateway",
+        "host": "transcription",  # Docker service name
+        "port": 8000,
+        "chunk_ms": 300,
+        "mode": "unified",
+        "description": "Unified API - routes to optimal model backend",
+    },
     "vosk": {
         "name": "Vosk small-en",
         "device": "CPU",
@@ -79,8 +101,10 @@ IS_DOCKER = os.path.exists("/.dockerenv") or os.getenv("DOCKER_CONTAINER", "").l
 BACKENDS = BACKENDS_DOCKER if IS_DOCKER else BACKENDS_LOCAL
 
 # ========== SWITCH BACKEND HERE ==========
-# Options: "vosk" (CPU, lightweight), "parakeet" (GPU, high accuracy), or "whisper" (GPU, multilingual)
-BACKEND = os.getenv("ASR_BACKEND", "parakeet")
+# Options: 
+#   "transcription" (recommended) - Unified gateway, auto-routes to optimal model
+#   "vosk" (CPU, lightweight), "parakeet" (GPU, high accuracy), "whisper" (GPU, multilingual)
+BACKEND = os.getenv("ASR_BACKEND", "transcription")
 # =========================================
 
 
