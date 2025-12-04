@@ -2,7 +2,6 @@ pyaudio>=0.2.14
 pyaudiowpatch>=0.2.12  # For WASAPI loopback (system audio capture)
 websockets>=12.0
 numpy>=1.24.0
-scipy>=1.11.0
 requests>=2.31.0  # For uploading to Audio Notes API
 pyinstaller>=6.0.0
 
