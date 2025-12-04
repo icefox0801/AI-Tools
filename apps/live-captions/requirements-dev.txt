@@ -1,0 +1,6 @@
+# Development dependencies for testing
+# NOT used in Docker builds - only for local development
+
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
