@@ -2,13 +2,18 @@
 # Define all services (containers) to be orchestrated
 
 # ============== MODEL CONFIGURATION ==============
-# Available Parakeet models (change here to switch):
-#   nvidia/parakeet-tdt-1.1b   - TDT: Fastest, good for real-time (FP16 OK, ~4GB VRAM)
-#   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, slower (FP32 required, ~8GB VRAM)
+# Parakeet models (separate streaming vs offline for optimal performance):
+#   nvidia/parakeet-tdt-1.1b   - TDT: Fast streaming, good for real-time (FP16 OK, ~4GB VRAM)
+#   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, for offline transcription (FP32 required, ~8GB VRAM)
 #   nvidia/parakeet-ctc-1.1b   - CTC: Balanced speed/accuracy (FP16 OK, ~4GB VRAM)
+#
+# STREAMING (Live Captions): Uses TDT for low-latency real-time transcription
+# OFFLINE (Audio Notes):     Uses RNNT for highest accuracy on recordings
 x-parakeet-config: &parakeet-config
-  model: nvidia/parakeet-tdt-1.1b
-  fp16: "true"  # Set to "true" for TDT/CTC, "false" for RNNT
+  streaming_model: nvidia/parakeet-tdt-1.1b  # WebSocket /stream endpoint
+  offline_model: nvidia/parakeet-rnnt-1.1b   # POST /transcribe endpoint
+  streaming_fp16: "true"   # TDT supports FP16
+  offline_fp16: "false"    # RNNT requires FP32
 
 services:
   # Ollama Service: Local LLM runtime (auto-pulls models on startup)
@@ -134,8 +139,11 @@ services:
     volumes:
       - parakeet-model-data:/root/.cache/huggingface  # Cache HuggingFace/NGC models (15GB cached)
     environment:
-      - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-tdt-1.1b}
-      - USE_FP16=${PARAKEET_FP16:-true}
+      # Model selection: TDT for streaming (Live Captions), RNNT for offline (Audio Notes)
+      - PARAKEET_STREAMING_MODEL=${PARAKEET_STREAMING_MODEL:-nvidia/parakeet-tdt-1.1b}
+      - PARAKEET_OFFLINE_MODEL=${PARAKEET_OFFLINE_MODEL:-nvidia/parakeet-rnnt-1.1b}
+      - USE_FP16=${PARAKEET_FP16:-true}             # FP16 for TDT streaming model
+      - OFFLINE_USE_FP16=false                      # RNNT requires FP32
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
       - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
