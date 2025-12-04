@@ -20,6 +20,27 @@ div.loading { display: none !important; }
 /* Hide processing overlay */
 div.processing { display: none !important; }
 [data-testid="progress"] { display: none !important; }
+
+/* Scrollable new recordings list - target the checkbox group container */
+#new-recordings-list {
+    max-height: 250px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--background-fill-secondary, #f9fafb);
+}
+
+/* Disabled button style - make it visually obvious */
+#chat-send-btn[disabled],
+#chat-send-btn:disabled,
+button#chat-send-btn[disabled] {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    background-color: #9ca3af !important;
+}
 """
 
 # JavaScript to enable Ctrl+Enter to submit chat

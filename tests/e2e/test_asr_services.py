@@ -196,9 +196,9 @@ class TestParakeetASR:
                 word_count = len(words)
                 text_word_count = len(text.split())
                 # Allow some variance due to punctuation
-                assert abs(word_count - text_word_count) < 5, (
-                    f"Word count mismatch: {word_count} words vs {text_word_count} in text"
-                )
+                assert (
+                    abs(word_count - text_word_count) < 5
+                ), f"Word count mismatch: {word_count} words vs {text_word_count} in text"
 
     @pytest.mark.asyncio
     async def test_info_endpoint(self, parakeet_service: dict[str, Any]) -> None:

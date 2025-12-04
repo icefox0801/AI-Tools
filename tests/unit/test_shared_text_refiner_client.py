@@ -95,9 +95,7 @@ class TestTextRefinerClient:
 
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=mock_response)
-        mock_http.get = AsyncMock(
-            return_value=MagicMock(status_code=200)
-        )  # For availability check
+        mock_http.get = AsyncMock(return_value=MagicMock(status_code=200))  # For availability check
 
         client.available = True
 

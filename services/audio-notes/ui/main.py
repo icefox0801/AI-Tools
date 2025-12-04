@@ -13,7 +13,6 @@ import gradio as gr
 from config import RECORDINGS_DIR, logger
 
 from services import (
-    chat_with_context_streaming,
     check_ollama_health,
     check_parakeet_health,
     check_whisper_health,
@@ -23,6 +22,7 @@ from services import (
     transcribe_audio,
     unload_asr_model,
 )
+from services.langchain_chat import chat_streaming as langchain_chat_streaming
 from ui.sections import (
     create_recordings_section,
     create_status_section,
@@ -161,9 +161,7 @@ def generate_summary(transcript: str, custom_prompt: str = "", model: str = ""):
 def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
     """Create Gradio interface."""
 
-    with gr.Blocks(title="Audio Notes") as demo:
-        # Inject CSS
-        gr.HTML(f"<style>{CUSTOM_CSS}</style>")
+    with gr.Blocks(title="Audio Notes", css=CUSTOM_CSS) as demo:
 
         # State
         transcript_state = gr.State("")
@@ -477,7 +475,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 logger.info(f"on_chat - summary preview: {summary[:200]}...")
 
             if not message.strip():
-                yield history, "", gr.update()
+                yield history, "", gr.update(), gr.update(interactive=True)
                 return
 
             if not transcript:
@@ -489,7 +487,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                         "content": "⚠️ Please transcribe audio first. The transcript was not found in context.",
                     },
                 ]
-                yield error_history, "", gr.update()
+                yield error_history, "", gr.update(), gr.update(interactive=True)
                 return
 
             # Add user message and placeholder for assistant
@@ -504,15 +502,18 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
             if len(history) == 0:
                 title_update = generate_chat_title(message, model)
 
-            # Stream the response
-            for response_chunk in chat_with_context_streaming(
+            # Immediately disable button and show user message
+            yield new_history, "", title_update, gr.update(interactive=False)
+
+            # Stream the response using LangChain OpenAI-compatible API
+            for response_chunk in langchain_chat_streaming(
                 message, history, transcript, summary, model
             ):
                 new_history[-1]["content"] = response_chunk
-                yield new_history, "", title_update
+                yield new_history, "", title_update, gr.update(interactive=False)
 
-            # Final yield with cleared input
-            yield new_history, "", title_update
+            # Final yield with cleared input and re-enabled button
+            yield new_history, "", title_update, gr.update(interactive=True)
 
         def on_refresh():
             parakeet_ok, parakeet_msg = check_parakeet_health()
@@ -751,7 +752,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 summary_state,
                 chat_model_dropdown,
             ],
-            outputs=[chatbot, chat_input, chat_title],
+            outputs=[chatbot, chat_input, chat_title, chat_btn],
         )
 
         chat_input.submit(
@@ -763,7 +764,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 summary_state,
                 chat_model_dropdown,
             ],
-            outputs=[chatbot, chat_input, chat_title],
+            outputs=[chatbot, chat_input, chat_title, chat_btn],
         )
 
         refresh_btn.click(on_refresh, None, service_status)
