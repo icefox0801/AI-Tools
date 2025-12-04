@@ -15,6 +15,7 @@ Protocol:
 3. Server sends: {"id": "s1", "text": "..."} for segments
 """
 
+import asyncio
 import io
 import json
 import os
@@ -37,21 +38,21 @@ logger = setup_logging(__name__)
 # Configuration
 # =============================================================================
 
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "openai/whisper-large-v3-turbo")
+WHISPER_MODEL = os.environ["WHISPER_MODEL"]  # Required: set in docker-compose.yaml
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 SAMPLE_RATE = 16000
 
 # Flash Attention - only enabled if flash_attn package is installed
-USE_FLASH_ATTENTION = os.getenv("USE_FLASH_ATTENTION", "true").lower() == "true"
+USE_FLASH_ATTENTION = True
 
 # VAD (Voice Activity Detection) - skip silence for faster processing
-USE_VAD = os.getenv("USE_VAD", "true").lower() == "true"
-VAD_THRESHOLD = float(os.getenv("VAD_THRESHOLD", "0.5"))  # Speech probability threshold
+USE_VAD = True
+VAD_THRESHOLD = 0.5  # Speech probability threshold
 
 # Chunk settings for streaming (optimized for whisper-large-v3-turbo)
-CHUNK_DURATION_SEC = float(os.getenv("CHUNK_DURATION_SEC", "1.5"))  # Process in 1.5s chunks
-MIN_AUDIO_SEC = float(os.getenv("MIN_AUDIO_SEC", "0.3"))  # Minimum audio to process
+CHUNK_DURATION_SEC = 1.5  # Process in 1.5s chunks
+MIN_AUDIO_SEC = 0.3  # Minimum audio to process
 
 # API version
 API_VERSION = "1.0"
@@ -81,9 +82,6 @@ def load_vad_model():
 
     if vad_model is not None:
         return vad_model
-
-    if not USE_VAD:
-        return None
 
     try:
         logger.info("Loading Silero VAD model...")
@@ -116,8 +114,12 @@ def detect_speech(audio_array: np.ndarray) -> bool:
     """
     global vad_model
 
+    # Lazy load VAD model
     if vad_model is None:
-        return True  # If no VAD, assume speech
+        load_vad_model()
+
+    if vad_model is None:
+        return True  # If VAD failed to load, assume speech
 
     try:
         # Silero VAD expects 512 samples (32ms) at 16kHz
@@ -167,16 +169,14 @@ def load_model():
 
     # Check if Flash Attention 2 is available
     use_flash_attn = False
-    if DEVICE == "cuda" and USE_FLASH_ATTENTION:
+    if DEVICE == "cuda":
         try:
             import flash_attn
 
             use_flash_attn = True
-            logger.info("Flash Attention 2 available and enabled")
+            logger.info("Flash Attention 2 available")
         except ImportError:
-            logger.info(
-                "Flash Attention 2 not installed, using SDPA (scaled dot product attention)"
-            )
+            logger.info("Flash Attention 2 not installed, using SDPA")
 
     # Load model with appropriate attention implementation
     model_kwargs = {
@@ -222,9 +222,8 @@ def load_model():
 
 @app.on_event("startup")
 async def startup():
-    """Load model on startup."""
-    load_model()
-    load_vad_model()
+    """Initialize service - models load lazily on first request."""
+    logger.info("Service ready, models will load on first request")
 
 
 @app.get("/health")
@@ -240,7 +239,7 @@ async def health_check():
         }
 
     return {
-        "status": "healthy" if model_loaded else "loading",
+        "status": "healthy",
         "model": WHISPER_MODEL,
         "model_loaded": model_loaded,
         "vad_enabled": USE_VAD,
@@ -260,6 +259,7 @@ async def info():
         "model": WHISPER_MODEL,
         "device": DEVICE,
         "vad_enabled": USE_VAD,
+        "model_loaded": whisper_pipe is not None,
         "chunk_duration_sec": CHUNK_DURATION_SEC,
     }
 
@@ -473,7 +473,7 @@ async def stream_transcribe(websocket: WebSocket):
                             np.frombuffer(bytes(audio_buffer), dtype=np.int16).astype(np.float32)
                             / 32768.0
                         )
-                        text = transcribe_audio(audio_array)
+                        text = await asyncio.to_thread(transcribe_audio, audio_array)
                         if text:
                             await websocket.send_json({"id": f"s{segment_counter}", "text": text})
                             segment_counter += 1
@@ -503,7 +503,9 @@ async def stream_transcribe(websocket: WebSocket):
                     )
 
                     # VAD check - skip transcription if no speech detected
-                    if USE_VAD and not detect_speech(audio_array):
+                    # Run in thread to avoid blocking event loop
+                    has_speech = await asyncio.to_thread(detect_speech, audio_array)
+                    if not has_speech:
                         consecutive_silence += 1
                         if consecutive_silence <= 2:  # Log first few silences
                             logger.debug(f"No speech detected, skipping ({consecutive_silence})")
@@ -516,8 +518,8 @@ async def stream_transcribe(websocket: WebSocket):
                         f"Processing {buffer_samples} samples ({buffer_samples/SAMPLE_RATE:.2f}s)"
                     )
 
-                    # Transcribe
-                    text = transcribe_audio(audio_array)
+                    # Transcribe in thread to avoid blocking event loop
+                    text = await asyncio.to_thread(transcribe_audio, audio_array)
                     logger.info(f"Transcribed: '{text[:100] if text else '(empty)'}'")
 
                     if text:

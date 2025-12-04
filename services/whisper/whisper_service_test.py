@@ -100,11 +100,15 @@ def mock_modules():
 def app(mock_modules):
     """Create FastAPI app with mocked dependencies."""
     import importlib
+    import os
     import sys
 
     # Remove cached module if exists
     if "whisper_service" in sys.modules:
         del sys.modules["whisper_service"]
+
+    # Set required env var for testing
+    os.environ["WHISPER_MODEL"] = "openai/whisper-test"
 
     # Import the service module
     import whisper_service
@@ -131,10 +135,14 @@ def client(app):
 def service(mock_modules):
     """Get service module for direct function testing."""
     import importlib
+    import os
     import sys
 
     if "whisper_service" in sys.modules:
         del sys.modules["whisper_service"]
+
+    # Set required env var for testing
+    os.environ["WHISPER_MODEL"] = "openai/whisper-test"
 
     import whisper_service
 
