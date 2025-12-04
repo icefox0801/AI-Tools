@@ -39,20 +39,18 @@ API_VERSION = "1.0"
 
 # Device configuration
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-GPU_MEMORY_THRESHOLD_GB = float(os.getenv("GPU_MEMORY_THRESHOLD_GB", "2.0"))
+GPU_MEMORY_THRESHOLD_GB = 2.0  # Minimum GPU memory for correction model
 
 # Punctuation model (ONNX - CPU efficient)
-PUNCTUATION_MODEL = os.getenv("PUNCTUATION_MODEL", "pcs_en")
+PUNCTUATION_MODEL = "pcs_en"
 
 # ASR Error Correction model
-CORRECTION_MODEL = os.getenv(
-    "CORRECTION_MODEL", "oliverguhr/spelling-correction-english-base"
-)
-ENABLE_CORRECTION = os.getenv("ENABLE_CORRECTION", "true").lower() == "true"
+CORRECTION_MODEL = "oliverguhr/spelling-correction-english-base"
+ENABLE_CORRECTION = os.environ.get("ENABLE_CORRECTION", "true").lower() == "true"
 
 # Processing settings
-MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", "8"))
-CORRECTION_MIN_WORDS = int(os.getenv("CORRECTION_MIN_WORDS", "4"))
+MAX_BATCH_SIZE = 8
+CORRECTION_MIN_WORDS = 4
 
 
 # ==============================================================================
@@ -225,9 +223,7 @@ async def apply_correction(text: str, context: str | None = None) -> str:
 
         def correct():
             device = next(model.parameters()).device
-            inputs = tokenizer(
-                input_text, return_tensors="pt", max_length=512, truncation=True
-            )
+            inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
             with torch.no_grad():
