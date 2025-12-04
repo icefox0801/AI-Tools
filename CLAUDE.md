@@ -154,11 +154,11 @@ AI-Tools/
 
 ## Parakeet Model Configuration
 
-Parakeet model can be configured via `.env` or docker-compose.yaml:
-```bash
-PARAKEET_MODEL=nvidia/parakeet-tdt-1.1b  # TDT - better for streaming
-PARAKEET_MODEL=nvidia/parakeet-rnnt-1.1b # RNNT - alternative model
-PARAKEET_FP16=true                        # Enable FP16 for TDT (required)
+Parakeet models are configured in docker-compose.yaml:
+```yaml
+environment:
+  - PARAKEET_STREAMING_MODEL=nvidia/parakeet-tdt-1.1b  # TDT - better for streaming
+  - PARAKEET_OFFLINE_MODEL=nvidia/parakeet-rnnt-1.1b   # RNNT - better accuracy
 ```
 
 TDT (Token-and-Duration Transducer) is preferred for streaming because it handles

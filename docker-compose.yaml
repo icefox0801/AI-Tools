@@ -139,11 +139,13 @@ services:
     volumes:
       - parakeet-model-data:/root/.cache/huggingface  # Cache HuggingFace/NGC models (15GB cached)
     environment:
+      # Available models:
+      #   nvidia/parakeet-tdt-1.1b   - TDT: Fastest, good for real-time (FP16 OK, ~4GB VRAM)
+      #   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, slower (FP32 required, ~8GB VRAM)
+      #   nvidia/parakeet-ctc-1.1b   - CTC: Balanced speed/accuracy (FP16 OK, ~4GB VRAM)
       # Model selection: TDT for streaming (Live Captions), RNNT for offline (Audio Notes)
-      - PARAKEET_STREAMING_MODEL=${PARAKEET_STREAMING_MODEL:-nvidia/parakeet-tdt-1.1b}
-      - PARAKEET_OFFLINE_MODEL=${PARAKEET_OFFLINE_MODEL:-nvidia/parakeet-rnnt-1.1b}
-      - USE_FP16=${PARAKEET_FP16:-true}             # FP16 for TDT streaming model
-      - OFFLINE_USE_FP16=false                      # RNNT requires FP32
+      - PARAKEET_STREAMING_MODEL=nvidia/parakeet-tdt-1.1b
+      - PARAKEET_OFFLINE_MODEL=nvidia/parakeet-rnnt-1.1b
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
       - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
@@ -174,18 +176,14 @@ services:
         shared: ./shared                         # Shared Python modules
     image: whisper-asr:latest
     container_name: whisper-asr
-    depends_on:
-      - text-refiner
     ports:
       - "8003:8000"                                 # Port mapping: Whisper ASR API endpoint
     volumes:
       - whisper-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (~3GB)
+      - whisper-torch-cache:/root/.cache/torch     # Cache Silero VAD model (~100MB)
     environment:
-      - WHISPER_MODEL=${WHISPER_MODEL:-openai/whisper-large-v3-turbo}
-      - USE_FLASH_ATTENTION=${WHISPER_FLASH_ATTENTION:-true}
+      - WHISPER_MODEL=openai/whisper-large-v3-turbo
       - CUDA_VISIBLE_DEVICES=0
-      - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
-      - ENABLE_TEXT_REFINER=${ENABLE_TEXT_REFINER:-true}
     deploy:
       resources:
         reservations:
@@ -203,36 +201,6 @@ services:
       retries: 3
       start_period: 120s                            # Allow time for model download on first run
 
-  # Transcription Gateway: Unified API for all transcription (routes to model backends)
-  transcription:
-    build:
-      context: ./services/transcription
-      dockerfile: Dockerfile
-    image: transcription-gateway:latest
-    container_name: transcription
-    depends_on:
-      - parakeet-asr
-      - whisper-asr
-      - vosk-asr
-    ports:
-      - "8000:8000"                                 # Port mapping: Main transcription API
-    environment:
-      - PARAKEET_URL=http://parakeet-asr:8000
-      - WHISPER_URL=http://whisper-asr:8000
-      - VOSK_URL=http://vosk-asr:8000
-      - DEFAULT_STREAMING_MODEL=parakeet-streaming
-      - DEFAULT_OFFLINE_MODEL=parakeet-offline
-      - IDLE_UNLOAD_SECONDS=300                     # Unload models after 5 minutes idle
-    restart: always
-    networks:
-      - ai-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
   # Text Refiner Service: Punctuation + ASR Error Correction
   text-refiner:
     build:
@@ -247,10 +215,7 @@ services:
     volumes:
       - text-refiner-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (T5, etc.)
     environment:
-      - PUNCTUATION_MODEL=pcs_en                    # Punctuation ONNX model
-      - CORRECTION_MODEL=${CORRECTION_MODEL:-oliverguhr/spelling-correction-english-base}
       - ENABLE_CORRECTION=${ENABLE_CORRECTION:-true}
-      - CORRECTION_MIN_WORDS=4                      # Min words before applying correction
       - CUDA_VISIBLE_DEVICES=0
     deploy:
       resources:
@@ -277,16 +242,15 @@ services:
     image: audio-notes:latest
     container_name: audio-notes
     depends_on:
-      - transcription
+      - parakeet-asr
       - ollama
     ports:
       - "7860:7860"                                 # Port mapping: Gradio web interface
     volumes:
       - audio-notes-data:/app/recordings              # Persistent storage for audio recordings
     environment:
-      - TRANSCRIPTION_URL=http://transcription:8000   # Use transcription gateway
-      - PARAKEET_URL=http://parakeet-asr:8000         # Direct access (fallback)
-      - WHISPER_URL=http://whisper-asr:8000           # Direct access (fallback)
+      - PARAKEET_URL=http://parakeet-asr:8000         # Primary ASR backend
+      - WHISPER_URL=http://whisper-asr:8000           # Fallback ASR backend
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
     restart: always
@@ -315,6 +279,7 @@ volumes:
   vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
   parakeet-model-data:        # Stores HuggingFace/NeMo model cache for Parakeet (15GB cached)
   whisper-hf-cache:           # Stores HuggingFace model cache for Whisper (~3GB)
+  whisper-torch-cache:        # Stores torch hub cache for Silero VAD model (~100MB)
   text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (T5, etc.)
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
