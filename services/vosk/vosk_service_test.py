@@ -134,17 +134,15 @@ def app(mock_vosk_module):
     if "vosk_service" in sys.modules:
         del sys.modules["vosk_service"]
 
-    # Mock environment variable and get_model_name
-    with patch.dict("os.environ", {"VOSK_MODEL_PATH": "/mock/model"}):
-        # Import the service module
-        import vosk_service
+    # Import the service module
+    import vosk_service
 
-        importlib.reload(vosk_service)
+    importlib.reload(vosk_service)
 
-        # Mock get_model_name to return a test value
-        vosk_service.get_model_name = lambda: "vosk-model-test"
+    # Mock get_model_name to return a test value
+    vosk_service.get_model_name = lambda: "vosk-model-test"
 
-        yield vosk_service.app
+    yield vosk_service.app
 
 
 @pytest.fixture

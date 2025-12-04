@@ -33,7 +33,7 @@ SetLogLevel(-1)
 # Configuration
 # ==============================================================================
 
-MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "/app/model")
+MODEL_PATH = "/app/model"  # Standard Docker path
 SAMPLE_RATE = 16000
 API_VERSION = "1.0"
 
