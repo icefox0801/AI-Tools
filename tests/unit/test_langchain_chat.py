@@ -19,8 +19,8 @@ sys.modules["config"] = MagicMock()
 sys.modules["config"].OLLAMA_MODEL = "llama3.2"
 sys.modules["config"].OLLAMA_URL = "http://ollama:11434/api"
 
-# Now import the module
-from services.langchain_chat import _build_system_prompt
+# Now import the module (after mocking config)
+from services.langchain_chat import _build_system_prompt  # noqa: E402
 
 
 class TestBuildSystemPrompt:

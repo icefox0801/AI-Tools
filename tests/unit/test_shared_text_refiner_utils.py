@@ -4,8 +4,6 @@ Unit tests for shared.text_refiner.utils module.
 Tests text processing utility functions.
 """
 
-import pytest
-
 from shared.text_refiner.utils import capitalize_text
 
 

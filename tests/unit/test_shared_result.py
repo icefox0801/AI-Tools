@@ -4,8 +4,6 @@ Unit tests for shared.client.result module.
 Tests the ASRResult data class and its factory methods.
 """
 
-import pytest
-
 from shared.client.result import ASRResult
 
 

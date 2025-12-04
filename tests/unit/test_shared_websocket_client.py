@@ -4,8 +4,6 @@ Unit tests for shared.client.websocket_client module.
 Tests the ASRClient and ConnectionConfig classes.
 """
 
-import pytest
-
 from shared.client.websocket_client import ASRClient, ConnectionConfig
 
 

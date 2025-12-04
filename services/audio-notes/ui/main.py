@@ -11,6 +11,7 @@ from pathlib import Path
 
 import gradio as gr
 from config import RECORDINGS_DIR, logger
+from services.langchain_chat import chat_streaming as langchain_chat_streaming
 
 from services import (
     check_ollama_health,
@@ -22,7 +23,6 @@ from services import (
     transcribe_audio,
     unload_asr_model,
 )
-from services.langchain_chat import chat_streaming as langchain_chat_streaming
 from ui.sections import (
     create_recordings_section,
     create_status_section,
