@@ -1,7 +1,6 @@
 """Unit tests for audio utility functions."""
 
 import numpy as np
-import pytest
 
 from .utils import (
     TARGET_SAMPLE_RATE,

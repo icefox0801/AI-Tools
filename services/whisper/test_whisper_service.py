@@ -6,7 +6,7 @@ Uses mocked models to avoid requiring actual GPU/model files.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -99,7 +99,6 @@ def mock_modules():
 @pytest.fixture
 def app(mock_modules):
     """Create FastAPI app with mocked dependencies."""
-    import importlib
     import os
     import sys
 
@@ -134,7 +133,6 @@ def client(app):
 @pytest.fixture
 def service(mock_modules):
     """Get service module for direct function testing."""
-    import importlib
     import os
     import sys
 

@@ -1,7 +1,6 @@
 """Unit tests for audio-notes API routes."""
 
 import io
-import os
 import sys
 import tempfile
 import wave

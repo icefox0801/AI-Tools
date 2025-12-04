@@ -1,9 +1,7 @@
 """Unit tests for audio recorder module."""
 
 import io
-import threading
 import wave
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest

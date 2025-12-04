@@ -1,9 +1,7 @@
 """Unit tests for audio-notes UI main module utility functions."""
 
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 
 class TestFormatRecordingTitle:

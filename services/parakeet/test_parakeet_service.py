@@ -5,7 +5,6 @@ Tests the streaming WebSocket endpoint, health check, and transcription.
 Uses mocked models to avoid requiring actual GPU/NeMo.
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np

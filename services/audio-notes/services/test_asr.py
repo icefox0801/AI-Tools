@@ -50,7 +50,6 @@ class TestTranscribeAudio:
 
     def test_transcribe_with_parakeet_success(self, mock_config, mock_recordings):
         """Test successful transcription with Parakeet backend."""
-        import importlib
         import sys
 
         # Clear module cache

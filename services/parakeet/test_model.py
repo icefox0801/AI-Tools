@@ -63,7 +63,6 @@ def mock_modules():
 @pytest.fixture
 def model_module(mock_env, mock_modules):
     """Import model module with mocked dependencies."""
-    import importlib
     import sys
 
     # Remove cached module if exists

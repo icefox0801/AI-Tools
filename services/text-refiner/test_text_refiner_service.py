@@ -6,7 +6,7 @@ Uses mocked models to avoid requiring actual model files.
 """
 
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

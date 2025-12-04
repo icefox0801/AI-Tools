@@ -4,10 +4,8 @@ Unit tests for Audio Notes recordings service module.
 Tests recording listing and audio duration functions.
 """
 
-import os
 import tempfile
 import wave
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

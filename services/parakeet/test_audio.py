@@ -1,7 +1,6 @@
 """Unit tests for audio utilities."""
 
 import numpy as np
-import pytest
 
 from audio import float_to_pcm, load_audio_file, pcm_to_float
 
