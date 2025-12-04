@@ -1,11 +1,9 @@
 """Health check functions for backend services."""
 
 import logging
-from typing import List
 
 import requests
-
-from config import WHISPER_URL, PARAKEET_URL, OLLAMA_URL, OLLAMA_MODEL, logger
+from config import OLLAMA_MODEL, OLLAMA_URL, PARAKEET_URL, WHISPER_URL, logger
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ def check_ollama_health() -> tuple[bool, str]:
         return False, f"Ollama not available: {e}"
 
 
-def get_ollama_models() -> List[str]:
+def get_ollama_models() -> list[str]:
     """Get list of available Ollama models."""
     try:
         resp = requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)

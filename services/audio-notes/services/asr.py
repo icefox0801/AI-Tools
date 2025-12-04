@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 
 import requests
+from config import PARAKEET_URL, WHISPER_URL, logger
 
-from config import WHISPER_URL, PARAKEET_URL, logger
 from services.recordings import get_audio_duration
 
 logger = logging.getLogger(__name__)
@@ -17,33 +17,29 @@ def transcribe_audio(audio_path: str, backend: str = "parakeet") -> tuple[str, f
         base_url = WHISPER_URL
     else:
         base_url = PARAKEET_URL
-    
+
     logger.info(f"Transcribing with {backend}: {audio_path}")
-    
-    with open(audio_path, 'rb') as f:
+
+    with open(audio_path, "rb") as f:
         audio_data = f.read()
-    
+
     duration = get_audio_duration(audio_path)
-    
+
     ext = Path(audio_path).suffix.lower()
     content_types = {
-        '.wav': 'audio/wav',
-        '.mp3': 'audio/mpeg',
-        '.m4a': 'audio/mp4',
-        '.ogg': 'audio/ogg',
-        '.flac': 'audio/flac'
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
     }
-    content_type = content_types.get(ext, 'audio/wav')
-    
-    files = {'file': (Path(audio_path).name, audio_data, content_type)}
-    
+    content_type = content_types.get(ext, "audio/wav")
+
+    files = {"file": (Path(audio_path).name, audio_data, content_type)}
+
     try:
-        resp = requests.post(
-            f"{base_url}/transcribe",
-            files=files,
-            timeout=300
-        )
-        
+        resp = requests.post(f"{base_url}/transcribe", files=files, timeout=300)
+
         if resp.status_code == 200:
             data = resp.json()
             text = data.get("text", "")
@@ -53,7 +49,7 @@ def transcribe_audio(audio_path: str, backend: str = "parakeet") -> tuple[str, f
         else:
             logger.error(f"Transcription failed: {resp.status_code} - {resp.text}")
             return f"Error: {resp.status_code}", duration
-            
+
     except Exception as e:
         logger.error(f"Transcription error: {e}")
         return f"Error: {e}", duration

@@ -19,49 +19,48 @@ Usage:
   python audio_notes.py --port 7860        # Custom port
 """
 
+import argparse
 import os
 import sys
-import argparse
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gradio as gr
 import uvicorn
-from fastapi import FastAPI
-
-from config import RECORDINGS_DIR, logger
-from ui import create_ui
 from api.routes import setup_api_routes
+from config import RECORDINGS_DIR, logger
+from fastapi import FastAPI
+from ui import create_ui
 
 
 def create_app(host: str = "127.0.0.1", port: int = 7860, share: bool = False):
     """Create FastAPI app with Gradio mounted."""
-    
+
     # Create FastAPI app
     app = FastAPI(title="Audio Notes API")
-    
+
     # Set up custom API routes FIRST (before Gradio takes over)
     setup_api_routes(app)
     logger.info("API routes registered: /api/upload-audio, /api/recordings, /api/health")
-    
+
     # Create Gradio UI
     demo = create_ui()
-    
+
     # Mount Gradio app at root
     app = gr.mount_gradio_app(app, demo, path="/")
-    
+
     return app
 
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Audio Notes - Transcription & AI Summarization")
-    parser.add_argument('--port', type=int, default=7860, help='Port to run on')
-    parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
-    parser.add_argument('--share', action='store_true', help='Create public link')
+    parser.add_argument("--port", type=int, default=7860, help="Port to run on")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
+    parser.add_argument("--share", action="store_true", help="Create public link")
     args = parser.parse_args()
-    
+
     print("=" * 50)
     print("📝 Audio Notes")
     print("=" * 50)
@@ -72,21 +71,16 @@ def main():
     print("  GET  /api/recordings   - List recordings")
     print("  GET  /api/health       - Health check")
     print("=" * 50)
-    
-    # Docker mode: bind to 0.0.0.0
-    host = os.getenv("HOST", args.host)
-    if os.getenv("DOCKER_MODE") == "1" or os.path.exists("/.dockerenv"):
+
+    # Docker mode: auto-detect via /.dockerenv
+    host = args.host
+    if os.path.exists("/.dockerenv"):
         host = "0.0.0.0"
-    
+
     # Create and run app
     app = create_app(host=host, port=args.port, share=args.share)
-    
-    uvicorn.run(
-        app,
-        host=host,
-        port=args.port,
-        log_level="info"
-    )
+
+    uvicorn.run(app, host=host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import gradio as gr
 
 def create_transcription_section():
     """Create the transcription section with backend selection and button.
-    
+
     Returns:
         Dict of UI components for transcription
     """
@@ -14,21 +14,18 @@ def create_transcription_section():
             choices=["Whisper", "Parakeet"],
             value="Whisper",
             label="ASR Backend",
-            interactive=True
+            interactive=True,
         )
-        
+
         batch_transcribe_btn = gr.Button(
-            "📝 Transcribe", 
-            variant="primary",
-            size="lg",
-            interactive=False
+            "📝 Transcribe", variant="primary", size="lg", interactive=False
         )
-        
+
         batch_status = gr.Markdown("*Select recordings and click Transcribe.*")
-    
+
     return {
-        'transcription_accordion': transcription_accordion,
-        'backend_radio': backend_radio,
-        'batch_transcribe_btn': batch_transcribe_btn,
-        'batch_status': batch_status,
+        "transcription_accordion": transcription_accordion,
+        "backend_radio": backend_radio,
+        "batch_transcribe_btn": batch_transcribe_btn,
+        "batch_status": batch_status,
     }
