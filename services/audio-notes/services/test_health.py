@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ==============================================================================
 # Fixtures
 # ==============================================================================
@@ -137,7 +136,7 @@ class TestCheckParakeetHealth:
 
             from services.health import check_parakeet_health
 
-            healthy, message = check_parakeet_health()
+            healthy, _message = check_parakeet_health()
 
             assert healthy is False
 
@@ -156,7 +155,7 @@ class TestCheckParakeetHealth:
 
             from services.health import check_parakeet_health
 
-            healthy, message = check_parakeet_health()
+            healthy, _message = check_parakeet_health()
 
             assert healthy is False
 

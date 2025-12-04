@@ -182,7 +182,7 @@ class TestLiveCaptionsTrayInit:
 
             from live_captions_tray import LiveCaptionsTray
 
-            app = LiveCaptionsTray()
+            LiveCaptionsTray()
 
             mock_check.assert_called_once()
 

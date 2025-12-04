@@ -10,7 +10,6 @@ Tests the device enumeration functions including:
 from unittest.mock import MagicMock, patch
 
 
-
 class TestListDevices:
     """Tests for list_devices function."""
 
@@ -183,6 +182,7 @@ class TestListLoopbackDevices:
     def test_handles_import_error(self, capsys):
         """Test handling when pyaudiowpatch is not installed."""
         import builtins
+
         import src.audio.devices as devices_module
 
         original_import = builtins.__import__

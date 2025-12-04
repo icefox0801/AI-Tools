@@ -286,8 +286,7 @@ class TestTranscribeAudio:
     def test_transcribe_handles_int16_input(self, service):
         """Handles int16 audio input."""
         audio = np.zeros(16000, dtype=np.int16)
-        result = service.transcribe_audio(audio)
-        # Should not raise error
+        service.transcribe_audio(audio)  # Should not raise error
 
 
 # ==============================================================================

@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-
 # ==============================================================================
 # Fixtures
 # ==============================================================================
@@ -120,7 +119,7 @@ class TestTranscribeAudio:
 
                 from services.asr import transcribe_audio
 
-                text, duration = transcribe_audio("/path/to/audio.wav")
+                text, _duration = transcribe_audio("/path/to/audio.wav")
 
                 assert "Error: 500" in text
 
@@ -138,7 +137,7 @@ class TestTranscribeAudio:
 
                 from services.asr import transcribe_audio
 
-                text, duration = transcribe_audio("/path/to/audio.wav")
+                text, _duration = transcribe_audio("/path/to/audio.wav")
 
                 assert "Error:" in text
 
@@ -212,7 +211,7 @@ class TestUnloadAsrModel:
 
             from services.asr import unload_asr_model
 
-            success, message = unload_asr_model(backend="Whisper")
+            success, _message = unload_asr_model(backend="Whisper")
 
             assert success is True
 
@@ -249,7 +248,7 @@ class TestUnloadAsrModel:
 
             from services.asr import unload_asr_model
 
-            success, message = unload_asr_model()
+            success, _message = unload_asr_model()
 
             assert success is False
 

@@ -4,6 +4,10 @@
 
 AI-Tools is a Docker-based AI toolkit for real-time speech-to-text, audio transcription, and LLM-powered summarization. It includes ASR services, a web UI for audio analysis, and a desktop live captions app.
 
+**Version**: 1.0.0  
+**Python**: 3.11+  
+**Test Coverage**: 321 unit tests across 21 test files
+
 ## Architecture
 
 ```
@@ -42,13 +46,41 @@ AI-Tools is a Docker-based AI toolkit for real-time speech-to-text, audio transc
 - **Text Refiner** (`services/text-refiner/`) - Punctuation & ASR correction, port 8010
 
 ### Client Applications
-- **Live Captions** (`apps/live-captions/`) - Desktop overlay with microphone capture
+- **Live Captions** (`apps/live-captions/`) - Desktop overlay with system tray
+  - Real-time transparent overlay window
+  - WASAPI loopback for system audio capture
+  - Microphone input support
+  - Recording with auto-upload to Audio Notes
+  - System tray app with backend selection
 
 ### Shared Library (`shared/`)
 - `shared/client/websocket_client.py` - WebSocket client for ASR streaming
 - `shared/client/transcript.py` - TranscriptManager with ID-based replace/append
 - `shared/config/backends.py` - Backend configuration (vosk, parakeet, or whisper)
 - `shared/text_refiner/` - Text refiner client module for punctuation & correction
+- `shared/logging/` - Centralized logging configuration
+
+## Testing
+
+Run all tests:
+```bash
+python -m pytest apps/ services/ tests/ -v
+```
+
+Run specific test suites:
+```bash
+# Live Captions (154 tests)
+python -m pytest apps/live-captions -v
+
+# Audio Notes (70 tests)
+python -m pytest services/audio-notes -v
+
+# ASR Services
+python -m pytest services/parakeet services/whisper services/vosk -v
+
+# E2E tests (require Docker services)
+python -m pytest tests/e2e -v -m e2e
+```
 
 ## WebSocket Protocol (v3.0)
 
@@ -126,31 +158,48 @@ Shows:
 
 ```
 AI-Tools/
+├── pyproject.toml           # Project config, ruff, pytest settings
 ├── docker-compose.yaml      # Service orchestration
 ├── apps/
-│   └── live-captions/       # Desktop caption overlay
+│   └── live-captions/       # Desktop caption overlay (v1.0)
 │       ├── live_captions.py       # Main caption window
 │       ├── live_captions_tray.py  # System tray launcher
-│       ├── build_tray.bat         # Build Windows executable
-│       └── requirements.txt
+│       ├── src/
+│       │   ├── audio/             # Audio capture (WASAPI, microphone)
+│       │   ├── asr/               # ASR client
+│       │   └── ui/                # Caption window UI
+│       ├── scripts/               # Build and run scripts
+│       └── test_*.py              # Unit tests (154 tests)
 ├── services/
-│   ├── audio-notes/         # Gradio Web UI for transcription & summarization
+│   ├── audio-notes/         # Gradio Web UI (v1.0)
 │   │   ├── audio_notes.py         # FastAPI entry point
 │   │   ├── ui/                    # Gradio UI components
 │   │   ├── services/              # LLM, recordings, ASR services
-│   │   └── api/                   # REST API endpoints
+│   │   ├── api/                   # REST API endpoints
+│   │   └── test_*.py              # Unit tests (70 tests)
 │   ├── vosk/                # CPU ASR service
 │   ├── parakeet/            # GPU ASR service (NVIDIA NeMo TDT)
 │   ├── whisper/             # GPU ASR service (OpenAI Whisper)
 │   └── text-refiner/        # Punctuation & correction service
-└── shared/
-    ├── client/
-    │   ├── websocket_client.py
-    │   └── transcript.py    # ID-based replace/append
-    ├── config/
-    │   └── backends.py      # BACKEND selection
-    └── text_refiner/        # Text refiner client module
+├── shared/
+│   ├── client/              # WebSocket client, transcript manager
+│   ├── config/              # Backend configuration
+│   ├── logging/             # Centralized logging
+│   └── text_refiner/        # Text refiner client
+└── tests/
+    ├── e2e/                 # End-to-end tests
+    └── fixtures/            # Test audio files
 ```
+
+## Code Quality
+
+Lint with ruff:
+```bash
+ruff check .        # Check all files
+ruff check --fix .  # Auto-fix issues
+```
+
+Key lint rules enabled: E, W, F, I, B, C4, UP, SIM, RUF
 
 ## Parakeet Model Configuration
 

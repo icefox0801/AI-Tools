@@ -3,8 +3,8 @@
 import numpy as np
 
 from .utils import (
-    TARGET_SAMPLE_RATE,
     CHUNK_DURATION_MS,
+    TARGET_SAMPLE_RATE,
     calculate_chunk_size,
     resample_audio,
     stereo_to_mono,

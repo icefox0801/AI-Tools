@@ -355,7 +355,7 @@ class TestASRClientReceiveTranscripts:
             try:
                 return next(message_iter)
             except StopIteration:
-                raise TimeoutError
+                raise TimeoutError from None
 
         mock_ws = AsyncMock()
         mock_ws.recv = mock_recv

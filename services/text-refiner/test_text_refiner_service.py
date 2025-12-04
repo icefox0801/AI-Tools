@@ -31,7 +31,6 @@ sys.modules["transformers"] = mock_transformers
 
 from fastapi.testclient import TestClient
 
-
 # ==============================================================================
 # Mock Models
 # ==============================================================================

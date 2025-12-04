@@ -47,16 +47,12 @@ fixable = ["ALL"]
 [tool.ruff.lint.per-file-ignores]
 # Allow imports after sys.path manipulation
 "apps/live-captions/live_captions_tray.py" = ["E402"]
-# Allow simpler exception handling in tests
-"*_test.py" = ["B904"]
+# Allow imports after sys.modules manipulation for mocking
+"services/text-refiner/test_text_refiner_service.py" = ["E402"]
 # Allow unused imports for side effects (flash_attn availability check)
 "services/whisper/whisper_service.py" = ["F401"]
 # Allow redefinition of logger (module-specific logging)
 "services/audio-notes/services/*.py" = ["F811"]
-# Allow undefined MODEL_NAME in parakeet (defined dynamically)
-"services/parakeet/parakeet_service.py" = ["F821"]
-# Allow exception chaining flexibility in HTTP handlers
-"services/transcription/transcription_service.py" = ["B904"]
 # Allow exception chaining flexibility in audio-notes API
 "services/audio-notes/api/routes.py" = ["B904"]
 

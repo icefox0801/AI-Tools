@@ -93,23 +93,34 @@ See [apps/live-captions/README.md](apps/live-captions/README.md) for details.
 
 ```
 AI-Tools/
+├── pyproject.toml           # Project config, linting, testing
 ├── docker-compose.yaml      # Service orchestration
 ├── apps/
-│   └── live-captions/       # Desktop caption overlay
+│   └── live-captions/       # Desktop caption overlay (v1.0)
+│       └── src/             # Audio, ASR, UI modules
 ├── services/
-│   ├── audio-notes/         # Web UI for transcription & summarization
+│   ├── audio-notes/         # Web UI for transcription (v1.0)
 │   ├── vosk/                # CPU ASR (Vosk)
 │   ├── parakeet/            # GPU ASR (NVIDIA NeMo)
 │   ├── whisper/             # GPU ASR (OpenAI Whisper)
 │   ├── text-refiner/        # Punctuation & correction
 │   └── pyspark/             # Jupyter ML environment
-└── shared/
-    ├── client/              # WebSocket client library
-    │   ├── websocket_client.py
-    │   └── transcript.py    # ID-based transcript manager
-    ├── config/
-    │   └── backends.py      # Backend selection
-    └── text_refiner/        # Text refiner client module
+├── shared/
+│   ├── client/              # WebSocket client library
+│   ├── config/              # Backend selection
+│   ├── logging/             # Centralized logging
+│   └── text_refiner/        # Text refiner client module
+└── tests/                   # E2E tests and fixtures
+```
+
+## Testing
+
+```bash
+# Run all tests (321 tests)
+python -m pytest apps/ services/ tests/ -v
+
+# Run with coverage
+python -m pytest --cov=apps --cov=services --cov=shared
 ```
 
 ## Configuration

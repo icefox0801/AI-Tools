@@ -1,6 +1,8 @@
-# Live Captions v10.1
+# Live Captions v1.0
 
 A standalone desktop application that displays real-time speech-to-text captions in a transparent overlay window.
+
+**Test Coverage**: 154 unit tests
 
 ## Features
 
@@ -12,10 +14,11 @@ A standalone desktop application that displays real-time speech-to-text captions
 - ⚡ **Real-time streaming** - WebSocket connection to ASR service
 - 🔧 **Debug mode** - Verbose logging and audio saving
 - **🖱️ System Tray App** - Easy access with right-click backend selection
+- 📼 **Recording** - Save audio with automatic upload to Audio Notes
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Windows 10/11 (for DPI awareness and WASAPI loopback)
 - Running ASR service (Vosk, Parakeet, or Whisper via Docker)
 
@@ -124,28 +127,44 @@ BACKEND = "vosk"      # CPU-based, port 8001
 live-captions/
 ├── live_captions.py          # Main caption window entry point
 ├── live_captions_tray.py     # System tray app entry point
+├── test_live_captions.py     # Unit tests for main app
+├── test_live_captions_tray.py # Unit tests for tray app
 ├── requirements.txt
 ├── README.md
+├── CHANGELOG.md
 ├── icon.ico                  # Application icon
 ├── Live Captions Tray.spec   # PyInstaller spec file
-├── .gitignore
 ├── scripts/                  # Windows batch scripts
 │   ├── run.bat               # Run caption window
 │   ├── run_tray.bat          # Run tray app (development)
 │   └── build_tray.bat        # Build Windows executable
 └── src/                      # Source modules
     ├── __init__.py
-    ├── audio/                # Audio capture module
+    ├── audio/                # Audio capture module (81 tests)
     │   ├── __init__.py
     │   ├── capture.py        # MicrophoneCapture, SystemAudioCapture
     │   ├── devices.py        # Device listing
-    │   └── utils.py          # Resampling, stereo-to-mono
+    │   ├── recorder.py       # AudioRecorder for saving
+    │   ├── utils.py          # Resampling, stereo-to-mono
+    │   └── test_*.py         # Unit tests
     ├── ui/                   # UI module
     │   ├── __init__.py
     │   └── window.py         # CaptionWindow overlay
     └── asr/                  # ASR client module
         ├── __init__.py
-        └── client.py         # ASRClient WebSocket
+        ├── client.py         # ASRClient WebSocket
+        └── test_client.py    # Unit tests
+```
+
+## Testing
+
+```bash
+# Run all live-captions tests (154 tests)
+python -m pytest . -v
+
+# Run specific test files
+python -m pytest src/audio -v  # Audio module tests
+python -m pytest src/asr -v    # ASR client tests
 ```
 
 ## Architecture

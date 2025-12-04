@@ -25,9 +25,8 @@ import numpy as np
 import soundfile as sf
 import torch
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-
 from audio import float_to_pcm, load_audio_file, pcm_to_float
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from model import (
     DEVICE,
     OFFLINE_MODEL,
@@ -38,6 +37,7 @@ from model import (
     setup_cuda,
     unload_models,
 )
+
 from shared.logging import setup_logging
 from shared.text_refiner import capitalize_text, check_text_refiner, get_client, refine_text
 

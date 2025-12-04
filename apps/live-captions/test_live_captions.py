@@ -21,7 +21,6 @@ def mock_dependencies():
     """Mock heavy dependencies before imports."""
     mock_tk = MagicMock()
     mock_font = MagicMock()
-    mock_ctypes = MagicMock()
 
     # Mock root window
     mock_root = MagicMock()
@@ -414,7 +413,7 @@ class TestLiveCaptionsAudioCapture:
             app.audio_capture = MagicMock()
             app._stop_audio_capture()
 
-            app.audio_capture is None  # Should be cleared
+            assert app.audio_capture is None  # Should be cleared
 
 
 class TestLiveCaptionsClose:
@@ -504,7 +503,7 @@ class TestMainFunction:
             patch("live_captions.set_recorder"),
             patch("live_captions.LiveCaptions") as mock_app_class,
             patch("sys.argv", ["live_captions.py", "--debug"]),
-            patch("logging.getLogger") as mock_logger,
+            patch("logging.getLogger"),
         ):
 
             mock_config.return_value = {

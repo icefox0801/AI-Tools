@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from .recorder import (
-    SAMPLE_RATE,
-    SAMPLE_WIDTH,
+    AUTO_UPLOAD_INTERVAL,
     CHANNELS,
     INITIAL_UPLOAD_DELAY,
-    AUTO_UPLOAD_INTERVAL,
+    SAMPLE_RATE,
+    SAMPLE_WIDTH,
     AudioRecorder,
     get_recorder,
     set_recorder,
@@ -262,7 +262,7 @@ class TestCreateWavBytes:
 
         wav_io = io.BytesIO(wav_bytes)
         with wave.open(wav_io, "rb") as wav:
-            frames = wav.readframes(wav.getnframes())
+            wav.readframes(wav.getnframes())  # Verify readable
             assert audio_data in wav_bytes
 
 
