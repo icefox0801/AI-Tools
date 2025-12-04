@@ -4,7 +4,7 @@
 # ============== MODEL CONFIGURATION ==============
 # Parakeet models (separate streaming vs offline for optimal performance):
 #   nvidia/parakeet-tdt-1.1b   - TDT: Fast streaming, good for real-time (FP16 OK, ~4GB VRAM)
-#   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, for offline transcription (FP32 required, ~8GB VRAM)
+#   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, for offline transcription (FP32 supported, ~8GB VRAM)
 #   nvidia/parakeet-ctc-1.1b   - CTC: Balanced speed/accuracy (FP16 OK, ~4GB VRAM)
 #
 # STREAMING (Live Captions): Uses TDT for low-latency real-time transcription
@@ -13,7 +13,7 @@ x-parakeet-config: &parakeet-config
   streaming_model: nvidia/parakeet-tdt-1.1b  # WebSocket /stream endpoint
   offline_model: nvidia/parakeet-rnnt-1.1b   # POST /transcribe endpoint
   streaming_fp16: "true"   # TDT supports FP16
-  offline_fp16: "false"    # RNNT requires FP32
+  offline_fp16: "false"    # RNNT supports FP32 for best accuracy
 
 services:
   # Ollama Service: Local LLM runtime (auto-pulls models on startup)
@@ -141,7 +141,7 @@ services:
     environment:
       # Available models:
       #   nvidia/parakeet-tdt-1.1b   - TDT: Fastest, good for real-time (FP16 OK, ~4GB VRAM)
-      #   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, slower (FP32 required, ~8GB VRAM)
+      #   nvidia/parakeet-rnnt-1.1b  - RNNT: Best accuracy, slower (FP32 supported, ~8GB VRAM)
       #   nvidia/parakeet-ctc-1.1b   - CTC: Balanced speed/accuracy (FP16 OK, ~4GB VRAM)
       # Model selection: TDT for streaming (Live Captions), RNNT for offline (Audio Notes)
       - PARAKEET_STREAMING_MODEL=nvidia/parakeet-tdt-1.1b

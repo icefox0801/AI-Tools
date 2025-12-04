@@ -203,6 +203,56 @@ async def apply_punctuation(text: str) -> str:
         return text
 
 
+def _split_into_chunks(text: str, max_tokens: int = 400) -> list[str]:
+    """
+    Split text into chunks that fit within token limits.
+
+    Uses sentence boundaries (. ! ?) as natural split points.
+    Falls back to word-based splitting if sentences are too long.
+    """
+    import re
+
+    # Split on sentence boundaries, keeping the punctuation
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+
+    chunks = []
+    current_chunk = []
+    current_word_count = 0
+
+    for sentence in sentences:
+        sentence_words = len(sentence.split())
+
+        # If a single sentence is too long, split by words
+        if sentence_words > max_tokens:
+            # Flush current chunk first
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_word_count = 0
+
+            # Split long sentence by words
+            words = sentence.split()
+            for i in range(0, len(words), max_tokens):
+                chunk_words = words[i : i + max_tokens]
+                chunks.append(" ".join(chunk_words))
+        elif current_word_count + sentence_words > max_tokens:
+            # Current chunk is full, start a new one
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [sentence]
+            current_word_count = sentence_words
+        else:
+            # Add to current chunk
+            current_chunk.append(sentence)
+            current_word_count += sentence_words
+
+    # Don't forget the last chunk
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks if chunks else [text]
+
+
 async def apply_correction(text: str, context: str | None = None) -> str:
     """Apply ASR error correction using seq2seq model."""
     if not text.strip():
@@ -218,10 +268,12 @@ async def apply_correction(text: str, context: str | None = None) -> str:
         if model is None or tokenizer is None:
             return text
 
-        # Prepare input with optional context
-        input_text = f"{context} {text}" if context else text
+        # Split long texts into manageable chunks (400 words ≈ ~500 tokens with headroom)
+        chunks = _split_into_chunks(text, max_tokens=400)
 
-        def correct():
+        def correct_chunk(chunk_text: str, use_context: bool = False) -> str:
+            """Correct a single chunk."""
+            input_text = f"{context} {chunk_text}" if (use_context and context) else chunk_text
             device = next(model.parameters()).device
             inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
             inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -237,7 +289,19 @@ async def apply_correction(text: str, context: str | None = None) -> str:
 
             return tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
 
-        return await asyncio.to_thread(correct)
+        def correct_all():
+            """Process all chunks sequentially on the model's device."""
+            corrected_chunks = []
+            for i, chunk in enumerate(chunks):
+                # Only use context for the first chunk
+                corrected = correct_chunk(chunk, use_context=(i == 0))
+                corrected_chunks.append(corrected)
+            return " ".join(corrected_chunks)
+
+        if len(chunks) > 1:
+            logger.info(f"Correction: splitting {word_count} words into {len(chunks)} chunks")
+
+        return await asyncio.to_thread(correct_all)
     except Exception as e:
         logger.error(f"Correction error: {e}")
         return text

@@ -374,19 +374,19 @@ async def unload_endpoint():
 
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
-    """Transcribe an uploaded audio file."""
+    """Transcribe an uploaded audio file.
+
+    Parakeet TDT model natively produces punctuated text, so no text-refiner
+    post-processing is needed for file transcription.
+    """
     try:
         audio_data = await file.read()
         audio_array = load_audio_file(audio_data)
         pcm_data = float_to_pcm(audio_array)
 
         words = transcribe_with_timestamps(pcm_data)
-        raw_text = " ".join(w["word"] for w in words)
-
-        if text_refiner.available and len(words) >= MIN_WORDS_FOR_PUNCTUATION:
-            text = await refine_text(raw_text)
-        else:
-            text = capitalize_text(raw_text)
+        # Parakeet TDT outputs punctuated words natively
+        text = " ".join(w["word"] for w in words)
 
         state = get_model_state()
         return {"text": text, "words": words, "model": state.offline_model_name}

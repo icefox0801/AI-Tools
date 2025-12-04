@@ -22,7 +22,7 @@ def create_chat_tab():
             elem_id="chat-context-info",
         )
 
-        chatbot = gr.Chatbot(label="Ask questions about the content", height=300)
+        chatbot = gr.Chatbot(label="Ask questions about the content", height=500)
 
         with gr.Row(equal_height=True):
             chat_input = gr.Textbox(

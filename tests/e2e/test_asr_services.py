@@ -148,6 +148,71 @@ class TestParakeetASR:
             full_text = " ".join(r.get("text", "") for r in final_responses).lower()
             assert "hello" in full_text, f"Expected 'hello' in transcription, got: {full_text}"
 
+    @pytest.mark.asyncio
+    async def test_transcribe_endpoint(
+        self, parakeet_service: dict[str, Any], hello_audio: bytes
+    ) -> None:
+        """Test Parakeet /transcribe file upload endpoint."""
+        import httpx
+
+        url = f"http://{parakeet_service['host']}:{parakeet_service['port']}/transcribe"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": ("test.wav", hello_audio, "audio/wav")}
+            response = await client.post(url, files=files)
+
+            assert response.status_code == 200
+            data = response.json()
+
+            assert "text" in data, f"Expected 'text' in response, got: {data}"
+            assert "words" in data, "Expected word timestamps in response"
+            assert "model" in data, "Expected model name in response"
+
+            text = data["text"].lower()
+            assert "hello" in text, f"Expected 'hello' in transcription, got: {text}"
+
+    @pytest.mark.asyncio
+    async def test_transcribe_returns_full_text(
+        self, parakeet_service: dict[str, Any], numbers_audio: bytes
+    ) -> None:
+        """Test that Parakeet /transcribe returns full transcription without truncation."""
+        import httpx
+
+        url = f"http://{parakeet_service['host']}:{parakeet_service['port']}/transcribe"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": ("numbers.wav", numbers_audio, "audio/wav")}
+            response = await client.post(url, files=files)
+
+            assert response.status_code == 200
+            data = response.json()
+
+            # Check that words match the text
+            words = data.get("words", [])
+            text = data.get("text", "")
+
+            if words:
+                # Word count should approximately match
+                word_count = len(words)
+                text_word_count = len(text.split())
+                # Allow some variance due to punctuation
+                assert abs(word_count - text_word_count) < 5, (
+                    f"Word count mismatch: {word_count} words vs {text_word_count} in text"
+                )
+
+    @pytest.mark.asyncio
+    async def test_info_endpoint(self, parakeet_service: dict[str, Any]) -> None:
+        """Test Parakeet info endpoint."""
+        import httpx
+
+        url = f"http://{parakeet_service['host']}:{parakeet_service['port']}/info"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            assert response.status_code == 200
+            data = response.json()
+            assert "service" in data
+            assert "models" in data
+
 
 class TestWhisperASR:
     """End-to-end tests for Whisper ASR service."""

@@ -50,7 +50,7 @@ class ModelState:
     streaming_preprocessor: object | None = None
     streaming_loaded: bool = False
     streaming_model_name: str = ""
-    # Offline model (RNNT for accuracy, requires FP32)
+    # Offline model (RNNT for accuracy, uses FP32)
     offline_model: object | None = None
     offline_preprocessor: object | None = None
     offline_loaded: bool = False
@@ -106,7 +106,7 @@ def load_model(mode: str = "streaming"):
         if _model_state.offline_loaded:
             return _model_state.offline_model
         model_name = OFFLINE_MODEL
-        use_fp16 = False  # RNNT requires FP32
+        use_fp16 = False  # RNNT uses FP32 for best accuracy
     else:
         if _model_state.streaming_loaded:
             return _model_state.streaming_model

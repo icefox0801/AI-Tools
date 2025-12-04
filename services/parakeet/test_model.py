@@ -26,7 +26,9 @@ mock_torch.cuda.synchronize = MagicMock()
 mock_torch.cuda.empty_cache = MagicMock()
 mock_torch.backends = MagicMock()
 mock_torch.no_grad = MagicMock(return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock()))
-mock_torch.randn = MagicMock(return_value=MagicMock(to=MagicMock(return_value=MagicMock(half=MagicMock()))))
+mock_torch.randn = MagicMock(
+    return_value=MagicMock(to=MagicMock(return_value=MagicMock(half=MagicMock())))
+)
 mock_torch.tensor = MagicMock(return_value=MagicMock(to=MagicMock()))
 
 # Create mock for shared modules
