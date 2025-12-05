@@ -65,7 +65,7 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from shared.config import BACKENDS
-from src.audio.recorder import get_recorder
+from src.audio.recorder import read_recording_status
 
 # Setup logging
 logging.basicConfig(
@@ -252,8 +252,10 @@ class LiveCaptionsTray:
         self.update_icon()
 
     def _monitor_status(self):
-        """Background thread to monitor process status and sync icon."""
+        """Background thread to monitor process status, recording, and sync icon."""
         import time
+
+        last_recording_duration = ""
 
         while self._running:
             try:
@@ -263,6 +265,16 @@ class LiveCaptionsTray:
                     logger.info(f"Status changed: {'Running' if current_running else 'Stopped'}")
                     self._last_running_state = current_running
                     self.update_icon()
+
+                # Check recording status and update tooltip
+                is_recording, duration_str, _ = self.get_recording_info()
+                if is_recording and duration_str != last_recording_duration:
+                    last_recording_duration = duration_str
+                    self.update_icon()  # Update tooltip with new duration
+                elif not is_recording and last_recording_duration:
+                    last_recording_duration = ""
+                    self.update_icon()
+
             except Exception as e:
                 logger.debug(f"Status monitor error: {e}")
 
@@ -384,19 +396,62 @@ class LiveCaptionsTray:
 
         return img
 
+    def _add_recording_indicator(self, img: Image.Image, size: int) -> Image.Image:
+        """Add a prominent red recording dot indicator with pulsing effect."""
+        img = img.copy()
+        draw = ImageDraw.Draw(img)
+
+        # Larger red dot in bottom-left corner (1/3 of icon size for visibility)
+        dot_size = size // 3
+        dot_x = 4
+        dot_y = size - dot_size - 4
+
+        # Dark border for contrast
+        border_width = 3
+        draw.ellipse(
+            [dot_x - border_width, dot_y - border_width, 
+             dot_x + dot_size + border_width, dot_y + dot_size + border_width], 
+            fill=(40, 40, 40)
+        )
+        # Bright red fill (more saturated)
+        draw.ellipse([dot_x, dot_y, dot_x + dot_size, dot_y + dot_size], fill=(255, 50, 50))
+        # Inner highlight for 3D effect
+        highlight_size = dot_size // 3
+        draw.ellipse(
+            [dot_x + 2, dot_y + 2, dot_x + highlight_size + 2, dot_y + highlight_size + 2], 
+            fill=(255, 150, 150)
+        )
+
+        return img
+
     def update_icon(self):
-        """Update tray icon based on running state."""
+        """Update tray icon based on running and recording state."""
         if self.icon:
             running = self.current_process is not None and self.current_process.poll() is None
-            self.icon.icon = self.create_icon_image(running)
+            is_recording, duration_str, _ = self.get_recording_info()
 
-            # Update tooltip
+            # Create base icon
+            img = self.create_icon_image(running)
+
+            # Add recording indicator if recording
+            if is_recording:
+                img = self._add_recording_indicator(img, img.size[0])
+
+            self.icon.icon = img
+
+            # Update tooltip with recording info
             if running:
                 backend_name = BACKENDS.get(self.current_backend, {}).get(
                     "name", self.current_backend
                 )
                 audio = "System Audio" if self.use_system_audio else "Microphone"
-                self.icon.title = f"{APP_NAME} - {backend_name} ({audio})"
+
+                if is_recording:
+                    self.icon.title = (
+                        f"{APP_NAME} - {backend_name} ({audio})\n🔴 Recording: {duration_str}"
+                    )
+                else:
+                    self.icon.title = f"{APP_NAME} - {backend_name} ({audio})"
             else:
                 self.icon.title = f"{APP_NAME} - Stopped"
 
@@ -493,30 +548,24 @@ class LiveCaptionsTray:
             self.update_icon()
 
     def get_recording_info(self) -> tuple[bool, str, float]:
-        """Get current recording info.
+        """Get current recording info from status file (IPC with subprocess).
 
         Returns:
             Tuple of (is_recording, duration_str, duration_seconds)
         """
-        try:
-            recorder = get_recorder()
-            if recorder and recorder.is_recording:
-                return True, recorder.duration_str, recorder.duration
-            return False, "00:00", 0.0
-        except Exception:
-            return False, "00:00", 0.0
+        return read_recording_status()
 
     def clear_recording(self):
-        """Clear the current recording."""
-        try:
-            recorder = get_recorder()
-            if recorder:
-                recorder.clear()
-                logger.info("Recording cleared")
-                if self.icon:
-                    self.icon.notify("Recording Cleared", "Audio recording has been cleared.")
-        except Exception as e:
-            logger.error(f"Failed to clear recording: {e}")
+        """Clear the current recording.
+
+        Note: When running as subprocess, clearing from tray is not supported.
+        The recording can only be cleared from within the Live Captions window.
+        """
+        # When running via subprocess, we can't directly access the recorder
+        # This would require implementing a more complex IPC mechanism
+        logger.info("Clear recording from tray not supported when running as subprocess")
+        if self.icon:
+            self.icon.notify("Clear Recording", "Use the Live Captions window to clear recording.")
 
     def toggle_audio_source(self):
         """Toggle between system audio and microphone."""
@@ -735,16 +784,8 @@ class LiveCaptionsTray:
         logger.info("Exiting tray application")
         self._running = False  # Stop background thread
 
-        # Save recording before exit
-        try:
-            recorder = get_recorder()
-            if recorder and recorder.is_recording and recorder.duration > 1.0:
-                saved_path = recorder.stop()
-                if saved_path:
-                    logger.info(f"Recording saved on exit: {saved_path}")
-        except Exception as e:
-            logger.error(f"Failed to save recording on exit: {e}")
-
+        # When running as subprocess, the live_captions.py process handles its own cleanup
+        # including saving any recording when it exits
         self.stop_captions()
         icon.stop()
 

@@ -2,7 +2,7 @@
 
 from .capture import AudioCapture, MicrophoneCapture, SystemAudioCapture
 from .devices import get_default_loopback_info, get_default_microphone_info, list_devices
-from .recorder import AudioRecorder, get_recorder, set_recorder
+from .recorder import AudioRecorder, get_recorder, read_recording_status, set_recorder
 from .utils import (
     CHUNK_DURATION_MS,
     TARGET_SAMPLE_RATE,
@@ -27,6 +27,7 @@ __all__ = [
     "get_recorder",
     # Device functions
     "list_devices",
+    "read_recording_status",
     # Utility functions
     "resample_audio",
     "set_recorder",

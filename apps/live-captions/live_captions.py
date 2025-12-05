@@ -119,13 +119,25 @@ class LiveCaptions:
         self.loop = None
         self.asr_client = None
 
-        # Create UI
-        self.window = CaptionWindow(
-            model_display=get_display_info(self.backend), on_close=self.close
-        )
+        # Create UI based on mode
+        # - Both disabled: No overlay (exit early or minimal background mode)
+        # - Recording only: No overlay (tray shows recording timer)
+        # - Transcription enabled: Full caption window
+        self.headless_mode = not enable_transcription  # No overlay needed
+
+        if self.headless_mode:
+            # No overlay - recording-only or idle mode
+            # Tray app will show recording status
+            self.window = None
+        else:
+            self.window = CaptionWindow(
+                model_display=get_display_info(self.backend), on_close=self.close
+            )
 
     def _on_transcript_change(self):
         """Handle transcript updates."""
+        if self.headless_mode or not self.window:
+            return  # No overlay to update
         text = self.transcript.get_text()
         self.window.update_text(text)
 
@@ -144,10 +156,9 @@ class LiveCaptions:
 
     def _on_asr_connected(self, connected: bool):
         """Handle ASR connection status change."""
-        if not self.enable_transcription:
-            # Transcription disabled - show recording-only mode
-            self.window.set_connection_status(True)  # Show as "connected" (recording)
-            self.window.set_message("📼 Recording only (live transcription disabled)")
+        if self.headless_mode or not self.window:
+            # Headless mode - no overlay to update
+            # Tray app will show status
             return
 
         self.window.set_connection_status(connected)
@@ -172,12 +183,18 @@ class LiveCaptions:
             )
 
         if self.audio_capture.start():
-            self.window.set_audio_status(self.audio_capture.source_name)
+            if self.window:
+                self.window.set_audio_status(self.audio_capture.source_name)
+
             # Start recording
             if self.recorder:
                 self.recorder.start()
+                logger.info("Recording started")
         else:
-            self.window.set_message("❌ Audio capture failed")
+            if self.window:
+                self.window.set_message("❌ Audio capture failed")
+            else:
+                logger.error("Audio capture failed")
 
     def _stop_audio_capture(self):
         """Stop audio capture."""
@@ -224,16 +241,50 @@ class LiveCaptions:
             if saved_path:
                 logger.info(f"Recording saved: {saved_path}")
 
-        self.window.close()
+        if self.window:
+            self.window.close()
 
     def run(self):
         """Run the application."""
+        # Check if we're in headless mode (no transcription)
+        if self.headless_mode:
+            # No window - run in background for recording only
+            logger.info("Running in headless mode (recording only, no overlay)")
+            self._run_headless()
+            return
+
         # Start ASR thread
         asr_thread = threading.Thread(target=self._run_async, daemon=True)
         asr_thread.start()
 
         # Run UI main loop
         self.window.mainloop()
+
+    def _run_headless(self):
+        """Run in headless mode (recording only, no overlay)."""
+        import signal
+        import time
+
+        # Set up signal handler for graceful shutdown
+        def signal_handler(sig, frame):
+            logger.info("Received shutdown signal")
+            self.close()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        # Start audio capture immediately
+        self._start_audio_capture()
+
+        # Run until stopped
+        try:
+            while self.running:
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.close()
 
     def _run_async(self):
         """Run async event loop in thread."""
@@ -250,7 +301,11 @@ class LiveCaptions:
         )
 
         # Start audio capture after short delay
-        self.window.after(500, self._start_audio_capture)
+        if self.window:
+            self.window.after(500, self._start_audio_capture)
+        else:
+            # Headless mode - start immediately (handled in _run_headless)
+            pass
 
         # Run ASR client
         self.loop.run_until_complete(self.asr_client.run())

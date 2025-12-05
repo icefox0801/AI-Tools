@@ -76,6 +76,9 @@ class AudioRecorder:
         self._last_upload_bytes = 0
         self._first_upload_done = False
 
+        # Status file update timer (for IPC with tray app)
+        self._status_timer: threading.Timer | None = None
+
         logger.info(f"Audio Notes API: {self.api_url}")
 
     @property
@@ -127,8 +130,14 @@ class AudioRecorder:
 
             logger.info(f"Started recording: {self._current_filename}")
 
+            # Write initial status file for IPC
+            self._update_status_file()
+
             # Start auto-upload timer
             self._start_upload_timer()
+
+            # Start status file update timer
+            self._start_status_timer()
 
             return True
 
@@ -222,6 +231,26 @@ class AudioRecorder:
         if self._recording:
             self._start_upload_timer()
 
+    def _start_status_timer(self):
+        """Start the status file update timer (for tray app IPC)."""
+        if self._status_timer:
+            self._status_timer.cancel()
+
+        self._status_timer = threading.Timer(1.0, self._update_status_periodic)
+        self._status_timer.daemon = True
+        self._status_timer.start()
+
+    def _update_status_periodic(self):
+        """Periodically update status file for tray app."""
+        if not self._recording:
+            return
+
+        self._update_status_file()
+
+        # Schedule next update
+        if self._recording:
+            self._start_status_timer()
+
     def add_chunk(self, audio_bytes: bytes):
         """Add an audio chunk to the recording.
 
@@ -250,11 +279,16 @@ class AudioRecorder:
             self._upload_timer.cancel()
             self._upload_timer = None
 
+        if self._status_timer:
+            self._status_timer.cancel()
+            self._status_timer = None
+
         with self._lock:
             if not self._recording:
                 return None
 
             self._recording = False
+            self._update_status_file()  # Update status file
 
             if not self._chunks:
                 logger.warning("No audio recorded")
@@ -276,11 +310,87 @@ class AudioRecorder:
             self._upload_timer.cancel()
             self._upload_timer = None
 
+        if self._status_timer:
+            self._status_timer.cancel()
+            self._status_timer = None
+
         with self._lock:
             self._recording = False
             self._chunks = []
             self._total_bytes = 0
             self._current_filename = None
+            self._update_status_file()  # Update status file
+
+    def _update_status_file(self):
+        """Write recording status to a file for IPC with tray app."""
+        try:
+            status_file = get_status_file_path()
+            if self._recording:
+                # Write current status
+                import json
+
+                status = {
+                    "recording": True,
+                    "start_time": self._start_time.isoformat() if self._start_time else None,
+                    "duration": self.duration,
+                    "duration_str": self.duration_str,
+                }
+                with open(status_file, "w") as f:
+                    json.dump(status, f)
+            else:
+                # Clear status file
+                if status_file.exists():
+                    status_file.unlink()
+        except Exception as e:
+            logger.debug(f"Failed to update status file: {e}")
+
+
+def get_status_file_path():
+    """Get the path for the recording status file."""
+    from pathlib import Path
+
+    return Path(os.environ.get("TEMP", "/tmp")) / "live_captions_recording.json"
+
+
+def read_recording_status() -> tuple[bool, str, float]:
+    """Read recording status from the status file (for tray app).
+
+    Returns:
+        Tuple of (is_recording, duration_str, duration_seconds)
+    """
+    try:
+        import json
+        from datetime import datetime
+
+        status_file = get_status_file_path()
+        if not status_file.exists():
+            return False, "00:00", 0.0
+
+        # Check if file is stale (older than 5 seconds means process died)
+        import time
+
+        if time.time() - status_file.stat().st_mtime > 5:
+            return False, "00:00", 0.0
+
+        with open(status_file, "r") as f:
+            status = json.load(f)
+
+        if not status.get("recording"):
+            return False, "00:00", 0.0
+
+        # Calculate current duration from start_time
+        start_time_str = status.get("start_time")
+        if start_time_str:
+            start_time = datetime.fromisoformat(start_time_str)
+            duration = (datetime.now() - start_time).total_seconds()
+            mins = int(duration // 60)
+            secs = int(duration % 60)
+            duration_str = f"{mins:02d}:{secs:02d}"
+            return True, duration_str, duration
+
+        return True, status.get("duration_str", "00:00"), status.get("duration", 0.0)
+    except Exception:
+        return False, "00:00", 0.0
 
 
 # Global recorder instance for tray app access
