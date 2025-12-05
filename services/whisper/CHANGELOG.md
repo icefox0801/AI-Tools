@@ -2,6 +2,11 @@
 
 All notable changes to the Whisper ASR Service will be documented in this file.
 
+## [1.1] - 2025-12-05
+
+### Added
+- Language parameter support for multilingual transcription
+
 ## [1.0] - 2025-12-04
 
 ### Added
