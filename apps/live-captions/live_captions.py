@@ -27,6 +27,7 @@ import argparse
 import asyncio
 import logging
 import threading
+import time
 import wave
 from datetime import datetime
 
@@ -119,24 +120,29 @@ class LiveCaptions:
         self.loop = None
         self.asr_client = None
 
-        # Create UI based on mode
-        # - Both disabled: No overlay (exit early or minimal background mode)
-        # - Recording only: No overlay (tray shows recording timer)
+        # Determine mode based on settings:
+        # - Both disabled: No overlay, exit immediately (handled by tray)
+        # - Recording only (no transcription): Headless mode (tray shows status)
         # - Transcription enabled: Full caption window
-        self.headless_mode = not enable_transcription  # No overlay needed
+        self.headless_mode = not enable_transcription
+        self.idle_mode = not enable_recording and not enable_transcription
 
-        if self.headless_mode:
-            # No overlay - recording-only or idle mode
-            # Tray app will show recording status
+        if self.idle_mode:
+            # Both disabled - nothing to do, shouldn't be started
+            logger.warning("Both recording and transcription disabled - nothing to do")
+            self.window = None
+        elif self.headless_mode:
+            # Recording only - headless mode, tray shows status
             self.window = None
         else:
+            # Full transcription mode
             self.window = CaptionWindow(
                 model_display=get_display_info(self.backend), on_close=self.close
             )
 
     def _on_transcript_change(self):
         """Handle transcript updates."""
-        if self.headless_mode or not self.window:
+        if not self.window:
             return  # No overlay to update
         text = self.transcript.get_text()
         self.window.update_text(text)
@@ -156,10 +162,8 @@ class LiveCaptions:
 
     def _on_asr_connected(self, connected: bool):
         """Handle ASR connection status change."""
-        if self.headless_mode or not self.window:
-            # Headless mode - no overlay to update
-            # Tray app will show status
-            return
+        if not self.window:
+            return  # No caption window
 
         self.window.set_connection_status(connected)
         if connected:
@@ -190,6 +194,10 @@ class LiveCaptions:
             if self.recorder:
                 self.recorder.start()
                 logger.info("Recording started")
+
+                # Start periodic update of recording duration for caption window
+                if self.window:
+                    self._schedule_window_recording_update()
         else:
             if self.window:
                 self.window.set_message("❌ Audio capture failed")
@@ -204,6 +212,24 @@ class LiveCaptions:
 
         if self.debug_save_audio and self.debug_audio_chunks:
             self._save_debug_audio()
+
+    def _schedule_window_recording_update(self):
+        """Schedule periodic update of recording duration on caption window."""
+        if not self.running or not self.window:
+            return
+
+        if self.recorder and self.recorder.is_recording:
+            duration = self.recorder.duration  # Use property, not method
+            mins = int(duration // 60)
+            secs = int(duration % 60)
+            duration_str = f"{mins:02d}:{secs:02d}"
+            self.window.set_recording_status(True, duration_str)
+        else:
+            self.window.set_recording_status(False)
+
+        # Schedule next update in 1 second
+        if self.window and self.running:
+            self.window.after(1000, self._schedule_window_recording_update)
 
     def _save_debug_audio(self):
         """Save captured audio to WAV file for debugging."""
@@ -246,45 +272,30 @@ class LiveCaptions:
 
     def run(self):
         """Run the application."""
-        # Check if we're in headless mode (no transcription)
-        if self.headless_mode:
-            # No window - run in background for recording only
-            logger.info("Running in headless mode (recording only, no overlay)")
-            self._run_headless()
+        # Check if idle mode (both disabled) - nothing to do
+        if self.idle_mode:
+            logger.warning("Nothing to do - both recording and transcription disabled")
             return
 
+        # Headless (recording-only) mode - start audio capture but no window
+        if self.headless_mode:
+            logger.info("Running in headless mode (recording only, no window)")
+            self._start_audio_capture()
+            # Keep running until stopped
+            try:
+                while self.running:
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                self.close()
+            return
+
+        # Full transcription mode
         # Start ASR thread
         asr_thread = threading.Thread(target=self._run_async, daemon=True)
         asr_thread.start()
 
         # Run UI main loop
         self.window.mainloop()
-
-    def _run_headless(self):
-        """Run in headless mode (recording only, no overlay)."""
-        import signal
-        import time
-
-        # Set up signal handler for graceful shutdown
-        def signal_handler(sig, frame):
-            logger.info("Received shutdown signal")
-            self.close()
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        # Start audio capture immediately
-        self._start_audio_capture()
-
-        # Run until stopped
-        try:
-            while self.running:
-                time.sleep(0.5)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.close()
 
     def _run_async(self):
         """Run async event loop in thread."""
