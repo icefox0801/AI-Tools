@@ -78,6 +78,12 @@
                 "useVsCodeApi": true,
                 "command": "workbench.action.tasks.runTask",
                 "args": ["Live Captions (Parakeet + Debug)"]
+            },
+            {
+                "name": "🐳 Docker",
+                "color": "#0db7ed",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask"
             }
         ]
     }
