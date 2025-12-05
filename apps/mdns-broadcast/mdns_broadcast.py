@@ -83,7 +83,10 @@ class MDNSBroadcaster:
             print(f"  [+] {name}.local:{port} - {description}")
 
             info = create_service_info(name, port, description, self.host_ip)
-            self.zeroconf.register_service(info)
+            try:
+                self.zeroconf.register_service(info, allow_name_change=True)
+            except Exception as e:
+                print(f"      Warning: {e}")
             self.service_infos.append(info)
 
         print()
