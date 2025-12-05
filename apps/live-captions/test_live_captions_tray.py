@@ -701,11 +701,11 @@ class TestLanguageSupport:
 
             app = LiveCaptionsTray()
             app.current_language = "en"
-            
+
             # Mock start_captions to track if called
             app.start_captions = MagicMock()
             app.set_language("en")  # Same language
-            
+
             # Should not restart
             app.start_captions.assert_not_called()
 
@@ -742,7 +742,7 @@ class TestLanguageSupport:
             app = LiveCaptionsTray()
             # Start with parakeet to set current_backend
             app.start_captions("parakeet")
-            
+
             # Now current_backend is parakeet, so check should reflect that
             # Parakeet only supports English
             assert app.is_language_available("en") is True
@@ -759,7 +759,7 @@ class TestLanguageSupport:
         ):
             mock_check.return_value = {"parakeet": (True, "Ready")}
             mock_health.return_value = (True, "Ready")
-            
+
             mock_process = MagicMock()
             mock_process.pid = 12345
             mock_popen.return_value = mock_process
@@ -769,7 +769,7 @@ class TestLanguageSupport:
             app = LiveCaptionsTray()
             app.current_language = "yue"  # Set to Cantonese
             app.start_captions("parakeet")  # Parakeet doesn't support Cantonese
-            
+
             # Should still start, but with English
             assert app.current_process is mock_process
             # Check command includes --language en (fallback)
@@ -798,11 +798,11 @@ class TestLanguageConstants:
         assert "whisper" in BACKEND_LANGUAGES
         assert "parakeet" in BACKEND_LANGUAGES
         assert "vosk" in BACKEND_LANGUAGES
-        
+
         # Whisper should support multiple languages
         assert "en" in BACKEND_LANGUAGES["whisper"]
         assert "yue" in BACKEND_LANGUAGES["whisper"]
-        
+
         # Parakeet and Vosk are English-only
         assert BACKEND_LANGUAGES["parakeet"] == ["en"]
         assert BACKEND_LANGUAGES["vosk"] == ["en"]
