@@ -3,6 +3,8 @@ mDNS Service Broadcaster for AI-Tools
 Broadcasts .local domains to LAN using zeroconf (pure Python mDNS)
 """
 
+__version__ = "1.0"
+
 import socket
 import signal
 import sys
