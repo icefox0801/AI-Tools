@@ -18,8 +18,21 @@ def create_recordings_section():
         )
 
         with gr.Accordion("🎵 New Recordings", open=True, visible=True) as new_recordings_accordion:
-            with gr.Column(elem_id="new-recordings-list"):
-                new_recordings_checkboxes = gr.CheckboxGroup(
+            new_recordings_checkboxes = gr.CheckboxGroup(
+                label="",
+                choices=[],
+                value=[],
+                interactive=True,
+                show_label=False,
+                container=False,
+                elem_id="new-recordings-list",
+            )
+
+        with gr.Accordion(
+            "📄 Already Transcribed (re-transcribe)", open=False, visible=True
+        ) as transcribed_accordion:
+            with gr.Column(elem_id="transcribed-recordings-list"):
+                transcribed_checkboxes = gr.CheckboxGroup(
                     label="",
                     choices=[],
                     value=[],
@@ -27,18 +40,6 @@ def create_recordings_section():
                     show_label=False,
                     container=False,
                 )
-
-        with gr.Accordion(
-            "📄 Already Transcribed (re-transcribe)", open=False, visible=True
-        ) as transcribed_accordion:
-            transcribed_checkboxes = gr.CheckboxGroup(
-                label="",
-                choices=[],
-                value=[],
-                interactive=True,
-                show_label=False,
-                container=False,
-            )
 
         with gr.Row():
             select_all_btn = gr.Button("☑ Select All", size="sm", scale=1)

@@ -161,7 +161,7 @@ def generate_summary(transcript: str, custom_prompt: str = "", model: str = ""):
 def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
     """Create Gradio interface."""
 
-    with gr.Blocks(title="Audio Notes", css=CUSTOM_CSS) as demo:
+    with gr.Blocks(title="Audio Notes") as demo:
 
         # State
         transcript_state = gr.State("")

@@ -32,6 +32,7 @@ from api.routes import setup_api_routes
 from config import RECORDINGS_DIR, logger
 from fastapi import FastAPI
 from ui import create_ui
+from ui.styles import CUSTOM_CSS
 
 
 def create_app(host: str = "127.0.0.1", port: int = 7860, share: bool = False):
@@ -47,8 +48,14 @@ def create_app(host: str = "127.0.0.1", port: int = 7860, share: bool = False):
     # Create Gradio UI
     demo = create_ui()
 
-    # Mount Gradio app at root
-    app = gr.mount_gradio_app(app, demo, path="/")
+    # Custom theme to fix radio/checkbox hover visibility
+    custom_theme = gr.themes.Default().set(
+        checkbox_background_color_hover="#e5e7eb",  # Light gray instead of white
+        checkbox_background_color_hover_dark="#374151",  # Dark mode
+    )
+
+    # Mount Gradio app at root with custom theme and CSS
+    app = gr.mount_gradio_app(app, demo, path="/", theme=custom_theme, css=CUSTOM_CSS)
 
     return app
 
