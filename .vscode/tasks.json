@@ -217,8 +217,76 @@
 				"panel": "dedicated"
 			}
 		},
+		// ===== Docker: Build =====
 		{
-			"label": "Docker: Start All Services",
+			"label": "Docker: Build All",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Docker: Rebuild Audio Notes",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "audio-notes"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Docker: Rebuild Parakeet ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "parakeet-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Docker: Rebuild Whisper ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "whisper-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Docker: Rebuild Vosk ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "vosk-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Docker: Rebuild Text Refiner",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "text-refiner"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		// ===== Docker: Up (Start) =====
+		{
+			"label": "Docker: Up All",
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "up", "-d"],
@@ -229,32 +297,77 @@
 			"group": "none"
 		},
 		{
-			"label": "Docker: Stop All Services",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "stop"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Restart All Services",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "restart"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Start Audio Notes",
+			"label": "Docker: Up Audio Notes",
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "up", "-d", "audio-notes"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Up Parakeet ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "up", "-d", "parakeet-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Up Whisper ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "up", "-d", "whisper-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Up Vosk ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "up", "-d", "vosk-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Up Ollama",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "up", "-d", "ollama"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Up Text Refiner",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "up", "-d", "text-refiner"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		// ===== Docker: Restart =====
+		{
+			"label": "Docker: Restart All",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "restart"],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -273,32 +386,10 @@
 			"group": "none"
 		},
 		{
-			"label": "Docker: Start Parakeet ASR",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "up", "-d", "parakeet-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
 			"label": "Docker: Restart Parakeet ASR",
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "restart", "parakeet-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Start Whisper ASR",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "up", "-d", "whisper-asr"],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -317,32 +408,10 @@
 			"group": "none"
 		},
 		{
-			"label": "Docker: Start Vosk ASR",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "up", "-d", "vosk-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
 			"label": "Docker: Restart Vosk ASR",
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "restart", "vosk-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Start Ollama",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "up", "-d", "ollama"],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -361,17 +430,6 @@
 			"group": "none"
 		},
 		{
-			"label": "Docker: Start Text Refiner",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "up", "-d", "text-refiner"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
 			"label": "Docker: Restart Text Refiner",
 			"type": "shell",
 			"command": "docker",
@@ -382,8 +440,97 @@
 			"problemMatcher": [],
 			"group": "none"
 		},
+		// ===== Docker: Refresh (Build + Restart) =====
 		{
-			"label": "Docker: View Logs (All)",
+			"label": "Docker: Refresh Audio Notes",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "audio-notes", "&&", "docker", "compose", "up", "-d", "audio-notes"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Parakeet ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "parakeet-asr", "&&", "docker", "compose", "up", "-d", "parakeet-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Whisper ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "whisper-asr", "&&", "docker", "compose", "up", "-d", "whisper-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Vosk ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "vosk-asr", "&&", "docker", "compose", "up", "-d", "vosk-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Text Refiner",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "text-refiner", "&&", "docker", "compose", "up", "-d", "text-refiner"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		// ===== Docker: Stop =====
+		{
+			"label": "Docker: Stop All",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "stop"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		// ===== Docker: Logs =====
+		{
+			"label": "Docker: Logs All",
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "logs", "-f", "--tail", "100"],
@@ -393,28 +540,6 @@
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "none"
-		},
-		{
-			"label": "Docker: Build All Images",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "build"
-		},
-		{
-			"label": "Docker: Rebuild Audio Notes",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build", "--no-cache", "audio-notes"],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "build"
 		}
 	]
 }
