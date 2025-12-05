@@ -47,14 +47,14 @@ def create_recordings_section():
             clean_transcribed_btn = gr.Button("🗑️ Clean Transcribed", size="sm", scale=1)
 
         # Audio player for previewing recordings
-        with gr.Row():
-            audio_player = gr.Audio(
-                label="▶️ Preview",
-                type="filepath",
-                interactive=False,
-                show_label=True,
-                visible=False,
-            )
+        # Always visible but empty initially - avoids Gradio first-render issues
+        audio_player = gr.Audio(
+            label="▶️ Preview",
+            type="filepath",
+            interactive=False,
+            show_label=True,
+            visible=True,
+        )
 
     return {
         "recordings_accordion": recordings_accordion,

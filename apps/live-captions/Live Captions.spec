@@ -1,9 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
 
+# Get the project root dynamically
+spec_dir = os.path.dirname(os.path.abspath(SPEC))
+project_root = os.path.dirname(os.path.dirname(spec_dir))
 
 a = Analysis(
     ['live_captions_tray.py'],
-    pathex=['c:\\Users\\icefo\\Documents\\Docker\\AI-Tools'],
+    pathex=[project_root],
     binaries=[],
     datas=[],
     hiddenimports=['shared', 'shared.config', 'shared.config.backends'],

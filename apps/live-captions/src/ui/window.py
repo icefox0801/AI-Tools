@@ -33,16 +33,23 @@ class CaptionWindow:
     CONNECTED_COLOR = "#4ade80"
     DISCONNECTED_COLOR = "#f87171"
 
-    def __init__(self, model_display: str = "", on_close: Callable[[], None] | None = None):
+    def __init__(
+        self,
+        model_display: str = "",
+        language: str = "en",
+        on_close: Callable[[], None] | None = None,
+    ):
         """
         Initialize the caption window.
 
         Args:
             model_display: Text to show for model info
+            language: Transcription language code
             on_close: Callback when window is closed
         """
         self.on_close = on_close
         self.model_display = model_display
+        self.language = language
 
         # Font size
         self.base_font_size = self.DEFAULT_FONT_SIZE
@@ -152,10 +159,17 @@ class CaptionWindow:
         )
         self.hint_label.place(relx=0.5, rely=1.0, anchor="s", y=-5)
 
-        # Model info (top center)
+        # Language display names
+        lang_names = {"en": "EN", "yue": "粵語"}
+        lang_display = lang_names.get(self.language, self.language.upper())
+
+        # Model info (top center) - includes language
+        model_text = (
+            f"{self.model_display} • {lang_display}" if self.model_display else lang_display
+        )
         self.model_label = tk.Label(
             self.root,
-            text=self.model_display,
+            text=model_text,
             font=status_font,
             fg=self.STATUS_COLOR,
             bg=self.BG_COLOR,

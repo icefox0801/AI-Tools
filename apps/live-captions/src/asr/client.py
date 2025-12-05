@@ -17,6 +17,7 @@ class ASRClient:
         host: str = "localhost",
         port: int = 8000,
         chunk_ms: int = 200,
+        language: str = "en",
         on_connected: Callable[[bool], None] | None = None,
         on_transcript: Callable[[str, str], None] | None = None,
     ):
@@ -27,12 +28,14 @@ class ASRClient:
             host: ASR service host
             port: ASR service port
             chunk_ms: Chunk duration in milliseconds for config
+            language: Transcription language code (e.g., 'en', 'yue')
             on_connected: Callback when connection status changes (bool: connected)
             on_transcript: Callback for transcripts (segment_id, text)
         """
         self.host = host
         self.port = port
         self.chunk_ms = chunk_ms
+        self.language = language
         self.on_connected = on_connected
         self.on_transcript = on_transcript
 
@@ -71,8 +74,8 @@ class ASRClient:
                     if self.on_connected:
                         self.on_connected(True)
 
-                    # Send config
-                    config = {"chunk_ms": self.chunk_ms}
+                    # Send config with language
+                    config = {"chunk_ms": self.chunk_ms, "language": self.language}
                     await ws.send(json.dumps(config))
 
                     # Run send and receive concurrently

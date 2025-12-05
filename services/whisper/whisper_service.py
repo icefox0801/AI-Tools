@@ -320,12 +320,13 @@ async def unload_model():
 
 
 @app.post("/transcribe")
-async def transcribe_file(file: UploadFile = File(...)):
+async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
     """
     Transcribe an uploaded audio file.
 
     Args:
         file: Audio file (WAV, MP3, etc.)
+        language: Language code (e.g., 'en', 'yue' for Cantonese)
 
     Returns:
         JSON with text transcription
@@ -366,7 +367,7 @@ async def transcribe_file(file: UploadFile = File(...)):
             audio_array = audio_array / 32768.0
 
         logger.info(
-            f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s"
+            f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s, language: {language}"
         )
 
         # Transcribe with timestamps for longer audio
@@ -374,7 +375,7 @@ async def transcribe_file(file: UploadFile = File(...)):
             audio_array,
             generate_kwargs={
                 "task": "transcribe",
-                "language": "en",
+                "language": language,
             },
             return_timestamps=True,
         )
@@ -394,8 +395,16 @@ async def transcribe_file(file: UploadFile = File(...)):
         return {"error": str(e), "text": ""}
 
 
-def transcribe_audio(audio_array: np.ndarray) -> str:
-    """Transcribe audio array to text."""
+def transcribe_audio(audio_array: np.ndarray, language: str = "en") -> str:
+    """Transcribe audio array to text.
+
+    Args:
+        audio_array: Audio samples (float32, normalized to [-1, 1])
+        language: Language code (e.g., 'en', 'yue' for Cantonese)
+
+    Returns:
+        Transcribed text
+    """
     global whisper_pipe
 
     # Auto-reload model if needed
@@ -423,7 +432,7 @@ def transcribe_audio(audio_array: np.ndarray) -> str:
             audio_array,
             generate_kwargs={
                 "task": "transcribe",
-                "language": "en",
+                "language": language,
             },
             return_timestamps=False,
         )
@@ -440,8 +449,9 @@ async def stream_transcribe(websocket: WebSocket):
 
     Protocol:
     1. Connect to websocket
-    2. Stream raw PCM audio bytes (int16, 16kHz, mono)
-    3. Receive JSON: {"id": "s1", "text": "..."}
+    2. Send config: {"chunk_ms": 500, "language": "en"}
+    3. Stream raw PCM audio bytes (int16, 16kHz, mono)
+    4. Receive JSON: {"id": "s1", "text": "..."}
     """
     await websocket.accept()
     logger.info("Stream connection established")
@@ -455,6 +465,7 @@ async def stream_transcribe(websocket: WebSocket):
     segment_counter = 0
     last_process_time = time.time()
     consecutive_silence = 0
+    language = "en"  # Default language, can be overridden by config
 
     try:
         while True:
@@ -465,6 +476,10 @@ async def stream_transcribe(websocket: WebSocket):
                 try:
                     msg = json.loads(data["text"])
                     logger.info(f"Config received: {msg}")
+                    # Update language from config if provided
+                    if "language" in msg:
+                        language = msg["language"]
+                        logger.info(f"Language set to: {language}")
                     continue
                 except json.JSONDecodeError:
                     continue
@@ -482,7 +497,7 @@ async def stream_transcribe(websocket: WebSocket):
                             np.frombuffer(bytes(audio_buffer), dtype=np.int16).astype(np.float32)
                             / 32768.0
                         )
-                        text = await asyncio.to_thread(transcribe_audio, audio_array)
+                        text = await asyncio.to_thread(transcribe_audio, audio_array, language)
                         if text:
                             await websocket.send_json({"id": f"s{segment_counter}", "text": text})
                             segment_counter += 1
@@ -528,8 +543,8 @@ async def stream_transcribe(websocket: WebSocket):
                     )
 
                     # Transcribe in thread to avoid blocking event loop
-                    text = await asyncio.to_thread(transcribe_audio, audio_array)
-                    logger.info(f"Transcribed: '{text[:100] if text else '(empty)'}'")
+                    text = await asyncio.to_thread(transcribe_audio, audio_array, language)
+                    logger.info(f"Transcribed ({language}): '{text[:100] if text else '(empty)'}'")
 
                     if text:
                         # Send result (Whisper already outputs punctuated text)

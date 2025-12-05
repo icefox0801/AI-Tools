@@ -80,6 +80,13 @@
                 "args": ["Live Captions (Parakeet + Debug)"]
             },
             {
+                "name": "📦 Build",
+                "color": "#f97316",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask",
+                "args": ["Build: Live Captions Tray"]
+            },
+            {
                 "name": "🐳 Docker",
                 "color": "#0db7ed",
                 "useVsCodeApi": true,

@@ -65,6 +65,7 @@ class LiveCaptions:
         host: str = "localhost",
         port: int | None = None,
         backend: str | None = None,
+        language: str = "en",
         use_system_audio: bool = False,
         device_index: int | None = None,
         debug_save_audio: bool = False,
@@ -79,6 +80,7 @@ class LiveCaptions:
             host: ASR service host
             port: ASR service port (uses backend default if None)
             backend: ASR backend ('vosk' or 'parakeet')
+            language: Transcription language code (e.g., 'en', 'yue')
             use_system_audio: Use system audio instead of microphone
             device_index: Specific audio device index
             debug_save_audio: Save captured audio on exit
@@ -91,6 +93,7 @@ class LiveCaptions:
         self.config = get_backend_config(self.backend)
         self.host = host
         self.port = port or self.config["port"]
+        self.language = language
 
         # State
         self.running = True
@@ -137,7 +140,9 @@ class LiveCaptions:
         else:
             # Full transcription mode
             self.window = CaptionWindow(
-                model_display=get_display_info(self.backend), on_close=self.close
+                model_display=get_display_info(self.backend),
+                language=self.language,
+                on_close=self.close,
             )
 
     def _on_transcript_change(self):
@@ -307,6 +312,7 @@ class LiveCaptions:
             host=self.host,
             port=self.port,
             chunk_ms=self.config["chunk_ms"],
+            language=self.language,
             on_connected=self._on_asr_connected,
             on_transcript=self._on_asr_transcript,
         )
@@ -324,7 +330,7 @@ class LiveCaptions:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Live Captions v1.1")
+    parser = argparse.ArgumentParser(description="Live Captions v1.2")
     parser.add_argument("--host", default="localhost", help="ASR service host")
     parser.add_argument("--port", type=int, help="ASR service port")
     parser.add_argument(
@@ -332,6 +338,11 @@ def main():
         choices=["vosk", "parakeet", "whisper"],
         default=BACKEND,
         help=f"ASR backend (default: {BACKEND})",
+    )
+    parser.add_argument(
+        "--language",
+        default="en",
+        help="Transcription language code (e.g., 'en', 'yue'). Default: en",
     )
     parser.add_argument(
         "--system-audio", action="store_true", help="Capture system audio instead of microphone"
@@ -374,11 +385,15 @@ def main():
     # Determine device index
     device_index = args.loopback_device if args.system_audio else args.device
 
+    # Language display names
+    LANG_NAMES = {"en": "English", "yue": "Cantonese (粵語)"}
+
     # Print startup banner (ASCII only for Windows console compatibility)
     print("+======================================+")
-    print("|        Live Captions v1.1           |")
+    print("|        Live Captions v1.2           |")
     print("+======================================+")
     print(f"Model: {cfg['name']} ({cfg['device']})")
+    print(f"Language: {LANG_NAMES.get(args.language, args.language)}")
     print(f"ASR: ws://{args.host}:{port}/stream")
 
     if args.system_audio:
@@ -408,6 +423,7 @@ def main():
         host=args.host,
         port=port,
         backend=args.backend,
+        language=args.language,
         use_system_audio=args.system_audio,
         device_index=device_index,
         debug_save_audio=args.debug_save_audio,

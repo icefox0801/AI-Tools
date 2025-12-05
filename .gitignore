@@ -38,6 +38,7 @@ env/
 
 # IDE
 # .vscode/  # Keep VS Code settings for team consistency
+.VSCodeCounter/
 .idea/
 *.swp
 *.swo

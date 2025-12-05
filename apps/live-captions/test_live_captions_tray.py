@@ -659,6 +659,155 @@ class TestLiveCaptionsTrayQuit:
             mock_recorder.stop.assert_called_once()
 
 
+class TestLanguageSupport:
+    """Tests for language support functionality."""
+
+    def test_default_language(self, mock_dependencies):
+        """Test default language is English."""
+        with (
+            patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("threading.Thread"),
+        ):
+            mock_check.return_value = {}
+
+            from live_captions_tray import LiveCaptionsTray
+
+            app = LiveCaptionsTray()
+            assert app.current_language == "en"
+
+    def test_set_language(self, mock_dependencies):
+        """Test setting language."""
+        with (
+            patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("threading.Thread"),
+        ):
+            mock_check.return_value = {}
+
+            from live_captions_tray import LiveCaptionsTray
+
+            app = LiveCaptionsTray()
+            app.set_language("yue")
+            assert app.current_language == "yue"
+
+    def test_set_same_language_no_op(self, mock_dependencies):
+        """Test setting same language does nothing."""
+        with (
+            patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("threading.Thread"),
+        ):
+            mock_check.return_value = {}
+
+            from live_captions_tray import LiveCaptionsTray
+
+            app = LiveCaptionsTray()
+            app.current_language = "en"
+            
+            # Mock start_captions to track if called
+            app.start_captions = MagicMock()
+            app.set_language("en")  # Same language
+            
+            # Should not restart
+            app.start_captions.assert_not_called()
+
+    def test_is_language_available_whisper(self, mock_dependencies):
+        """Test language availability check for Whisper."""
+        with (
+            patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("threading.Thread"),
+        ):
+            mock_check.return_value = {}
+
+            from live_captions_tray import LiveCaptionsTray
+
+            app = LiveCaptionsTray()
+            # Whisper supports both languages
+            assert app.is_language_available("en") is True
+            assert app.is_language_available("yue") is True
+
+    def test_is_language_available_parakeet(self, mock_dependencies):
+        """Test language availability check for Parakeet (English only)."""
+        with (
+            patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("live_captions_tray.check_backend_health") as mock_health,
+            patch("subprocess.Popen") as mock_popen,
+            patch("threading.Thread"),
+            patch("threading.Timer"),
+        ):
+            mock_check.return_value = {"parakeet": (True, "Ready")}
+            mock_health.return_value = (True, "Ready")
+            mock_popen.return_value = MagicMock(pid=123, poll=MagicMock(return_value=None))
+
+            from live_captions_tray import LiveCaptionsTray
+
+            app = LiveCaptionsTray()
+            # Start with parakeet to set current_backend
+            app.start_captions("parakeet")
+            
+            # Now current_backend is parakeet, so check should reflect that
+            # Parakeet only supports English
+            assert app.is_language_available("en") is True
+            assert app.is_language_available("yue") is False
+
+    def test_language_fallback_for_unsupported_backend(self, mock_dependencies):
+        """Test language falls back to English for unsupported backends."""
+        with (
+            patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("live_captions_tray.check_backend_health") as mock_health,
+            patch("subprocess.Popen") as mock_popen,
+            patch("threading.Thread"),
+            patch("threading.Timer"),
+        ):
+            mock_check.return_value = {"parakeet": (True, "Ready")}
+            mock_health.return_value = (True, "Ready")
+            
+            mock_process = MagicMock()
+            mock_process.pid = 12345
+            mock_popen.return_value = mock_process
+
+            from live_captions_tray import LiveCaptionsTray
+
+            app = LiveCaptionsTray()
+            app.current_language = "yue"  # Set to Cantonese
+            app.start_captions("parakeet")  # Parakeet doesn't support Cantonese
+            
+            # Should still start, but with English
+            assert app.current_process is mock_process
+            # Check command includes --language en (fallback)
+            call_args = mock_popen.call_args
+            cmd = call_args[0][0]
+            lang_idx = cmd.index("--language")
+            assert cmd[lang_idx + 1] == "en"
+
+
+class TestLanguageConstants:
+    """Tests for language-related constants."""
+
+    def test_languages_dict(self, mock_dependencies):
+        """Test LANGUAGES constant is defined correctly."""
+        from live_captions_tray import LANGUAGES
+
+        assert "en" in LANGUAGES
+        assert "yue" in LANGUAGES
+        assert "English" in LANGUAGES["en"]
+        assert "Cantonese" in LANGUAGES["yue"] or "粵語" in LANGUAGES["yue"]
+
+    def test_backend_languages(self, mock_dependencies):
+        """Test BACKEND_LANGUAGES constant is defined correctly."""
+        from live_captions_tray import BACKEND_LANGUAGES
+
+        assert "whisper" in BACKEND_LANGUAGES
+        assert "parakeet" in BACKEND_LANGUAGES
+        assert "vosk" in BACKEND_LANGUAGES
+        
+        # Whisper should support multiple languages
+        assert "en" in BACKEND_LANGUAGES["whisper"]
+        assert "yue" in BACKEND_LANGUAGES["whisper"]
+        
+        # Parakeet and Vosk are English-only
+        assert BACKEND_LANGUAGES["parakeet"] == ["en"]
+        assert BACKEND_LANGUAGES["vosk"] == ["en"]
+
+
 class TestMainFunction:
     """Tests for main() entry point."""
 

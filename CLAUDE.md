@@ -110,12 +110,9 @@ docker compose up -d whisper-asr   # GPU (multilingual)
 # Access Audio Notes
 open http://localhost:7860
 
-# Run Live Captions with debug logging
+# Run Live Captions with debug logging (use .venv python)
 cd apps/live-captions
-python live_captions.py --debug
-
-# IMPORTANT: Use correct Python on Windows (not Inkscape's Python)
-"C:\Users\icefo\AppData\Local\Microsoft\WindowsApps\python.exe" apps/live-captions/live_captions.py --debug
+.venv/Scripts/python.exe live_captions.py --debug
 ```
 
 ## Configuration

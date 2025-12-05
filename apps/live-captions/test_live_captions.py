@@ -477,6 +477,71 @@ class TestLiveCaptionsClose:
             mock_recorder.stop.assert_called_once()
 
 
+class TestLanguageSupport:
+    """Tests for language parameter support."""
+
+    def test_default_language(self, mock_dependencies):
+        """Test default language is English."""
+        with (
+            patch("live_captions.CaptionWindow") as mock_window,
+            patch("live_captions.get_backend_config") as mock_config,
+            patch("live_captions.get_display_info") as mock_display,
+            patch("live_captions.AudioRecorder") as mock_recorder,
+            patch("live_captions.set_recorder"),
+        ):
+            mock_config.return_value = {"port": 8000, "chunk_ms": 200}
+            mock_display.return_value = "Test"
+            mock_window.return_value = MagicMock()
+            mock_recorder.return_value = MagicMock()
+
+            from live_captions import LiveCaptions
+
+            app = LiveCaptions()
+            assert app.language == "en"
+
+    def test_custom_language(self, mock_dependencies):
+        """Test custom language initialization."""
+        with (
+            patch("live_captions.CaptionWindow") as mock_window,
+            patch("live_captions.get_backend_config") as mock_config,
+            patch("live_captions.get_display_info") as mock_display,
+            patch("live_captions.AudioRecorder") as mock_recorder,
+            patch("live_captions.set_recorder"),
+        ):
+            mock_config.return_value = {"port": 8000, "chunk_ms": 200}
+            mock_display.return_value = "Test"
+            mock_window.return_value = MagicMock()
+            mock_recorder.return_value = MagicMock()
+
+            from live_captions import LiveCaptions
+
+            app = LiveCaptions(language="yue")
+            assert app.language == "yue"
+
+    def test_language_passed_to_window(self, mock_dependencies):
+        """Test language is passed to CaptionWindow."""
+        with (
+            patch("live_captions.CaptionWindow") as mock_window_class,
+            patch("live_captions.get_backend_config") as mock_config,
+            patch("live_captions.get_display_info") as mock_display,
+            patch("live_captions.AudioRecorder") as mock_recorder,
+            patch("live_captions.set_recorder"),
+        ):
+            mock_config.return_value = {"port": 8000, "chunk_ms": 200}
+            mock_display.return_value = "Test Model"
+            mock_window_class.return_value = MagicMock()
+            mock_recorder.return_value = MagicMock()
+
+            from live_captions import LiveCaptions
+
+            LiveCaptions(language="yue")
+
+            # Check CaptionWindow was called with language
+            mock_window_class.assert_called_once()
+            call_kwargs = mock_window_class.call_args[1]
+            assert call_kwargs["language"] == "yue"
+
+
 class TestMainFunction:
     """Tests for main() entry point."""
 
@@ -525,3 +590,38 @@ class TestMainFunction:
 
             # App should be created and run
             mock_app.run.assert_called_once()
+
+    def test_language_argument(self, mock_dependencies):
+        """Test --language argument."""
+        with (
+            patch("live_captions.CaptionWindow") as mock_window,
+            patch("live_captions.get_backend_config") as mock_config,
+            patch("live_captions.get_display_info") as mock_display,
+            patch("live_captions.AudioRecorder") as mock_recorder,
+            patch("live_captions.set_recorder"),
+            patch("live_captions.LiveCaptions") as mock_app_class,
+            patch("sys.argv", ["live_captions.py", "--language", "yue"]),
+            patch("logging.getLogger"),
+        ):
+
+            mock_config.return_value = {
+                "port": 8000,
+                "chunk_ms": 200,
+                "name": "Test",
+                "device": "CPU",
+            }
+            mock_display.return_value = "Test"
+            mock_window.return_value = MagicMock()
+            mock_recorder.return_value = MagicMock()
+
+            mock_app = MagicMock()
+            mock_app_class.return_value = mock_app
+
+            from live_captions import main
+
+            main()
+
+            # Check LiveCaptions was called with language
+            mock_app_class.assert_called_once()
+            call_kwargs = mock_app_class.call_args[1]
+            assert call_kwargs["language"] == "yue"

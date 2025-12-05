@@ -8,6 +8,17 @@ echo    Building Live Captions Tray App
 echo ============================================
 echo.
 
+REM Kill any running instance of the tray app
+echo Stopping any running Live Captions Tray...
+taskkill /F /IM "Live Captions.exe" 2>nul
+if %errorlevel%==0 (
+    echo Stopped running instance.
+    timeout /t 1 /nobreak >nul
+) else (
+    echo No running instance found.
+)
+echo.
+
 REM Check if virtual environment exists
 if not exist ".venv" (
     echo Creating virtual environment...

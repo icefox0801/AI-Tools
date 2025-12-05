@@ -154,18 +154,23 @@ DEFAULT_BACKEND = "whisper"
 IS_FROZEN = getattr(sys, "frozen", False)
 
 # Always use the source location for live_captions.py
-# When frozen: .exe is in dist/Live Captions/, source is in apps/live-captions/
+# When frozen: .exe is in dist/, source is in apps/live-captions/
 # When script: source is in same directory
 if IS_FROZEN:
-    # .exe is in dist/Live Captions/, go up two levels to find source (apps/live-captions/)
-    SCRIPT_DIR = Path(sys.executable).parent.parent.parent
+    # .exe is in dist/, go up one level to find source (apps/live-captions/)
+    SCRIPT_DIR = Path(sys.executable).parent.parent
 else:
     SCRIPT_DIR = Path(__file__).parent
 
 MAIN_SCRIPT = SCRIPT_DIR / "live_captions.py"
 
-# Just use python from PATH - the user's environment is already configured
-PYTHON_EXE = "python"
+# Use python from .venv - never rely on system PATH
+VENV_PYTHON = SCRIPT_DIR / ".venv" / "Scripts" / "python.exe"
+if VENV_PYTHON.exists():
+    PYTHON_EXE = str(VENV_PYTHON)
+else:
+    # Fallback for development if .venv doesn't exist
+    PYTHON_EXE = sys.executable
 
 ICON_PATH = SCRIPT_DIR / "icon.ico"
 
@@ -174,6 +179,19 @@ BACKEND_LABELS = {
     "whisper": "🎙️ Whisper (GPU, Multilingual)",
     "parakeet": "🎙️ Parakeet (GPU, English)",
     "vosk": "🎙️ Vosk (CPU, Lightweight)",
+}
+
+# Supported languages (code: display name)
+LANGUAGES = {
+    "en": "🇬🇧 English",
+    "yue": "🇭🇰 Cantonese (粵語)",
+}
+
+# Language compatibility with backends
+BACKEND_LANGUAGES = {
+    "whisper": ["en", "yue"],  # Whisper supports multilingual
+    "parakeet": ["en"],  # Parakeet is English-only
+    "vosk": ["en"],  # Vosk model is English-only
 }
 
 
@@ -191,6 +209,7 @@ class LiveCaptionsTray:
     def __init__(self):
         self.current_process = None
         self.current_backend = None
+        self.current_language = "en"  # Default language
         self.use_system_audio = True  # Default to system audio
         self.enable_recording = True  # Default to recording enabled
         self.enable_transcription = True  # Default to live transcription enabled
@@ -388,13 +407,12 @@ class LiveCaptionsTray:
                     "name", self.current_backend
                 )
                 audio = "System Audio" if self.use_system_audio else "Microphone"
+                lang = LANGUAGES.get(self.current_language, self.current_language)
 
                 if is_recording:
-                    self.icon.title = (
-                        f"{APP_NAME} - {backend_name} ({audio})\n🔴 Recording: {duration_str}"
-                    )
+                    self.icon.title = f"{APP_NAME} - {backend_name} ({audio})\n{lang}\n🔴 Recording: {duration_str}"
                 else:
-                    self.icon.title = f"{APP_NAME} - {backend_name} ({audio})"
+                    self.icon.title = f"{APP_NAME} - {backend_name} ({audio})\n{lang}"
             else:
                 self.icon.title = f"{APP_NAME} - Stopped"
 
@@ -434,8 +452,22 @@ class LiveCaptionsTray:
 
         self.current_backend = backend
 
+        # Check language compatibility
+        supported_languages = BACKEND_LANGUAGES.get(backend, ["en"])
+        if self.current_language not in supported_languages:
+            logger.warning(
+                f"Language '{self.current_language}' not supported by {backend}, using 'en'"
+            )
+            # Don't change current_language, just use 'en' for this backend
+            effective_language = "en"
+        else:
+            effective_language = self.current_language
+
         # Build command - use PYTHON_EXE for both frozen and script mode
         cmd = [PYTHON_EXE, str(MAIN_SCRIPT), "--backend", backend]
+
+        # Add language parameter
+        cmd.extend(["--language", effective_language])
 
         if self.use_system_audio:
             cmd.append("--system-audio")
@@ -545,6 +577,29 @@ class LiveCaptionsTray:
         # Restart if running to apply change
         if self.is_running():
             self.start_captions(self.current_backend)
+
+    def set_language(self, lang_code: str):
+        """Set the transcription language.
+
+        Args:
+            lang_code: Language code ('en', 'yue', etc.)
+        """
+        if lang_code == self.current_language:
+            return
+
+        self.current_language = lang_code
+        logger.info(f"Language: {LANGUAGES.get(lang_code, lang_code)}")
+
+        # Restart if running to apply change
+        if self.is_running():
+            self.start_captions(self.current_backend)
+
+    def is_language_available(self, lang_code: str) -> bool:
+        """Check if language is available for current/default backend."""
+        # If running, check current backend
+        backend = self.current_backend if self.is_running() else DEFAULT_BACKEND
+        supported = BACKEND_LANGUAGES.get(backend, ["en"])
+        return lang_code in supported
 
     def can_start(self) -> bool:
         """Check if we can start (at least one of recording or transcription enabled)."""
@@ -688,6 +743,28 @@ class LiveCaptionsTray:
                             self.start_captions(self.current_backend) if self.is_running() else None
                         ),
                         checked=is_microphone,
+                        radio=True,
+                    ),
+                ),
+            ),
+            # Language submenu
+            pystray.MenuItem(
+                lambda text: f"Language ({LANGUAGES.get(self.current_language, 'en')})",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        LANGUAGES["en"],
+                        lambda icon, item: self.set_language("en"),
+                        checked=lambda item: self.current_language == "en",
+                        radio=True,
+                    ),
+                    pystray.MenuItem(
+                        lambda text: (
+                            f"{LANGUAGES['yue']}"
+                            if self.is_language_available("yue")
+                            else f"{LANGUAGES['yue']} (Whisper only)"
+                        ),
+                        lambda icon, item: self.set_language("yue"),
+                        checked=lambda item: self.current_language == "yue",
                         radio=True,
                     ),
                 ),

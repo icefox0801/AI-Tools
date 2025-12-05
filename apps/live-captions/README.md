@@ -218,9 +218,9 @@ docker ps | grep parakeet
 ```
 
 ### Wrong Python on Windows
-If Inkscape or other apps add Python to PATH, use explicit path:
+Use the project's virtual environment Python:
 ```bash
-"C:\Users\<user>\AppData\Local\Microsoft\WindowsApps\python.exe" live_captions.py
+.venv\Scripts\python.exe live_captions.py
 ```
 
 ### No microphone detected

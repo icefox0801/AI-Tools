@@ -4,7 +4,7 @@
 		{
 			"label": "Live Captions (Vosk)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--system-audio",
@@ -28,7 +28,7 @@
 		{
 			"label": "Live Captions (Parakeet)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--system-audio",
@@ -52,7 +52,7 @@
 		{
 			"label": "Live Captions (Vosk + Debug)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--system-audio",
@@ -77,7 +77,7 @@
 		{
 			"label": "Live Captions (Parakeet + Debug)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--system-audio",
@@ -102,7 +102,7 @@
 		{
 			"label": "Live Captions (Mic + Vosk)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--backend", "vosk"
@@ -125,7 +125,7 @@
 		{
 			"label": "Live Captions (Mic + Parakeet)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--backend", "parakeet"
@@ -148,7 +148,7 @@
 		{
 			"label": "Live Captions (Whisper)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--system-audio",
@@ -172,7 +172,7 @@
 		{
 			"label": "Live Captions (Whisper + Debug)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--system-audio",
@@ -197,7 +197,7 @@
 		{
 			"label": "Live Captions (Mic + Whisper)",
 			"type": "shell",
-			"command": "C:\\Users\\icefo\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe",
+			"command": "${workspaceFolder}/apps/live-captions/.venv/Scripts/python.exe",
 			"args": [
 				"apps/live-captions/live_captions.py",
 				"--backend", "whisper"
@@ -216,6 +216,101 @@
 				"reveal": "silent",
 				"panel": "dedicated"
 			}
+		},
+		// ===== Live Captions: Build =====
+		{
+			"label": "Build: Live Captions Tray",
+			"type": "shell",
+			"command": "scripts\\build_tray.bat",
+			"options": {
+				"cwd": "${workspaceFolder}\\apps\\live-captions",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		// ===== Docker: Refresh (Build + Restart) =====
+		{
+			"label": "Docker: Refresh Audio Notes",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "audio-notes", "&&", "docker", "compose", "up", "-d", "audio-notes"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Parakeet ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "parakeet-asr", "&&", "docker", "compose", "up", "-d", "parakeet-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Whisper ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "whisper-asr", "&&", "docker", "compose", "up", "-d", "whisper-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Vosk ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "vosk-asr", "&&", "docker", "compose", "up", "-d", "vosk-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Refresh Text Refiner",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "text-refiner", "&&", "docker", "compose", "up", "-d", "text-refiner"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
 		},
 		// ===== Docker: Build =====
 		{
@@ -436,82 +531,6 @@
 			"args": ["compose", "restart", "text-refiner"],
 			"options": {
 				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		// ===== Docker: Refresh (Build + Restart) =====
-		{
-			"label": "Docker: Refresh Audio Notes",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build", "audio-notes", "&&", "docker", "compose", "up", "-d", "audio-notes"],
-			"options": {
-				"cwd": "${workspaceFolder}",
-				"shell": {
-					"executable": "cmd.exe",
-					"args": ["/c"]
-				}
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Refresh Parakeet ASR",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build", "parakeet-asr", "&&", "docker", "compose", "up", "-d", "parakeet-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}",
-				"shell": {
-					"executable": "cmd.exe",
-					"args": ["/c"]
-				}
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Refresh Whisper ASR",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build", "whisper-asr", "&&", "docker", "compose", "up", "-d", "whisper-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}",
-				"shell": {
-					"executable": "cmd.exe",
-					"args": ["/c"]
-				}
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Refresh Vosk ASR",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build", "vosk-asr", "&&", "docker", "compose", "up", "-d", "vosk-asr"],
-			"options": {
-				"cwd": "${workspaceFolder}",
-				"shell": {
-					"executable": "cmd.exe",
-					"args": ["/c"]
-				}
-			},
-			"problemMatcher": [],
-			"group": "none"
-		},
-		{
-			"label": "Docker: Refresh Text Refiner",
-			"type": "shell",
-			"command": "docker",
-			"args": ["compose", "build", "text-refiner", "&&", "docker", "compose", "up", "-d", "text-refiner"],
-			"options": {
-				"cwd": "${workspaceFolder}",
-				"shell": {
-					"executable": "cmd.exe",
-					"args": ["/c"]
-				}
 			},
 			"problemMatcher": [],
 			"group": "none"

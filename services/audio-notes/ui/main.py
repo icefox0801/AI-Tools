@@ -289,20 +289,18 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 return [], [], False, "☑ Select All"
 
         def update_audio_player(new_selected, transcribed_selected):
-            """Update audio player when recordings are selected."""
-            # Get the most recently selected recording
+            """Update audio player when exactly 1 recording is selected."""
             all_selected = []
             if new_selected:
                 all_selected.extend(new_selected)
             if transcribed_selected:
                 all_selected.extend(transcribed_selected)
 
-            if all_selected:
-                # Play the last selected recording
-                last_selected = all_selected[-1]
-                return gr.update(value=last_selected, visible=True)
+            # Only show audio when exactly 1 file is selected
+            if len(all_selected) == 1:
+                return gr.update(value=all_selected[0])
             else:
-                return gr.update(value=None, visible=False)
+                return gr.update(value=None)
 
         def get_combined_selections(new_selected, transcribed_selected):
             """Combine selections from both groups."""
@@ -585,7 +583,11 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
             ]
             has_any_recordings = len(new_choices) > 0 or len(transcribed_choices) > 0
 
-            status_msg = f"🗑️ Deleted {deleted_count} transcribed recording(s)." if deleted_count > 0 else "No transcribed recordings to delete."
+            status_msg = (
+                f"🗑️ Deleted {deleted_count} transcribed recording(s)."
+                if deleted_count > 0
+                else "No transcribed recordings to delete."
+            )
 
             return (
                 gr.update(choices=new_choices, value=[]),
