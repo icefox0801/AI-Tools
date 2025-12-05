@@ -7,7 +7,7 @@ with different ASR backends.
 
 Features:
 - System tray icon with right-click menu
-- Double-click to launch with default backend (Whisper)
+- Double-click to start/stop with default backend (Whisper)
 - Right-click menu to select backends or audio source
 - Shows running status in tray tooltip
 - High DPI support for crisp icons
@@ -154,52 +154,18 @@ DEFAULT_BACKEND = "whisper"
 IS_FROZEN = getattr(sys, "frozen", False)
 
 # Always use the source location for live_captions.py
-# When frozen: .exe is in dist/, source is in parent (apps/live-captions/)
+# When frozen: .exe is in dist/Live Captions/, source is in apps/live-captions/
 # When script: source is in same directory
 if IS_FROZEN:
-    # .exe is in dist/, go up one level to find source
-    SCRIPT_DIR = Path(sys.executable).parent.parent
+    # .exe is in dist/Live Captions/, go up two levels to find source (apps/live-captions/)
+    SCRIPT_DIR = Path(sys.executable).parent.parent.parent
 else:
     SCRIPT_DIR = Path(__file__).parent
 
 MAIN_SCRIPT = SCRIPT_DIR / "live_captions.py"
 
-
-# Find Python executable
-def find_python() -> str:
-    """Find a working Python executable."""
-    # Prefer the project's venv first
-    venv_python = SCRIPT_DIR / ".venv" / "Scripts" / "python.exe"
-    if venv_python.exists():
-        return str(venv_python)
-
-    # Common Python locations on Windows
-    candidates = [
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps" / "python.exe",
-        Path(os.environ.get("LOCALAPPDATA", ""))
-        / "Programs"
-        / "Python"
-        / "Python312"
-        / "python.exe",
-        Path(os.environ.get("LOCALAPPDATA", ""))
-        / "Programs"
-        / "Python"
-        / "Python311"
-        / "python.exe",
-        Path("C:/Python312/python.exe"),
-        Path("C:/Python311/python.exe"),
-        Path("C:/Python310/python.exe"),
-    ]
-
-    for path in candidates:
-        if path.exists():
-            return str(path)
-
-    # Fall back to PATH
-    return "python"
-
-
-PYTHON_EXE = find_python()
+# Just use python from PATH - the user's environment is already configured
+PYTHON_EXE = "python"
 
 ICON_PATH = SCRIPT_DIR / "icon.ico"
 
@@ -232,6 +198,7 @@ class LiveCaptionsTray:
         self.backend_status: dict[str, tuple[bool, str]] = {}  # Cache backend health
         self._running = True  # For background thread
         self._last_running_state = False  # Track state changes
+        self._animation_frame = 0  # For pulsing animation
         self._check_backends()  # Initial check
 
         # Start background status monitor
@@ -264,22 +231,33 @@ class LiveCaptionsTray:
                 if current_running != self._last_running_state:
                     logger.info(f"Status changed: {'Running' if current_running else 'Stopped'}")
                     self._last_running_state = current_running
-                    self.update_icon()
 
-                # Check recording status and update tooltip
+                # Check recording status
                 is_recording, duration_str, _ = self.get_recording_info()
-                if is_recording and duration_str != last_recording_duration:
+                duration_changed = is_recording and duration_str != last_recording_duration
+                recording_stopped = not is_recording and last_recording_duration
+
+                if duration_changed:
                     last_recording_duration = duration_str
-                    self.update_icon()  # Update tooltip with new duration
-                elif not is_recording and last_recording_duration:
+                elif recording_stopped:
                     last_recording_duration = ""
+
+                # Animate icon when running - advance frame every 500ms
+                # Also update when recording duration changes (for tooltip)
+                if current_running:
+                    new_frame = (self._animation_frame + 1) % 3
+                    self._animation_frame = new_frame
+                    self.update_icon()  # Always update when running (for animation + tooltip)
+                elif self._animation_frame != 0:
+                    # Reset animation when stopped
+                    self._animation_frame = 0
                     self.update_icon()
 
             except Exception as e:
                 logger.debug(f"Status monitor error: {e}")
 
-            # Check every 1 second
-            time.sleep(1)
+            # Sleep 500ms between updates
+            time.sleep(0.5)
 
     def is_backend_available(self, backend: str) -> bool:
         """Check if a specific backend is available."""
@@ -291,11 +269,12 @@ class LiveCaptionsTray:
         _healthy, msg = self.backend_status.get(backend, (False, "Unknown"))
         return msg
 
-    def create_icon_image(self, running: bool = False) -> Image.Image:
-        """Create high-resolution tray icon image.
+    def create_icon_image(self, running: bool = False, recording: bool = False) -> Image.Image:
+        """Create high-resolution tray icon image with vertical loading animation.
 
         Args:
-            running: If True, show green indicator; otherwise gray
+            running: If True, show vertical loading animation on mic body
+            recording: If True, show recording state (same animation)
 
         Returns:
             256x256 RGBA image for crisp display on high-DPI screens
@@ -303,33 +282,18 @@ class LiveCaptionsTray:
         # Use 256x256 for high DPI displays (Windows scales down as needed)
         size = 256
 
-        # Try to load custom icon
-        if ICON_PATH.exists():
-            try:
-                img = Image.open(ICON_PATH)
-                # Get the largest size from ICO or resize
-                if hasattr(img, "n_frames") and img.n_frames > 1:
-                    # ICO with multiple sizes - get largest
-                    img.seek(img.n_frames - 1)
-                img = img.resize((size, size), Image.Resampling.LANCZOS)
+        # Dark background like Docker icon
+        bg_color = (36, 41, 46)
 
-                # Add running indicator overlay if needed
-                if running:
-                    img = self._add_running_indicator(img, size)
-                return img
-            except Exception as e:
-                logger.warning(f"Failed to load icon: {e}")
-
-        # Create default high-res icon
+        # Create icon
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
         # Scale factor for coordinates
         s = size / 64  # Original design was 64x64
-
-        # Background circle with anti-aliasing (draw larger, looks smoother)
-        bg_color = (74, 222, 128) if running else (100, 100, 100)  # Green or gray
         padding = int(4 * s)
+
+        # Background circle
         draw.ellipse([padding, padding, size - padding, size - padding], fill=bg_color)
 
         # Microphone symbol (scaled up)
@@ -346,6 +310,37 @@ class LiveCaptionsTray:
             radius=body_radius,
             fill=mic_color,
         )
+
+        # Vertical loading animation on mic body when running/recording
+        if running or recording:
+            # Animation has 3 frames that loop: show 1 bar, 2 bars, 3 bars
+            frame = self._animation_frame % 3  # 0, 1, 2
+
+            # Bar dimensions (inside the mic body) - wider bars for visibility
+            bar_width = int(12 * s)
+            bar_height = int(5 * s)
+            bar_x = center - bar_width // 2
+
+            # Three bars positioned vertically in the mic body
+            bar_positions = [
+                int(17 * s),  # Top bar
+                int(24 * s),  # Middle bar
+                int(31 * s),  # Bottom bar
+            ]
+
+            # Choose color based on recording state
+            bar_color = (
+                (255, 60, 60) if recording else (40, 120, 70)
+            )  # Red if recording, dark green if running
+
+            # Draw bars based on current frame (incremental: 1, 2, 3 bars)
+            for i in range(frame + 1):  # frame 0 = 1 bar, frame 1 = 2 bars, frame 2 = 3 bars
+                bar_y = bar_positions[i]
+                draw.rounded_rectangle(
+                    [bar_x, bar_y, bar_x + bar_width, bar_y + bar_height],
+                    radius=int(2 * s),
+                    fill=bar_color,
+                )
 
         # Mic base arc
         arc_size = int(16 * s)
@@ -377,66 +372,14 @@ class LiveCaptionsTray:
 
         return img
 
-    def _add_running_indicator(self, img: Image.Image, size: int) -> Image.Image:
-        """Add a green dot indicator to show running state."""
-        img = img.copy()
-        draw = ImageDraw.Draw(img)
-
-        # Green dot in bottom-right corner
-        dot_size = size // 4
-        dot_x = size - dot_size - 8
-        dot_y = size - dot_size - 8
-
-        # White border
-        draw.ellipse(
-            [dot_x - 4, dot_y - 4, dot_x + dot_size + 4, dot_y + dot_size + 4], fill=(255, 255, 255)
-        )
-        # Green fill
-        draw.ellipse([dot_x, dot_y, dot_x + dot_size, dot_y + dot_size], fill=(74, 222, 128))
-
-        return img
-
-    def _add_recording_indicator(self, img: Image.Image, size: int) -> Image.Image:
-        """Add a prominent red recording dot indicator with pulsing effect."""
-        img = img.copy()
-        draw = ImageDraw.Draw(img)
-
-        # Larger red dot in bottom-left corner (1/3 of icon size for visibility)
-        dot_size = size // 3
-        dot_x = 4
-        dot_y = size - dot_size - 4
-
-        # Dark border for contrast
-        border_width = 3
-        draw.ellipse(
-            [dot_x - border_width, dot_y - border_width, 
-             dot_x + dot_size + border_width, dot_y + dot_size + border_width], 
-            fill=(40, 40, 40)
-        )
-        # Bright red fill (more saturated)
-        draw.ellipse([dot_x, dot_y, dot_x + dot_size, dot_y + dot_size], fill=(255, 50, 50))
-        # Inner highlight for 3D effect
-        highlight_size = dot_size // 3
-        draw.ellipse(
-            [dot_x + 2, dot_y + 2, dot_x + highlight_size + 2, dot_y + highlight_size + 2], 
-            fill=(255, 150, 150)
-        )
-
-        return img
-
     def update_icon(self):
         """Update tray icon based on running and recording state."""
         if self.icon:
             running = self.current_process is not None and self.current_process.poll() is None
             is_recording, duration_str, _ = self.get_recording_info()
 
-            # Create base icon
-            img = self.create_icon_image(running)
-
-            # Add recording indicator if recording
-            if is_recording:
-                img = self._add_recording_indicator(img, img.size[0])
-
+            # Create animated icon (pulses green when running, red when recording)
+            img = self.create_icon_image(running, is_recording)
             self.icon.icon = img
 
             # Update tooltip with recording info
@@ -507,6 +450,7 @@ class LiveCaptionsTray:
         cmd.extend(["--audio-notes-url", AUDIO_NOTES_URL])
 
         logger.info(f"Starting Live Captions: {' '.join(cmd)}")
+        logger.info(f"Working directory: {SCRIPT_DIR}")
 
         try:
             # Start process (hide console window on Windows)
@@ -517,10 +461,26 @@ class LiveCaptionsTray:
                 startupinfo.wShowWindow = subprocess.SW_HIDE
 
             self.current_process = subprocess.Popen(
-                cmd, startupinfo=startupinfo, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                cmd,
+                cwd=str(SCRIPT_DIR),  # Set working directory to script location
+                startupinfo=startupinfo,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
 
             logger.info(f"Started with PID: {self.current_process.pid}")
+
+            # Start thread to monitor stderr for errors
+            def log_stderr():
+                if self.current_process and self.current_process.stderr:
+                    for line in self.current_process.stderr:
+                        try:
+                            logger.error(f"Subprocess: {line.decode().strip()}")
+                        except Exception:
+                            pass
+
+            stderr_thread = threading.Thread(target=log_stderr, daemon=True)
+            stderr_thread.start()
 
             # Schedule icon update
             threading.Timer(0.5, self.update_icon).start()
@@ -586,11 +546,27 @@ class LiveCaptionsTray:
         if self.is_running():
             self.start_captions(self.current_backend)
 
-    def on_double_click(self, icon, item):
-        """Handle double-click on tray icon."""
+    def can_start(self) -> bool:
+        """Check if we can start (at least one of recording or transcription enabled)."""
+        return self.enable_recording or self.enable_transcription
+
+    def on_click(self, icon, item):
+        """Handle single left-click on tray icon to start/stop."""
         if self.is_running():
             self.stop_captions()
         else:
+            # Check if at least one mode is enabled
+            if not self.can_start():
+                logger.warning("Cannot start: both recording and transcription are disabled")
+                if self.icon:
+                    try:
+                        self.icon.notify(
+                            "Cannot Start",
+                            "Enable Recording or Live Transcription first.",
+                        )
+                    except Exception:
+                        pass
+                return
             self.start_captions(DEFAULT_BACKEND)
 
     def create_menu(self):
@@ -746,22 +722,28 @@ class LiveCaptionsTray:
                 visible=lambda item: self.enable_recording,
             ),
             pystray.Menu.SEPARATOR,
-            # Quick actions
+            # Quick actions - both have default=True so left-click works in either state
             pystray.MenuItem(
                 "Stop",
-                lambda icon, item: self.stop_captions(),
+                self.on_click,
+                default=True,  # Left-click action when running
                 visible=lambda item: self.is_running(),
             ),
             pystray.MenuItem(
                 lambda text: (
                     f"Quick Start ({DEFAULT_BACKEND.title()})"
-                    if self.is_backend_available(DEFAULT_BACKEND)
-                    else f"Quick Start ({DEFAULT_BACKEND.title()}) - Unavailable"
+                    if self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
+                    else (
+                        f"Quick Start ({DEFAULT_BACKEND.title()}) - Unavailable"
+                        if self.is_backend_available(DEFAULT_BACKEND)
+                        else f"Quick Start ({DEFAULT_BACKEND.title()}) - Service Unavailable"
+                    )
                 ),
-                lambda icon, item: self.start_captions(DEFAULT_BACKEND),
-                default=True,  # Double-click action
+                self.on_click,
+                default=True,  # Left-click action when stopped
                 visible=lambda item: not self.is_running(),
-                enabled=lambda item: self.is_backend_available(DEFAULT_BACKEND),
+                enabled=lambda item: self.is_backend_available(DEFAULT_BACKEND)
+                and self.can_start(),
             ),
             pystray.Menu.SEPARATOR,
             # Exit
@@ -793,7 +775,7 @@ class LiveCaptionsTray:
         """Run the tray application."""
         logger.info(f"Starting {APP_NAME} Tray")
         logger.info(f"Default backend: {DEFAULT_BACKEND}")
-        logger.info("Double-click icon to start/stop")
+        logger.info("Left-click icon to start/stop")
         logger.info("Right-click for options")
 
         # Create tray icon with a consistent name for Windows to identify
