@@ -62,3 +62,31 @@ def list_recordings() -> list[dict]:
 
     recordings.sort(key=lambda x: x["timestamp"], reverse=True)
     return recordings
+
+
+def clean_transcribed_recordings() -> int:
+    """Delete all transcribed recordings and their transcript files.
+
+    Returns:
+        Number of recordings deleted
+    """
+    deleted_count = 0
+
+    if not RECORDINGS_DIR.exists():
+        return 0
+
+    extensions = [".wav", ".mp3", ".m4a", ".ogg", ".flac"]
+    for ext in extensions:
+        for audio_file in RECORDINGS_DIR.glob(f"*{ext}"):
+            transcript_path = audio_file.with_suffix(".txt")
+            if transcript_path.exists():
+                try:
+                    # Delete both audio and transcript
+                    audio_file.unlink()
+                    transcript_path.unlink()
+                    deleted_count += 1
+                    logger.info(f"Deleted transcribed recording: {audio_file.name}")
+                except Exception as e:
+                    logger.warning(f"Error deleting {audio_file}: {e}")
+
+    return deleted_count

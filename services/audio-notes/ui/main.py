@@ -17,6 +17,7 @@ from services import (
     check_ollama_health,
     check_parakeet_health,
     check_whisper_health,
+    clean_transcribed_recordings,
     generate_chat_title,
     list_recordings,
     summarize_streaming,
@@ -188,6 +189,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 transcribed_checkboxes = recordings["transcribed_checkboxes"]
                 select_all_btn = recordings["select_all_btn"]
                 refresh_trigger_btn = recordings["refresh_trigger_btn"]
+                clean_transcribed_btn = recordings["clean_transcribed_btn"]
                 no_recordings_msg = recordings["no_recordings_msg"]
                 audio_player = recordings["audio_player"]
                 select_all_state = gr.State(False)
@@ -555,6 +557,54 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 transcribed_checkboxes,
                 select_all_state,
                 select_all_btn,
+            ],
+        )
+
+        def on_clean_transcribed():
+            """Delete all transcribed recordings and refresh list."""
+            deleted_count = clean_transcribed_recordings()
+            logger.info(f"Cleaned {deleted_count} transcribed recordings")
+
+            # Refresh recordings list
+            recordings_list = list_recordings()
+            new_recordings = [r for r in recordings_list if not r["has_transcript"]]
+            transcribed_recordings = [r for r in recordings_list if r["has_transcript"]]
+            new_choices = [
+                (
+                    f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)",
+                    r["path"],
+                )
+                for r in new_recordings
+            ]
+            transcribed_choices = [
+                (
+                    f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)",
+                    r["path"],
+                )
+                for r in transcribed_recordings
+            ]
+            has_any_recordings = len(new_choices) > 0 or len(transcribed_choices) > 0
+
+            status_msg = f"🗑️ Deleted {deleted_count} transcribed recording(s)." if deleted_count > 0 else "No transcribed recordings to delete."
+
+            return (
+                gr.update(choices=new_choices, value=[]),
+                gr.update(choices=transcribed_choices, value=[]),
+                status_msg,
+                gr.update(visible=len(new_choices) > 0),
+                gr.update(visible=len(transcribed_choices) > 0),
+                gr.update(visible=not has_any_recordings),
+            )
+
+        clean_transcribed_btn.click(
+            on_clean_transcribed,
+            outputs=[
+                new_recordings_checkboxes,
+                transcribed_checkboxes,
+                batch_status,
+                new_recordings_accordion,
+                transcribed_accordion,
+                no_recordings_msg,
             ],
         )
 

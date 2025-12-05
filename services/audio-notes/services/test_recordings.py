@@ -286,5 +286,79 @@ class TestListRecordings:
         assert "audio.txt" not in names
 
 
+class TestCleanTranscribedRecordings:
+    """Tests for clean_transcribed_recordings function."""
+
+    def test_clean_empty_directory(self, temp_recordings_dir, mock_config):
+        """Test cleaning empty directory returns 0."""
+        import sys
+
+        for mod in list(sys.modules.keys()):
+            if "services.recordings" in mod:
+                del sys.modules[mod]
+
+        from services.recordings import clean_transcribed_recordings
+
+        count = clean_transcribed_recordings()
+        assert count == 0
+
+    def test_clean_no_transcribed(self, temp_recordings_dir, mock_config):
+        """Test cleaning when no recordings have transcripts."""
+        import sys
+
+        for mod in list(sys.modules.keys()):
+            if "services.recordings" in mod:
+                del sys.modules[mod]
+
+        create_test_wav(temp_recordings_dir / "test.wav")
+
+        from services.recordings import clean_transcribed_recordings
+
+        count = clean_transcribed_recordings()
+        assert count == 0
+        assert (temp_recordings_dir / "test.wav").exists()
+
+    def test_clean_transcribed_only(self, temp_recordings_dir, mock_config):
+        """Test cleaning removes only transcribed recordings."""
+        import sys
+
+        for mod in list(sys.modules.keys()):
+            if "services.recordings" in mod:
+                del sys.modules[mod]
+
+        # Create transcribed recording
+        create_test_wav(temp_recordings_dir / "transcribed.wav")
+        (temp_recordings_dir / "transcribed.txt").write_text("transcript")
+
+        # Create non-transcribed recording
+        create_test_wav(temp_recordings_dir / "new.wav")
+
+        from services.recordings import clean_transcribed_recordings
+
+        count = clean_transcribed_recordings()
+        assert count == 1
+        assert not (temp_recordings_dir / "transcribed.wav").exists()
+        assert not (temp_recordings_dir / "transcribed.txt").exists()
+        assert (temp_recordings_dir / "new.wav").exists()
+
+    def test_clean_multiple_transcribed(self, temp_recordings_dir, mock_config):
+        """Test cleaning multiple transcribed recordings."""
+        import sys
+
+        for mod in list(sys.modules.keys()):
+            if "services.recordings" in mod:
+                del sys.modules[mod]
+
+        # Create multiple transcribed recordings
+        for i in range(3):
+            create_test_wav(temp_recordings_dir / f"rec{i}.wav")
+            (temp_recordings_dir / f"rec{i}.txt").write_text(f"transcript {i}")
+
+        from services.recordings import clean_transcribed_recordings
+
+        count = clean_transcribed_recordings()
+        assert count == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
