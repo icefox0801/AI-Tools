@@ -126,6 +126,16 @@ class CaptionWindow:
         )
         self.status_label.place(relx=1.0, y=5, anchor="ne", x=-10)
 
+        # Recording status (bottom right)
+        self.recording_label = tk.Label(
+            self.root,
+            text="",
+            font=status_font,
+            fg=self.STATUS_COLOR,
+            bg=self.BG_COLOR,
+        )
+        self.recording_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-5)
+
         # Audio status (top left)
         self.audio_status_label = tk.Label(
             self.root, text="🎙️ Off", font=status_font, fg=self.STATUS_COLOR, bg=self.BG_COLOR
@@ -262,6 +272,22 @@ class CaptionWindow:
         self.root.after(
             0, lambda: self.audio_status_label.configure(text=source_name, fg=self.CONNECTED_COLOR)
         )
+
+    def set_recording_status(self, is_recording: bool, duration_str: str = "00:00"):
+        """Update recording status indicator.
+
+        Args:
+            is_recording: Whether recording is active
+            duration_str: Duration string like "05:30"
+        """
+        if is_recording:
+            text = f"🔴 REC {duration_str}"
+            color = "#f87171"  # Red
+        else:
+            text = ""
+            color = self.STATUS_COLOR
+
+        self.root.after(0, lambda: self.recording_label.configure(text=text, fg=color))
 
     def close(self):
         """Close the window."""
