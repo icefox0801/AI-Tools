@@ -201,6 +201,63 @@ ruff check --fix .  # Auto-fix issues
 
 Key lint rules enabled: E, W, F, I, B, C4, UP, SIM, RUF
 
+## Changelog Guidelines
+
+Each app/service has a `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/).
+
+**Version Format**: MAJOR.MINOR (e.g., 1.0, 1.1, 2.0)
+
+**Entry Guidelines**:
+- Focus on **user-facing features and functionality**
+- Keep entries **concise** (1 line per item)
+- Write from user perspective, not developer perspective
+- Omit internal details (tests, refactors, implementation)
+
+**Sections** (only include if applicable):
+- `Added` - New features
+- `Changed` - Changes to existing features  
+- `Fixed` - Bug fixes
+- `Removed` - Removed features
+
+**Good examples**:
+- ✅ "Animated tray icon when captions are active"
+- ✅ "Single-click to start/stop"
+- ✅ "Recording timer in caption window"
+
+**Avoid**:
+- ❌ "Add unit tests for X" (internal)
+- ❌ "Path handling for frozen exe" (too technical)
+- ❌ "Remove unused module" (internal cleanup)
+- ❌ "Improved subprocess error monitoring" (implementation detail)
+
+## Git Commit Guidelines
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+
+```
+<type>(<scope>): <description>
+```
+
+**Types**:
+- `feat` - New feature
+- `fix` - Bug fix
+- `refactor` - Code change (no feature/fix)
+- `chore` - Maintenance (deps, build, etc.)
+- `docs` - Documentation only
+- `test` - Adding/updating tests
+
+**Scope**: Component name (e.g., `live-captions`, `audio-notes`, `parakeet`)
+
+**Examples**:
+- `feat(live-captions): Add animated tray icon`
+- `fix(audio-notes): Fix upload timeout`
+- `chore(live-captions): Bump version to v1.1`
+
+**Guidelines**:
+- Keep description under 50 characters
+- Use imperative mood ("Add" not "Added")
+- Focus on what, not how
+
 ## Parakeet Model Configuration
 
 Parakeet models are configured in docker-compose.yaml:
