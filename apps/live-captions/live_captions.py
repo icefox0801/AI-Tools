@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Live Captions - Standalone Speech-to-Text Overlay v10.1
+Live Captions - Standalone Speech-to-Text Overlay v1.1
 
 A frameless, transparent overlay window that captures audio from the microphone
 or system audio (via WASAPI loopback), sends it to the ASR service for
@@ -324,7 +324,7 @@ class LiveCaptions:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Live Captions v10.1")
+    parser = argparse.ArgumentParser(description="Live Captions v1.1")
     parser.add_argument("--host", default="localhost", help="ASR service host")
     parser.add_argument("--port", type=int, help="ASR service port")
     parser.add_argument(
@@ -376,7 +376,7 @@ def main():
 
     # Print startup banner (ASCII only for Windows console compatibility)
     print("+======================================+")
-    print("|        Live Captions v10.1          |")
+    print("|        Live Captions v1.1           |")
     print("+======================================+")
     print(f"Model: {cfg['name']} ({cfg['device']})")
     print(f"ASR: ws://{args.host}:{port}/stream")
