@@ -1,8 +1,9 @@
-# Whisper Large V3 Turbo - GPU ASR Service
+# Whisper Large V3 - GPU ASR Service (Dual Model)
 transformers>=4.40.0
 accelerate>=0.30.0
 torch>=2.0.0
 optimum>=1.19.0
+huggingface_hub>=0.20.0  # Robust model download with resume support
 
 # Audio processing
 soundfile>=0.12.1

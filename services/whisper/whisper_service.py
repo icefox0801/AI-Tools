@@ -1,13 +1,15 @@
 """
 Whisper ASR Service - GPU-accelerated streaming transcription
-Using OpenAI Whisper Large V3 Turbo via HuggingFace Transformers
+Using OpenAI Whisper via HuggingFace Transformers
 
 Features:
+- Dual models: Turbo for streaming (fast), Large-v3 for offline (accurate)
 - Fast GPU inference with Flash Attention 2 or SDPA
 - Silero VAD for speech detection (skip silence)
 - Streaming WebSocket API with segment-based protocol
 - Automatic language detection
 - Native punctuation and capitalization (no external refiner needed)
+- Robust model download with retry logic
 
 Protocol:
 1. Client connects to /stream
@@ -18,7 +20,6 @@ Protocol:
 import asyncio
 import io
 import json
-import os
 import time
 from contextlib import asynccontextmanager
 
@@ -28,7 +29,18 @@ import torch
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from model import (
+    DEVICE,
+    OFFLINE_MODEL,
+    SAMPLE_RATE,
+    STREAMING_MODEL,
+    TORCH_DTYPE,
+    get_model_state,
+    get_pipeline,
+    load_model,
+    setup_cuda,
+    unload_model,
+)
 
 from shared.logging import setup_logging
 
@@ -39,14 +51,6 @@ logger = setup_logging(__name__)
 # Configuration
 # =============================================================================
 
-WHISPER_MODEL = os.environ["WHISPER_MODEL"]  # Required: set in docker-compose.yaml
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
-SAMPLE_RATE = 16000
-
-# Flash Attention - only enabled if flash_attn package is installed
-USE_FLASH_ATTENTION = True
-
 # VAD (Voice Activity Detection) - skip silence for faster processing
 USE_VAD = True
 VAD_THRESHOLD = 0.5  # Speech probability threshold
@@ -56,7 +60,7 @@ CHUNK_DURATION_SEC = 1.5  # Process in 1.5s chunks
 MIN_AUDIO_SEC = 0.3  # Minimum audio to process
 
 # API version
-API_VERSION = "1.0"
+API_VERSION = "1.1"
 
 
 # =============================================================================
@@ -68,7 +72,10 @@ API_VERSION = "1.0"
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     # Startup
+    setup_cuda()
     logger.info("Service ready, models will load on first request")
+    logger.info(f"Streaming model: {STREAMING_MODEL}")
+    logger.info(f"Offline model: {OFFLINE_MODEL}")
     yield
     # Shutdown (if needed)
 
@@ -83,8 +90,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global model
-whisper_pipe = None
+# Global VAD model
 vad_model = None
 
 
@@ -169,76 +175,9 @@ def detect_speech(audio_array: np.ndarray) -> bool:
         return True  # On error, assume speech
 
 
-def load_model():
-    """Load Whisper model with optimizations."""
-    global whisper_pipe
-
-    if whisper_pipe is not None:
-        return whisper_pipe
-
-    logger.info(f"Loading Whisper model: {WHISPER_MODEL}")
-    logger.info(f"Device: {DEVICE}, dtype: {TORCH_DTYPE}")
-
-    if DEVICE == "cuda":
-        logger.info(f"CUDA Device: {torch.cuda.get_device_name(0)}")
-
-    # Check if Flash Attention 2 is available
-    use_flash_attn = False
-    if DEVICE == "cuda":
-        try:
-            import flash_attn
-
-            use_flash_attn = True
-            logger.info("Flash Attention 2 available")
-        except ImportError:
-            logger.info("Flash Attention 2 not installed, using SDPA")
-
-    # Load model with appropriate attention implementation
-    model_kwargs = {
-        "torch_dtype": TORCH_DTYPE,
-        "low_cpu_mem_usage": True,
-        "use_safetensors": True,
-    }
-
-    if DEVICE == "cuda":
-        if use_flash_attn:
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-        else:
-            # Use PyTorch's native scaled dot product attention (SDPA)
-            model_kwargs["attn_implementation"] = "sdpa"
-
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(WHISPER_MODEL, **model_kwargs)
-    model.to(DEVICE)
-
-    processor = AutoProcessor.from_pretrained(WHISPER_MODEL)
-
-    whisper_pipe = pipeline(
-        "automatic-speech-recognition",
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-        torch_dtype=TORCH_DTYPE,
-        device=DEVICE,
-    )
-
-    # Warmup
-    if DEVICE == "cuda":
-        logger.info("Warming up GPU...")
-        dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)  # 1 second
-        _ = whisper_pipe(dummy, generate_kwargs={"max_new_tokens": 10})
-        torch.cuda.synchronize()
-
-        mem_gb = torch.cuda.memory_allocated() / 1024**3
-        logger.info(f"GPU Memory: {mem_gb:.2f}GB allocated")
-
-    logger.info("Whisper model loaded successfully")
-    return whisper_pipe
-
-
 @app.get("/health")
 async def health_check():
-    model_loaded = whisper_pipe is not None
-    vad_loaded = vad_model is not None
+    state = get_model_state()
 
     gpu_info = {}
     if DEVICE == "cuda" and torch.cuda.is_available():
@@ -249,10 +188,12 @@ async def health_check():
 
     return {
         "status": "healthy",
-        "model": WHISPER_MODEL,
-        "model_loaded": model_loaded,
+        "streaming_model": STREAMING_MODEL,
+        "streaming_loaded": state.streaming_loaded,
+        "offline_model": OFFLINE_MODEL,
+        "offline_loaded": state.offline_loaded,
         "vad_enabled": USE_VAD,
-        "vad_loaded": vad_loaded,
+        "vad_loaded": vad_model is not None,
         "device": DEVICE,
         "cuda_available": torch.cuda.is_available(),
         **gpu_info,
@@ -262,57 +203,56 @@ async def health_check():
 @app.get("/info")
 async def info():
     """Return model information for backend config display."""
+    state = get_model_state()
     return {
         "service": "whisper-asr",
         "version": API_VERSION,
-        "model": WHISPER_MODEL,
+        "streaming_model": STREAMING_MODEL,
+        "offline_model": OFFLINE_MODEL,
         "device": DEVICE,
         "vad_enabled": USE_VAD,
-        "model_loaded": whisper_pipe is not None,
+        "streaming_loaded": state.streaming_loaded,
+        "offline_loaded": state.offline_loaded,
         "chunk_duration_sec": CHUNK_DURATION_SEC,
     }
 
 
 @app.post("/unload")
-async def unload_model():
-    """Unload model from GPU to free memory for other services."""
-    global whisper_pipe
+async def unload_models_endpoint(mode: str = "all"):
+    """Unload model(s) from GPU to free memory.
 
-    if whisper_pipe is None:
-        return {"status": "not_loaded", "message": "Model was not loaded"}
+    Args:
+        mode: 'streaming', 'offline', or 'all' (default)
+    """
+    state = get_model_state()
+
+    if mode not in ("streaming", "offline", "all"):
+        return {
+            "status": "error",
+            "message": f"Invalid mode: {mode}. Use 'streaming', 'offline', or 'all'",
+        }
+
+    if not state.streaming_loaded and not state.offline_loaded:
+        return {"status": "not_loaded", "message": "No models were loaded"}
 
     try:
-        # Store reference and set global to None before deletion
-        pipe_ref = whisper_pipe
-        whisper_pipe = None
-        del pipe_ref
+        freed = unload_model(mode)
 
-        # Force garbage collection and clear CUDA cache
-        import gc
-
-        gc.collect()
+        if not freed:
+            return {"status": "not_loaded", "message": f"Model '{mode}' was not loaded"}
 
         if DEVICE == "cuda":
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-
-            # Get memory info
             free_mem = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
             total_mem = torch.cuda.get_device_properties(0).total_memory
 
-            logger.info(
-                f"Whisper model unloaded. GPU memory freed. Available: {free_mem/1e9:.2f}GB / {total_mem/1e9:.2f}GB"
-            )
-
             return {
                 "status": "unloaded",
-                "message": "Whisper model unloaded from GPU",
+                "message": f"Model(s) '{mode}' unloaded from GPU",
                 "gpu_memory_free_gb": round(free_mem / 1e9, 2),
                 "gpu_memory_total_gb": round(total_mem / 1e9, 2),
             }
         else:
-            logger.info("Whisper model unloaded from CPU")
-            return {"status": "unloaded", "message": "Model unloaded from CPU"}
+            return {"status": "unloaded", "message": f"Model(s) '{mode}' unloaded from CPU"}
 
     except Exception as e:
         logger.error(f"Error unloading model: {e}")
@@ -322,7 +262,9 @@ async def unload_model():
 @app.post("/transcribe")
 async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
     """
-    Transcribe an uploaded audio file.
+    Transcribe an uploaded audio file using the OFFLINE model (large-v3).
+
+    Uses the more accurate offline model for file transcription.
 
     Args:
         file: Audio file (WAV, MP3, etc.)
@@ -331,12 +273,8 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
     Returns:
         JSON with text transcription
     """
-    global whisper_pipe
-
-    # Auto-reload model if it was unloaded
-    if whisper_pipe is None:
-        logger.info("Model not loaded, auto-reloading...")
-        load_model()
+    # Get offline pipeline (auto-loads if needed)
+    whisper_pipe = get_pipeline(mode="offline")
 
     if whisper_pipe is None:
         return {"error": "Failed to load model", "text": ""}
@@ -367,7 +305,7 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
             audio_array = audio_array / 32768.0
 
         logger.info(
-            f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s, language: {language}"
+            f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s, language: {language}, model: {OFFLINE_MODEL}"
         )
 
         # Transcribe with timestamps for longer audio
@@ -388,6 +326,7 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
             "text": text,
             "duration": len(audio_array) / SAMPLE_RATE,
             "chunks": result.get("chunks", []),
+            "model": OFFLINE_MODEL,
         }
 
     except Exception as e:
@@ -395,8 +334,10 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
         return {"error": str(e), "text": ""}
 
 
-def transcribe_audio(audio_array: np.ndarray, language: str = "en") -> str:
-    """Transcribe audio array to text.
+def transcribe_audio_streaming(audio_array: np.ndarray, language: str = "en") -> str:
+    """Transcribe audio array to text using STREAMING model (turbo).
+
+    Used by the WebSocket streaming endpoint for low-latency transcription.
 
     Args:
         audio_array: Audio samples (float32, normalized to [-1, 1])
@@ -405,15 +346,11 @@ def transcribe_audio(audio_array: np.ndarray, language: str = "en") -> str:
     Returns:
         Transcribed text
     """
-    global whisper_pipe
-
-    # Auto-reload model if needed
-    if whisper_pipe is None:
-        logger.info("Model not loaded for transcribe_audio, auto-reloading...")
-        load_model()
+    # Get streaming pipeline (auto-loads if needed)
+    whisper_pipe = get_pipeline(mode="streaming")
 
     if whisper_pipe is None:
-        logger.error("Failed to load model for transcription")
+        logger.error("Failed to load streaming model for transcription")
         return ""
 
     if len(audio_array) < SAMPLE_RATE * MIN_AUDIO_SEC:
@@ -445,7 +382,9 @@ def transcribe_audio(audio_array: np.ndarray, language: str = "en") -> str:
 @app.websocket("/stream")
 async def stream_transcribe(websocket: WebSocket):
     """
-    Streaming transcription endpoint.
+    Streaming transcription endpoint using STREAMING model (turbo).
+
+    Uses the faster turbo model for real-time transcription.
 
     Protocol:
     1. Connect to websocket
@@ -454,7 +393,7 @@ async def stream_transcribe(websocket: WebSocket):
     4. Receive JSON: {"id": "s1", "text": "..."}
     """
     await websocket.accept()
-    logger.info("Stream connection established")
+    logger.info(f"Stream connection established (model: {STREAMING_MODEL})")
 
     # Settings
     chunk_samples = int(SAMPLE_RATE * CHUNK_DURATION_SEC)
@@ -497,7 +436,9 @@ async def stream_transcribe(websocket: WebSocket):
                             np.frombuffer(bytes(audio_buffer), dtype=np.int16).astype(np.float32)
                             / 32768.0
                         )
-                        text = await asyncio.to_thread(transcribe_audio, audio_array, language)
+                        text = await asyncio.to_thread(
+                            transcribe_audio_streaming, audio_array, language
+                        )
                         if text:
                             await websocket.send_json({"id": f"s{segment_counter}", "text": text})
                             segment_counter += 1
@@ -543,7 +484,9 @@ async def stream_transcribe(websocket: WebSocket):
                     )
 
                     # Transcribe in thread to avoid blocking event loop
-                    text = await asyncio.to_thread(transcribe_audio, audio_array, language)
+                    text = await asyncio.to_thread(
+                        transcribe_audio_streaming, audio_array, language
+                    )
                     logger.info(f"Transcribed ({language}): '{text[:100] if text else '(empty)'}'")
 
                     if text:

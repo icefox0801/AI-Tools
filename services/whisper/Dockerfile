@@ -1,4 +1,4 @@
-# Whisper Large V3 Turbo - GPU ASR Service
+# Whisper Large V3 - GPU ASR Service (Dual Model: Turbo + Large-v3)
 FROM nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
@@ -32,14 +32,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install flash-attn --no-build-isolation || echo "Flash Attention not available"
 
-# Copy application code
-COPY whisper_service.py .
-
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/
 
-# Pre-download model (optional - can be done at runtime)
-# RUN python -c "from transformers import AutoModelForSpeechSeq2Seq; AutoModelForSpeechSeq2Seq.from_pretrained('openai/whisper-large-v3-turbo')"
+# Copy application code
+COPY model.py .
+COPY whisper_service.py .
+COPY download_models.sh .
+
+# Models are pre-downloaded to the cache volume (whisper-hf-cache)
+# No download happens during Docker build or runtime - all network requests avoided
+# Use download_models.sh for initial setup
 
 EXPOSE 8000
 

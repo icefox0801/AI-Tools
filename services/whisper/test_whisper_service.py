@@ -399,5 +399,106 @@ class TestModelUnload:
         assert data["status"] == "not_loaded"
 
 
+# ==============================================================================
+# Dual Model Tests
+# ==============================================================================
+
+
+class TestDualModelSupport:
+    """Tests for dual model support (streaming vs offline)."""
+
+    def test_health_shows_both_models(self, client):
+        """Health endpoint shows both streaming and offline models."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert "streaming_model" in data
+        assert "offline_model" in data
+        assert "streaming_loaded" in data
+        assert "offline_loaded" in data
+
+    def test_info_shows_both_models(self, client):
+        """Info endpoint shows both streaming and offline models."""
+        response = client.get("/info")
+        assert response.status_code == 200
+        data = response.json()
+        assert "streaming_model" in data
+        assert "offline_model" in data
+        assert "streaming_loaded" in data
+        assert "offline_loaded" in data
+
+    def test_unload_streaming_mode(self, client):
+        """Unload endpoint supports streaming mode."""
+        response = client.post("/unload?mode=streaming")
+        assert response.status_code == 200
+        # Should succeed or return not_loaded
+        data = response.json()
+        assert data["status"] in ["unloaded", "not_loaded"]
+
+    def test_unload_offline_mode(self, client):
+        """Unload endpoint supports offline mode."""
+        response = client.post("/unload?mode=offline")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] in ["unloaded", "not_loaded"]
+
+    def test_unload_all_mode(self, client):
+        """Unload endpoint supports all mode."""
+        response = client.post("/unload?mode=all")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] in ["unloaded", "not_loaded"]
+
+    def test_unload_invalid_mode(self, client):
+        """Unload endpoint rejects invalid mode."""
+        response = client.post("/unload?mode=invalid_mode")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "error"
+        assert "Invalid mode" in data["message"]
+
+    def test_transcribe_returns_model_used(self, client):
+        """Transcribe endpoint returns which model was used."""
+        # Create a simple WAV file
+        import io
+        import struct
+
+        # WAV header + 1 second of silence at 16kHz
+        sample_rate = 16000
+        num_samples = sample_rate
+        audio_data = struct.pack("<" + "h" * num_samples, *([0] * num_samples))
+
+        # WAV header
+        wav_header = struct.pack(
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF",
+            36 + len(audio_data),
+            b"WAVE",
+            b"fmt ",
+            16,  # fmt chunk size
+            1,  # PCM
+            1,  # mono
+            sample_rate,
+            sample_rate * 2,  # byte rate
+            2,  # block align
+            16,  # bits per sample
+            b"data",
+            len(audio_data),
+        )
+
+        wav_file = io.BytesIO(wav_header + audio_data)
+
+        response = client.post(
+            "/transcribe",
+            files={"file": ("test.wav", wav_file, "audio/wav")},
+            data={"language": "en"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should indicate offline model was used
+        assert "model" in data
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
