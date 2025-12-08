@@ -133,7 +133,7 @@ class GPUMemoryManager:
             for key, info in self._loaded_models.items()
             if info.service_name != service_name
         ]
-        
+
         # Try same-service models first, then others
         models_to_unload = same_service_models + other_service_models
         models_to_unload.sort(key=lambda x: x[1].memory_gb, reverse=True)

@@ -296,11 +296,10 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     # Startup
     try:
-        load_model(mode="streaming")
+        setup_cuda()
         await check_text_refiner()
-        logger.info(f"Service ready. Streaming: {STREAMING_MODEL}, Offline: {OFFLINE_MODEL}")
-        if STREAMING_MODEL != OFFLINE_MODEL:
-            logger.info("Note: Offline model will be loaded on first /transcribe request")
+        logger.info("Service ready, models will load on first request")
+        logger.info(f"Streaming: {STREAMING_MODEL}, Offline: {OFFLINE_MODEL}")
     except Exception as e:
         logger.error(f"Startup failed: {e}")
     yield
