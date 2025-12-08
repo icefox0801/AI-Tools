@@ -20,8 +20,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
-from shared.text_refiner import get_client, refine_text
 from shared.utils import setup_logging
+from shared.utils.text_refiner import get_client, refine_text
 
 # Configure logging
 logger = setup_logging(__name__)

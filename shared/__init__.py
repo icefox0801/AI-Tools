@@ -28,18 +28,34 @@ from .core import (
 )
 from .utils import get_logger, setup_logging
 
+# Text refiner (backward compatibility - re-export from utils.text_refiner)
+from .utils.text_refiner import (
+    capitalize_text,
+    check_text_refiner,
+    get_client,
+    refine_text,
+)
+
+# Create backward-compatible module alias
+from .utils import text_refiner
+
 __all__ = [
     "BACKEND",
     "BACKENDS",
     "TranscriptManager",
+    "capitalize_text",
+    "check_text_refiner",
     "clear_gpu_cache",
     "get_backend_config",
+    "get_client",
     "get_display_info",
     "get_free_memory_gb",
     "get_gpu_manager",
     "get_gpu_memory_info",
     "get_logger",
+    "refine_text",
     "setup_logging",
+    "text_refiner",
 ]
 
 __version__ = "3.2.0"
