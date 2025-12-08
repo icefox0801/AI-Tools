@@ -9,11 +9,6 @@
 #
 # STREAMING (Live Captions): Uses TDT for low-latency real-time transcription
 # OFFLINE (Audio Notes):     Uses RNNT for highest accuracy on recordings
-x-parakeet-config: &parakeet-config
-  streaming_model: nvidia/parakeet-tdt-1.1b  # WebSocket /stream endpoint
-  offline_model: nvidia/parakeet-rnnt-1.1b   # POST /transcribe endpoint
-  streaming_fp16: "true"   # TDT supports FP16
-  offline_fp16: "false"    # RNNT supports FP32 for best accuracy
 
 services:
   # Ollama Service: Local LLM runtime (auto-pulls models on startup)
@@ -121,7 +116,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s                             # Allow time for first-time model download
+      start_period: 60s                             # Allow time for model loading (pre-downloaded)
 
   # Parakeet ASR: NVIDIA NeMo GPU-accelerated speech recognition (high accuracy)
   parakeet-asr:
@@ -165,9 +160,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s                            # Allow time for model download on first run
+      start_period: 120s                            # Allow time for model loading (pre-downloaded)
 
-  # Whisper ASR: OpenAI Whisper Large V3 Turbo - fast, accurate speech recognition (GPU)
+  # Whisper ASR: OpenAI Whisper Large V3 - GPU-accelerated speech recognition
+  # Dual models: Turbo for streaming (fast), Large-v3 for offline (accurate)
   whisper-asr:
     build:
       context: ./services/whisper
@@ -179,10 +175,13 @@ services:
     ports:
       - "8003:8000"                                 # Port mapping: Whisper ASR API endpoint
     volumes:
-      - whisper-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (~3GB)
+      - whisper-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (~13GB for both)
       - whisper-torch-cache:/root/.cache/torch     # Cache Silero VAD model (~100MB)
     environment:
-      - WHISPER_MODEL=openai/whisper-large-v3-turbo
+      # Streaming model: Fast turbo model for real-time WebSocket streaming (~3GB VRAM)
+      - WHISPER_STREAMING_MODEL=openai/whisper-large-v3-turbo
+      # Offline model: Accurate large-v3 model for file transcription (~10GB VRAM)
+      - WHISPER_OFFLINE_MODEL=openai/whisper-large-v3
       - CUDA_VISIBLE_DEVICES=0
     deploy:
       resources:
@@ -199,7 +198,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s                            # Allow time for model download on first run
+      start_period: 120s                            # Allow time for model loading (pre-downloaded)
 
   # Text Refiner Service: Punctuation + ASR Error Correction
   text-refiner:
@@ -275,12 +274,12 @@ volumes:
       o: bind
       device: ${PWD}/.recordings
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
-  vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, persists across rebuilds)
+  vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, pre-downloaded via download_model.sh)
   vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
-  parakeet-model-data:        # Stores HuggingFace/NeMo model cache for Parakeet (15GB cached)
-  whisper-hf-cache:           # Stores HuggingFace model cache for Whisper (~3GB)
+  parakeet-model-data:        # Stores NeMo model cache for Parakeet (15GB, pre-downloaded via download_models.sh)
+  whisper-hf-cache:           # Stores HuggingFace model cache for Whisper (~13GB, pre-downloaded via download_models.sh)
   whisper-torch-cache:        # Stores torch hub cache for Silero VAD model (~100MB)
-  text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (T5, etc.)
+  text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (pre-downloaded via download_models.sh)
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
 networks:
