@@ -134,12 +134,22 @@ def _transcribe_chunk(
                 torch.cuda.synchronize()
                 with torch.amp.autocast("cuda", enabled=False):  # RNNT uses FP32
                     results = model.transcribe(
-                        [tmp_path], timestamps=True, return_hypotheses=True, verbose=False
+                        [tmp_path],
+                        timestamps=True,
+                        return_hypotheses=True,
+                        verbose=False,
+                        batch_size=1,
+                        num_workers=1,
                     )
                 torch.cuda.synchronize()
             else:
                 results = model.transcribe(
-                    [tmp_path], timestamps=True, return_hypotheses=True, verbose=False
+                    [tmp_path],
+                    timestamps=True,
+                    return_hypotheses=True,
+                    verbose=False,
+                    batch_size=1,
+                    num_workers=1,
                 )
 
         words = _extract_word_timestamps(results, audio_array, sample_rate)
@@ -296,7 +306,6 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     # Startup
     try:
-        setup_cuda()
         await check_text_refiner()
         logger.info("Service ready, models will load on first request")
         logger.info(f"Streaming: {STREAMING_MODEL}, Offline: {OFFLINE_MODEL}")
