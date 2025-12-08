@@ -8,10 +8,10 @@ from unittest.mock import MagicMock, patch
 
 from mdns_broadcast import (
     SERVICES,
-    get_local_ip,
-    create_service_info,
     MDNSBroadcaster,
     __version__,
+    create_service_info,
+    get_local_ip,
 )
 
 

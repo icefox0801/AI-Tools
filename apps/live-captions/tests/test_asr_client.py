@@ -1,8 +1,6 @@
 """Unit tests for ASR client module."""
 
-import json
-import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

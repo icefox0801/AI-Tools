@@ -32,7 +32,7 @@ from ui.sections import (
     create_transcription_section,
     create_upload_section,
 )
-from ui.styles import CUSTOM_CSS, CUSTOM_JS
+from ui.styles import CUSTOM_JS
 from ui.tabs import create_chat_tab, create_summary_tab, create_transcript_tab
 
 

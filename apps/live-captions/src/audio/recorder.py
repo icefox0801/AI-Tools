@@ -435,7 +435,7 @@ def read_recording_status() -> tuple[bool, str, float, float]:
         if time.time() - status_file.stat().st_mtime > 5:
             return False, "00:00", 0.0, 0.0
 
-        with open(status_file, "r") as f:
+        with open(status_file) as f:
             status = json.load(f)
 
         if not status.get("recording"):

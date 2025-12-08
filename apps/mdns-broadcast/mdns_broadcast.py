@@ -5,14 +5,14 @@ Broadcasts .local domains to LAN using zeroconf (pure Python mDNS)
 
 __version__ = "1.0"
 
-import socket
 import signal
+import socket
 import sys
 import time
-from typing import List, Dict, Any
+from typing import Any
 
 try:
-    from zeroconf import Zeroconf, ServiceInfo
+    from zeroconf import ServiceInfo, Zeroconf
 except ImportError:
     print("ERROR: zeroconf package not installed.")
     print("Run: pip install zeroconf")
@@ -59,10 +59,10 @@ def create_service_info(name: str, port: int, description: str, ip: str) -> Serv
 class MDNSBroadcaster:
     """Manages mDNS service registration and broadcasting"""
 
-    def __init__(self, services: List[Dict[str, Any]], host_ip: str = None):
+    def __init__(self, services: list[dict[str, Any]], host_ip: str = None):
         self.host_ip = host_ip or get_local_ip()
         self.zeroconf = Zeroconf()
-        self.service_infos: List[ServiceInfo] = []
+        self.service_infos: list[ServiceInfo] = []
         self.services = services
         self.running = False
 

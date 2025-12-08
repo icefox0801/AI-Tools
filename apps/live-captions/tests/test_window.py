@@ -3,8 +3,6 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestCaptionWindowUnit:
     """Unit tests for CaptionWindow that don't require tkinter."""

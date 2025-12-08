@@ -14,8 +14,6 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Add apps/live-captions to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "apps" / "live-captions"))
 
@@ -213,7 +211,7 @@ class TestAudioRecorderStatusFile:
 
         assert self.status_file.exists()
 
-        with open(self.status_file, "r") as f:
+        with open(self.status_file) as f:
             status = json.load(f)
 
         assert status["recording"] is True

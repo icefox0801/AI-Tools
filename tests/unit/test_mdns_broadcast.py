@@ -4,10 +4,9 @@ Unit tests for mDNS broadcast module.
 Tests the mDNS service broadcaster functionality.
 """
 
-import socket
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
