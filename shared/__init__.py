@@ -2,42 +2,44 @@
 Shared Modules for AI-Tools
 
 Provides common functionality for ASR applications:
+- core: GPU management, logging, models
 - config: Backend definitions and configuration
 - client: TranscriptManager with simple ID-based replace/append
-- text_refiner: Text refinement client for punctuation/correction
-- logging: Consistent logging setup across all services
+- utils: Text refinement and other utilities
 
 Usage:
     from shared.client import TranscriptManager
+    from shared.core import setup_logging, get_gpu_manager
 
-    manager = TranscriptManager()
-    manager.on_change = lambda: update_ui(manager.get_text())
-
-    # On receiving message from server:
-    manager.update(msg['id'], msg['text'])
-
-Logging:
-    from shared.logging import setup_logging
     logger = setup_logging(__name__)
+    gpu_mgr = get_gpu_manager()
 """
 
-# Config
 # Client - simple TranscriptManager
 from .client import TranscriptManager
 from .config import BACKEND, BACKENDS, get_backend_config, get_display_info
-from .logging import get_logger, setup_logging
+
+# Core modules (backward compatibility)
+from .core import (
+    clear_gpu_cache,
+    get_free_memory_gb,
+    get_gpu_manager,
+    get_gpu_memory_info,
+)
+from .utils import get_logger, setup_logging
 
 __all__ = [
     "BACKEND",
-    # Config
     "BACKENDS",
-    # Client
     "TranscriptManager",
+    "clear_gpu_cache",
     "get_backend_config",
     "get_display_info",
-    # Logging
+    "get_free_memory_gb",
+    "get_gpu_manager",
+    "get_gpu_memory_info",
     "get_logger",
     "setup_logging",
 ]
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"

@@ -33,7 +33,7 @@ def setup_logging(
         Configured logger instance.
 
     Usage:
-        from shared.logging import setup_logging
+        from shared.utils import setup_logging
         logger = setup_logging(__name__)
         logger.info("Service started")
     """
