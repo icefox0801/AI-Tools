@@ -43,7 +43,7 @@ def create_recordings_section():
 
         with gr.Row():
             select_all_btn = gr.Button("☑ Select All", size="sm", scale=1)
-            refresh_trigger_btn = gr.Button("↻ Refresh", size="sm", scale=1)
+            delete_selected_btn = gr.Button("🗑️ Delete Selected", size="sm", scale=1)
             clean_transcribed_btn = gr.Button("🗑️ Clean Transcribed", size="sm", scale=1)
 
         # Audio player for previewing recordings
@@ -65,7 +65,7 @@ def create_recordings_section():
         "transcribed_accordion": transcribed_accordion,
         "transcribed_checkboxes": transcribed_checkboxes,
         "select_all_btn": select_all_btn,
-        "refresh_trigger_btn": refresh_trigger_btn,
+        "delete_selected_btn": delete_selected_btn,
         "clean_transcribed_btn": clean_transcribed_btn,
         "audio_player": audio_player,
     }

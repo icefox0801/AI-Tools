@@ -18,6 +18,7 @@ from services import (
     check_parakeet_health,
     check_whisper_health,
     clean_transcribed_recordings,
+    delete_selected_recordings,
     generate_chat_title,
     list_recordings,
     summarize_streaming,
@@ -188,7 +189,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 new_recordings_checkboxes = recordings["new_recordings_checkboxes"]
                 transcribed_checkboxes = recordings["transcribed_checkboxes"]
                 select_all_btn = recordings["select_all_btn"]
-                refresh_trigger_btn = recordings["refresh_trigger_btn"]
+                delete_selected_btn = recordings["delete_selected_btn"]
                 clean_transcribed_btn = recordings["clean_transcribed_btn"]
                 no_recordings_msg = recordings["no_recordings_msg"]
                 audio_player = recordings["audio_player"]
@@ -533,10 +534,58 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
             has_transcribed = len(transcribed_selected) > 0 if transcribed_selected else False
             return gr.update(interactive=has_new or has_transcribed)
 
+        def on_delete_selected(new_selected, transcribed_selected):
+            """Delete selected recordings and refresh list."""
+            all_selected = list(new_selected or []) + list(transcribed_selected or [])
+            if not all_selected:
+                return (
+                    gr.update(),
+                    gr.update(),
+                    "No recordings selected.",
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),
+                )
+
+            deleted_count = delete_selected_recordings(all_selected)
+            logger.info(f"Deleted {deleted_count} selected recordings")
+
+            # Refresh recordings list
+            recordings_list = list_recordings()
+            new_recordings = [r for r in recordings_list if not r["has_transcript"]]
+            transcribed_recordings = [r for r in recordings_list if r["has_transcript"]]
+            new_choices = [
+                (
+                    f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)",
+                    r["path"],
+                )
+                for r in new_recordings
+            ]
+            transcribed_choices = [
+                (
+                    f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)",
+                    r["path"],
+                )
+                for r in transcribed_recordings
+            ]
+            has_any_recordings = len(new_choices) > 0 or len(transcribed_choices) > 0
+
+            status_msg = f"🗑️ Deleted {deleted_count} recording(s)."
+
+            return (
+                gr.update(choices=new_choices, value=[]),
+                gr.update(choices=transcribed_choices, value=[]),
+                status_msg,
+                gr.update(visible=len(new_choices) > 0),
+                gr.update(visible=len(transcribed_choices) > 0),
+                gr.update(visible=not has_any_recordings),
+            )
+
         # ===== WIRE UP EVENTS =====
 
-        refresh_trigger_btn.click(
-            refresh_recordings,
+        delete_selected_btn.click(
+            on_delete_selected,
+            inputs=[new_recordings_checkboxes, transcribed_checkboxes],
             outputs=[
                 new_recordings_checkboxes,
                 transcribed_checkboxes,
