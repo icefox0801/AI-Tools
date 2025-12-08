@@ -3,7 +3,7 @@ Whisper ASR Service - GPU-accelerated streaming transcription
 Using OpenAI Whisper via HuggingFace Transformers
 
 Features:
-- Dual models: Turbo for streaming (fast), Large-v3 for offline (accurate)
+- Whisper-large-v3-turbo model (fast, accurate)
 - Fast GPU inference with Flash Attention 2 or SDPA
 - Silero VAD for speech detection (skip silence)
 - Streaming WebSocket API with segment-based protocol
@@ -31,9 +31,8 @@ from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from model import (
     DEVICE,
-    OFFLINE_MODEL,
+    MODEL,
     SAMPLE_RATE,
-    STREAMING_MODEL,
     TORCH_DTYPE,
     get_model_state,
     get_pipeline,
@@ -42,7 +41,7 @@ from model import (
     unload_model,
 )
 
-from shared.logging import setup_logging
+from shared.utils import setup_logging
 
 # Configure logging
 logger = setup_logging(__name__)
@@ -74,8 +73,7 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_cuda()
     logger.info("Service ready, models will load on first request")
-    logger.info(f"Streaming model: {STREAMING_MODEL}")
-    logger.info(f"Offline model: {OFFLINE_MODEL}")
+    logger.info(f"Model: {MODEL}")
     yield
     # Shutdown (if needed)
 
@@ -188,10 +186,8 @@ async def health_check():
 
     return {
         "status": "healthy",
-        "streaming_model": STREAMING_MODEL,
-        "streaming_loaded": state.streaming_loaded,
-        "offline_model": OFFLINE_MODEL,
-        "offline_loaded": state.offline_loaded,
+        "model": MODEL,
+        "model_loaded": state.loaded,
         "vad_enabled": USE_VAD,
         "vad_loaded": vad_model is not None,
         "device": DEVICE,
@@ -207,12 +203,10 @@ async def info():
     return {
         "service": "whisper-asr",
         "version": API_VERSION,
-        "streaming_model": STREAMING_MODEL,
-        "offline_model": OFFLINE_MODEL,
+        "model": MODEL,
         "device": DEVICE,
         "vad_enabled": USE_VAD,
-        "streaming_loaded": state.streaming_loaded,
-        "offline_loaded": state.offline_loaded,
+        "model_loaded": state.loaded,
         "chunk_duration_sec": CHUNK_DURATION_SEC,
     }
 
@@ -227,16 +221,14 @@ async def unload_models_endpoint(mode: str = "all"):
     state = get_model_state()
 
     if mode not in ("streaming", "offline", "all"):
-        return {
-            "status": "error",
-            "message": f"Invalid mode: {mode}. Use 'streaming', 'offline', or 'all'",
-        }
+        # Accept legacy mode params but ignore them
+        mode = "all"
 
-    if not state.streaming_loaded and not state.offline_loaded:
-        return {"status": "not_loaded", "message": "No models were loaded"}
+    if not state.loaded:
+        return {"status": "not_loaded", "message": "No model was loaded"}
 
     try:
-        freed = unload_model(mode)
+        freed = unload_model()
 
         if not freed:
             return {"status": "not_loaded", "message": f"Model '{mode}' was not loaded"}
@@ -273,8 +265,8 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
     Returns:
         JSON with text transcription
     """
-    # Get offline pipeline (auto-loads if needed)
-    whisper_pipe = get_pipeline(mode="offline")
+    # Get pipeline (auto-loads if needed)
+    whisper_pipe = get_pipeline()
 
     if whisper_pipe is None:
         return {"error": "Failed to load model", "text": ""}
@@ -305,7 +297,7 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
             audio_array = audio_array / 32768.0
 
         logger.info(
-            f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s, language: {language}, model: {OFFLINE_MODEL}"
+            f"Transcribing file: {file.filename}, duration: {len(audio_array)/SAMPLE_RATE:.1f}s, language: {language}, model: {MODEL}"
         )
 
         # Transcribe with timestamps for longer audio
@@ -326,7 +318,7 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
             "text": text,
             "duration": len(audio_array) / SAMPLE_RATE,
             "chunks": result.get("chunks", []),
-            "model": OFFLINE_MODEL,
+            "model": MODEL,
         }
 
     except Exception as e:
@@ -346,8 +338,8 @@ def transcribe_audio_streaming(audio_array: np.ndarray, language: str = "en") ->
     Returns:
         Transcribed text
     """
-    # Get streaming pipeline (auto-loads if needed)
-    whisper_pipe = get_pipeline(mode="streaming")
+    # Get pipeline (auto-loads if needed)
+    whisper_pipe = get_pipeline()
 
     if whisper_pipe is None:
         logger.error("Failed to load streaming model for transcription")
@@ -393,7 +385,7 @@ async def stream_transcribe(websocket: WebSocket):
     4. Receive JSON: {"id": "s1", "text": "..."}
     """
     await websocket.accept()
-    logger.info(f"Stream connection established (model: {STREAMING_MODEL})")
+    logger.info(f"Stream connection established (model: {MODEL})")
 
     # Settings
     chunk_samples = int(SAMPLE_RATE * CHUNK_DURATION_SEC)

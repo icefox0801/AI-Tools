@@ -1,37 +1,35 @@
 #!/bin/bash
-# Pre-download Whisper models to cache volume using HuggingFace CLI
-# This script checks for cached models and prompts before downloading
+# Pre-download Whisper model to cache volume using HuggingFace CLI
+# This script automatically downloads the model without confirmation
 # The service uses local_files_only=True to avoid any network requests.
 
 set -e
 
-CACHE_DIR="${HF_HOME:-/root/.cache/huggingface}"
-MODELS_DIR="$CACHE_DIR/hub"
+# Transformers expects models in /root/.cache/huggingface/hub/
+CACHE_DIR="/root/.cache/huggingface/hub"
 
-mkdir -p "$MODELS_DIR"
+mkdir -p "$CACHE_DIR"
 
 echo "================================"
-echo "Whisper Models Setup"
+echo "Whisper Model Setup"
 echo "Cache directory: $CACHE_DIR"
 echo "================================"
 
 # Model information
-STREAMING_MODEL="openai/whisper-large-v3-turbo"
-OFFLINE_MODEL="openai/whisper-large-v3"
-TURBO_SIZE="~1.6GB"
-LARGE_SIZE="~3.1GB"
+MODEL="openai/whisper-large-v3-turbo"
 
 # Function to check if model is fully cached
 check_model_cached() {
     local model_id=$1
     echo "Checking cache for $model_id..."
     
-    # Use hf scan-cache to check if model exists and is complete
-    if hf scan-cache | grep -q "$model_id"; then
+    # Check if model directory exists and has no incomplete files
+    local model_dir="$CACHE_DIR/models--${model_id//\//-}"
+    if [ -d "$model_dir" ] && [ $(find "$model_dir/blobs" -name "*.incomplete" 2>/dev/null | wc -l) -eq 0 ]; then
         echo "✓ Model found in cache"
         return 0
     else
-        echo "✗ Model not in cache"
+        echo "✗ Model not in cache or incomplete"
         return 1
     fi
 }
@@ -39,19 +37,8 @@ check_model_cached() {
 # Function to download a model
 download_model() {
     local model_id=$1
-    local model_size=$2
     
     echo ""
-    echo "Model: $model_id"
-    echo "Size: $model_size"
-    read -p "Download this model? [y/N]: " -n 1 -r
-    echo
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Skipped $model_id"
-        return 1
-    fi
-    
     echo "Downloading $model_id using HuggingFace CLI..."
     if hf download "$model_id" --cache-dir "$CACHE_DIR"; then
         echo "✓ $model_id downloaded successfully"
@@ -62,22 +49,13 @@ download_model() {
     fi
 }
 
-# Check and download streaming model
+# Check and download model
 echo ""
-echo "1. Checking Streaming Model ($STREAMING_MODEL)..."
-if check_model_cached "$STREAMING_MODEL"; then
-    echo "Streaming model already cached, skipping download"
+echo "Checking Whisper Turbo Model ($MODEL)..."
+if check_model_cached "$MODEL"; then
+    echo "Model already cached, skipping download"
 else
-    download_model "$STREAMING_MODEL" "$TURBO_SIZE"
-fi
-
-# Check and download offline model
-echo ""
-echo "2. Checking Offline Model ($OFFLINE_MODEL)..."
-if check_model_cached "$OFFLINE_MODEL"; then
-    echo "Offline model already cached, skipping download"
-else
-    download_model "$OFFLINE_MODEL" "$LARGE_SIZE"
+    download_model "$MODEL"
 fi
 
 echo ""

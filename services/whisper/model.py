@@ -1,10 +1,7 @@
 """Model management for Whisper ASR service.
 
-Supports dual models:
-- Streaming: whisper-large-v3-turbo (fast, ~3GB VRAM)
-- Offline: whisper-large-v3 (accurate, ~10GB VRAM)
-
-Models are pre-downloaded to the cache volume.
+Uses whisper-large-v3-turbo for fast, accurate transcription (~3GB VRAM).
+Model is pre-downloaded to the cache volume.
 """
 
 import gc
@@ -14,16 +11,19 @@ from dataclasses import dataclass
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-from shared.logging import setup_logging
+from shared.core import clear_gpu_cache, get_gpu_manager
+from shared.utils import setup_logging
 
 logger = setup_logging(__name__)
+
+# Service name for GPU manager
+SERVICE_NAME = "whisper-asr"
 
 # ==============================================================================
 # Configuration
 # ==============================================================================
 
-STREAMING_MODEL = os.environ.get("WHISPER_STREAMING_MODEL", "openai/whisper-large-v3-turbo")
-OFFLINE_MODEL = os.environ.get("WHISPER_OFFLINE_MODEL", "openai/whisper-large-v3")
+MODEL = os.environ.get("WHISPER_MODEL", "openai/whisper-large-v3-turbo")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 SAMPLE_RATE = 16000
@@ -42,7 +42,7 @@ def setup_cuda():
     torch.backends.cudnn.enabled = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-    torch.cuda.empty_cache()
+    clear_gpu_cache()
 
     logger.info(f"CUDA device: {torch.cuda.get_device_name(0)}")
     logger.info("CUDA optimizations enabled")
@@ -55,17 +55,12 @@ def setup_cuda():
 
 @dataclass
 class ModelState:
-    """Container for Whisper models and pipelines."""
+    """Container for Whisper model and pipeline."""
 
-    # Streaming model (turbo - fast)
-    streaming_pipe: object | None = None
-    streaming_loaded: bool = False
-    streaming_model_name: str = ""
-
-    # Offline model (large-v3 - accurate)
-    offline_pipe: object | None = None
-    offline_loaded: bool = False
-    offline_model_name: str = ""
+    # Whisper turbo model
+    pipe: object | None = None
+    loaded: bool = False
+    model_name: str = ""
 
     # Flash attention availability
     use_flash_attn: bool = False
@@ -79,25 +74,16 @@ def get_model_state() -> ModelState:
     return _model_state
 
 
-def get_pipeline(mode: str = "streaming"):
-    """Get the Whisper pipeline for the specified mode. Auto-loads if not loaded.
-
-    Args:
-        mode: 'streaming' for turbo model, 'offline' for large-v3 model
+def get_pipeline():
+    """Get the Whisper pipeline. Auto-loads if not loaded.
 
     Returns:
         Transformers pipeline for automatic-speech-recognition
     """
-    if mode == "offline":
-        if not _model_state.offline_loaded:
-            logger.info("Offline model not loaded, auto-loading...")
-            load_model(mode="offline")
-        return _model_state.offline_pipe
-    else:
-        if not _model_state.streaming_loaded:
-            logger.info("Streaming model not loaded, auto-loading...")
-            load_model(mode="streaming")
-        return _model_state.streaming_pipe
+    if not _model_state.loaded:
+        logger.info("Model not loaded, auto-loading...")
+        load_model()
+    return _model_state.pipe
 
 
 # ==============================================================================
@@ -111,7 +97,7 @@ def _check_flash_attention() -> bool:
         return False
 
     try:
-        import flash_attn
+        import flash_attn  # noqa: F401
 
         logger.info("Flash Attention 2 available")
         return True
@@ -182,64 +168,83 @@ def _create_pipeline(model_name: str) -> object:
 
 
 def load_model(mode: str = "streaming"):
-    """Load Whisper model for the specified mode.
+    """Load Whisper model.
 
     Args:
-        mode: 'streaming' for turbo model, 'offline' for large-v3
+        mode: Kept for backward compatibility, ignored (always loads turbo)
     """
-    if mode == "offline":
-        if _model_state.offline_loaded:
-            logger.info("Offline model already loaded")
-            return
+    if _model_state.loaded:
+        logger.info("Model already loaded")
+        return
 
-        model_name = OFFLINE_MODEL
-        _model_state.offline_pipe = _create_pipeline(model_name)
-        _model_state.offline_loaded = True
-        _model_state.offline_model_name = model_name
+    model_name = MODEL
+    required_memory_gb = 4.0  # turbo + inference overhead
 
-    else:  # streaming
-        if _model_state.streaming_loaded:
-            logger.info("Streaming model already loaded")
-            return
+    # Request GPU memory from manager (will unload other services if needed)
+    gpu_mgr = get_gpu_manager()
+    if not gpu_mgr.request_memory(SERVICE_NAME, "whisper-turbo", required_memory_gb):
+        raise RuntimeError(
+            f"Insufficient GPU memory for model. Required: {required_memory_gb:.1f}GB"
+        )
 
-        model_name = STREAMING_MODEL
-        _model_state.streaming_pipe = _create_pipeline(model_name)
-        _model_state.streaming_loaded = True
-        _model_state.streaming_model_name = model_name
+    # Load the model
+    pipe = _create_pipeline(model_name)
+
+    # Store model
+    _model_state.pipe = pipe
+    _model_state.loaded = True
+    _model_state.model_name = model_name
+
+    # Register with GPU manager
+    if DEVICE == "cuda":
+        mem_gb = torch.cuda.memory_allocated() / 1024**3
+        gpu_mgr.register_model(
+            service_name=SERVICE_NAME,
+            model_name="whisper-turbo",
+            memory_gb=mem_gb,
+            unload_callback=_unload_model,
+        )
 
 
-def unload_model(mode: str = "all"):
-    """Unload model(s) from GPU to free memory.
+# ==============================================================================
+# Model Unloading
+# ==============================================================================
 
-    Args:
-        mode: 'streaming', 'offline', or 'all'
-    """
-    freed_memory = False
 
-    if mode in ("streaming", "all") and _model_state.streaming_loaded:
-        logger.info("Unloading streaming model...")
-        _model_state.streaming_pipe = None
-        _model_state.streaming_loaded = False
-        _model_state.streaming_model_name = ""
-        freed_memory = True
+def _unload_model() -> None:
+    """Internal helper to unload model."""
+    if _model_state.loaded:
+        if _model_state.pipe is not None:
+            del _model_state.pipe
+        _model_state.pipe = None
+        _model_state.loaded = False
 
-    if mode in ("offline", "all") and _model_state.offline_loaded:
-        logger.info("Unloading offline model...")
-        _model_state.offline_pipe = None
-        _model_state.offline_loaded = False
-        _model_state.offline_model_name = ""
-        freed_memory = True
-
-    if freed_memory:
-        gc.collect()
         if DEVICE == "cuda":
-            torch.cuda.empty_cache()
+            gc.collect()
+            clear_gpu_cache()
             torch.cuda.synchronize()
 
+        # Unregister from GPU manager
+        gpu_mgr = get_gpu_manager()
+        gpu_mgr.unregister_model(SERVICE_NAME, "whisper-turbo")
+
+        logger.info(f"Model unloaded ({_model_state.model_name})")
+        _model_state.model_name = ""
+
+
+def unload_model():
+    """Unload model from GPU to free memory."""
+    if _model_state.loaded:
+        model_name = _model_state.model_name
+        _unload_model()
+
+        if DEVICE == "cuda":
             free_mem = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
             total_mem = torch.cuda.get_device_properties(0).total_memory
             logger.info(
-                f"GPU memory freed. Available: {free_mem/1e9:.2f}GB / {total_mem/1e9:.2f}GB"
+                f"Model unloaded: {model_name}. "
+                f"Available: {free_mem/1e9:.2f}GB / {total_mem/1e9:.2f}GB"
             )
+        return True
 
-    return freed_memory
+    return False

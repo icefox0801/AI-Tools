@@ -1,4 +1,4 @@
-# Whisper Large V3 - GPU ASR Service (Dual Model: Turbo + Large-v3)
+# Whisper Turbo - GPU ASR Service
 FROM nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
@@ -36,11 +36,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY --from=shared . /app/shared/
 
 # Copy application code
-COPY model.py .
-COPY whisper_service.py .
+COPY model.py whisper_service.py ./
+
+# Copy download script LAST (changes here won't invalidate above layers)
 COPY download_models.sh .
 
-# Models are pre-downloaded to the cache volume (whisper-hf-cache)
+# Model is pre-downloaded to the cache volume (whisper-hf-cache)
 # No download happens during Docker build or runtime - all network requests avoided
 # Use download_models.sh for initial setup
 
