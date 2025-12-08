@@ -11,8 +11,8 @@
         "."
     ],
     
-    // Terminal - auto-activate venv in bash
-    "terminal.integrated.defaultProfile.windows": "Git Bash",
+    // Terminal - use PowerShell
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
     "terminal.integrated.env.windows": {
         "PATH": "${workspaceFolder}\\.venv\\Scripts;${env:PATH}",
         "VIRTUAL_ENV": "${workspaceFolder}\\.venv"
