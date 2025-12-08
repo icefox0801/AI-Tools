@@ -17,7 +17,9 @@ Usage:
   python live_captions.py --list-devices     # Show available devices
 """
 
+import atexit
 import os
+import signal
 import sys
 
 # Add project root to path for shared module
@@ -43,6 +45,8 @@ from src.audio import (
     AudioRecorder,
     MicrophoneCapture,
     SystemAudioCapture,
+    check_stop_requested,
+    clear_stop_request,
     list_devices,
     set_recorder,
 )
@@ -259,6 +263,10 @@ class LiveCaptions:
 
     def close(self):
         """Close the application."""
+        # Prevent double-close
+        if not self.running and not self.recorder:
+            return
+
         self.running = False
 
         if self.asr_client:
@@ -268,12 +276,18 @@ class LiveCaptions:
 
         # Save recording on close
         if self.recorder and self.recorder.is_recording:
+            logger.info("Saving recording before shutdown...")
             saved_path = self.recorder.stop()
             if saved_path:
                 logger.info(f"Recording saved: {saved_path}")
 
         if self.window:
             self.window.close()
+
+    def _signal_handler(self, signum, frame):
+        """Handle termination signals gracefully."""
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        self.running = False
 
     def run(self):
         """Run the application."""
@@ -285,12 +299,31 @@ class LiveCaptions:
         # Headless (recording-only) mode - start audio capture but no window
         if self.headless_mode:
             logger.info("Running in headless mode (recording only, no window)")
+
+            # Clear any stale stop request from previous run
+            clear_stop_request()
+
+            # Set up signal handlers for graceful shutdown
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
+            if sys.platform == "win32":
+                signal.signal(signal.SIGBREAK, self._signal_handler)
+
+            # Register atexit handler to save recording
+            atexit.register(self.close)
+
             self._start_audio_capture()
-            # Keep running until stopped
+            # Keep running until stopped (via signal, keyboard, or stop request file)
             try:
                 while self.running:
+                    # Check for stop request from tray app (Windows IPC)
+                    if check_stop_requested():
+                        logger.info("Stop request received from tray app")
+                        break
                     time.sleep(0.1)
             except KeyboardInterrupt:
+                pass
+            finally:
                 self.close()
             return
 
