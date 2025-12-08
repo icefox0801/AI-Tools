@@ -38,8 +38,8 @@ from model import (
     unload_models,
 )
 
-from shared.logging import setup_logging
 from shared.text_refiner import capitalize_text, check_text_refiner, get_client, refine_text
+from shared.utils import setup_logging
 
 # ==============================================================================
 # Configuration

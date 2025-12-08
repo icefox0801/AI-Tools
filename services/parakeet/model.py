@@ -1,13 +1,21 @@
 """Model management for Parakeet ASR service."""
 
+import logging
 import os
 from dataclasses import dataclass
 
 import torch
 
-from shared.logging import setup_logging
+from shared.core import clear_gpu_cache, get_gpu_manager
+from shared.utils import setup_logging
 
 logger = setup_logging(__name__)
+
+# Suppress NeMo warnings about training/validation/test data
+logging.getLogger("nemo_logger").setLevel(logging.ERROR)
+
+# Service name for GPU manager
+SERVICE_NAME = "parakeet-asr"
 
 # ==============================================================================
 # Configuration
@@ -31,7 +39,7 @@ def setup_cuda():
     torch.backends.cudnn.enabled = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-    torch.cuda.empty_cache()
+    clear_gpu_cache()
 
     logger.info("CUDA optimizations enabled")
 
@@ -66,7 +74,10 @@ def get_model_state() -> ModelState:
 
 
 def get_model(mode: str = "streaming"):
-    """Get the loaded ASR model for the specified mode. Auto-loads if not loaded."""
+    """Get the loaded ASR model for the specified mode. Auto-loads if not loaded.
+
+    Uses GPU manager to coordinate memory across services.
+    """
     if mode == "offline":
         if not _model_state.offline_loaded:
             logger.info("Offline model not loaded, auto-loading...")
@@ -102,16 +113,33 @@ def load_model(mode: str = "streaming"):
     Args:
         mode: "streaming" for TDT model (FP16) or "offline" for RNNT model (FP32)
     """
+    # Unload the other model if loading a different one
+    if mode == "offline" and _model_state.streaming_loaded:
+        logger.info("Unloading streaming model to load offline model...")
+        _unload_streaming()
+    elif mode == "streaming" and _model_state.offline_loaded:
+        logger.info("Unloading offline model to load streaming model...")
+        _unload_offline()
+
     if mode == "offline":
         if _model_state.offline_loaded:
             return _model_state.offline_model
         model_name = OFFLINE_MODEL
         use_fp16 = False  # RNNT uses FP32 for best accuracy
+        required_memory_gb = 12.0  # Offline model + NeMo dataloader + inference overhead
     else:
         if _model_state.streaming_loaded:
             return _model_state.streaming_model
         model_name = STREAMING_MODEL
         use_fp16 = True  # TDT can use FP16
+        required_memory_gb = 6.5  # Streaming model + overhead
+
+    # Request GPU memory from manager (will unload other services if needed)
+    gpu_mgr = get_gpu_manager()
+    if not gpu_mgr.request_memory(SERVICE_NAME, mode, required_memory_gb):
+        raise RuntimeError(
+            f"Insufficient GPU memory for {mode} model. " f"Required: {required_memory_gb:.1f}GB"
+        )
 
     logger.info(f"Loading {mode} model: {model_name}")
     logger.info(f"Device: {DEVICE}, FP16: {use_fp16}")
@@ -157,6 +185,17 @@ def load_model(mode: str = "streaming"):
         if DEVICE == "cuda":
             mem_gb = torch.cuda.memory_allocated() / 1024**3
             logger.info(f"GPU memory allocated: {mem_gb:.2f} GB")
+
+            # Register with GPU manager
+            gpu_mgr = get_gpu_manager()
+            gpu_mgr.register_model(
+                service_name=SERVICE_NAME,
+                model_name=mode,
+                memory_gb=mem_gb,
+                unload_callback=lambda: (
+                    _unload_streaming() if mode == "streaming" else _unload_offline()
+                ),
+            )
 
         logger.info(f"{mode.capitalize()} model loaded successfully")
         return model
@@ -206,17 +245,10 @@ def _warmup_model(model, mode: str = "streaming"):
         logger.warning(f"GPU warmup skipped: {e}")
 
 
-def unload_models() -> dict:
-    """Unload all models from GPU to free memory.
-
-    Returns:
-        Dict with status and unloaded models info
-    """
+def _unload_streaming() -> None:
+    """Internal helper to unload streaming model only."""
     import gc
 
-    models_unloaded = []
-
-    # Unload streaming model
     if _model_state.streaming_loaded:
         if _model_state.streaming_model is not None:
             del _model_state.streaming_model
@@ -224,11 +256,25 @@ def unload_models() -> dict:
             del _model_state.streaming_preprocessor
         _model_state.streaming_model = None
         _model_state.streaming_preprocessor = None
-        models_unloaded.append(f"streaming ({_model_state.streaming_model_name})")
         _model_state.streaming_loaded = False
+
+        if DEVICE == "cuda":
+            gc.collect()
+            clear_gpu_cache()
+            torch.cuda.synchronize()
+
+        # Unregister from GPU manager
+        gpu_mgr = get_gpu_manager()
+        gpu_mgr.unregister_model(SERVICE_NAME, "streaming")
+
+        logger.info(f"Streaming model unloaded ({_model_state.streaming_model_name})")
         _model_state.streaming_model_name = ""
 
-    # Unload offline model
+
+def _unload_offline() -> None:
+    """Internal helper to unload offline model only."""
+    import gc
+
     if _model_state.offline_loaded:
         if _model_state.offline_model is not None:
             del _model_state.offline_model
@@ -236,18 +282,45 @@ def unload_models() -> dict:
             del _model_state.offline_preprocessor
         _model_state.offline_model = None
         _model_state.offline_preprocessor = None
-        models_unloaded.append(f"offline ({_model_state.offline_model_name})")
         _model_state.offline_loaded = False
+
+        if DEVICE == "cuda":
+            gc.collect()
+            clear_gpu_cache()
+            torch.cuda.synchronize()
+
+        # Unregister from GPU manager
+        gpu_mgr = get_gpu_manager()
+        gpu_mgr.unregister_model(SERVICE_NAME, "offline")
+
+        logger.info(f"Offline model unloaded ({_model_state.offline_model_name})")
         _model_state.offline_model_name = ""
+
+
+def unload_models() -> dict:
+    """Unload all models from GPU to free memory.
+
+    Returns:
+        Dict with status and unloaded models info
+    """
+    models_unloaded = []
+
+    # Unload streaming model
+    if _model_state.streaming_loaded:
+        model_name = _model_state.streaming_model_name
+        _unload_streaming()
+        models_unloaded.append(f"streaming ({model_name})")
+
+    # Unload offline model
+    if _model_state.offline_loaded:
+        model_name = _model_state.offline_model_name
+        _unload_offline()
+        models_unloaded.append(f"offline ({model_name})")
 
     if not models_unloaded:
         return {"status": "not_loaded", "message": "No models were loaded"}
 
-    gc.collect()
-
     if DEVICE == "cuda":
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
         free_mem = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
         total_mem = torch.cuda.get_device_properties(0).total_memory
         logger.info(

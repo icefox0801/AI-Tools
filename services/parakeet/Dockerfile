@@ -42,12 +42,14 @@ COPY requirements.docker.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install Cython && pip install -r requirements.docker.txt
 
-# Copy application code LAST (changes here won't re-download pip packages)
-COPY parakeet_service.py audio.py model.py ./
-COPY download_models.sh .
-
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/
+
+# Copy application code
+COPY parakeet_service.py audio.py model.py ./
+
+# Copy download script LAST (changes here won't invalidate above layers)
+COPY download_models.sh .
 
 # Expose port
 EXPOSE 8000
