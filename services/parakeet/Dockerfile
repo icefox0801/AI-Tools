@@ -44,6 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Copy application code LAST (changes here won't re-download pip packages)
 COPY parakeet_service.py audio.py model.py ./
+COPY download_models.sh .
 
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/

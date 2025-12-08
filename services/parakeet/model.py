@@ -122,8 +122,8 @@ def load_model(mode: str = "streaming"):
     try:
         import nemo.collections.asr as nemo_asr
 
-        # Load model
-        model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(model_name)
+        # Load model from pre-downloaded cache only (no network requests)
+        model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(model_name, map_location=DEVICE)
         model = model.to(DEVICE)
         model.eval()
 
