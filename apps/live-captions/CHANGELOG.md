@@ -7,14 +7,7 @@ All notable changes to Live Captions will be documented in this file.
 ### Added
 - Version display in tray menu
 - Double-click to start/stop
-- Prompt when no audio detected
-
-### Changed
-- More frequent auto-save (every 30s)
-
-### Fixed
-- Tray icon flickering
-- Recording saves reliably on stop
+- No-audio detection prompt
 
 ## [1.2] - 2025-12-05
 

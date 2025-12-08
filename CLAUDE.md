@@ -205,11 +205,21 @@ Each app/service has a `CHANGELOG.md` following [Keep a Changelog](https://keepa
 **Version Format**: MAJOR.MINOR (e.g., 1.0, 1.1, 2.0)
 
 **Entry Guidelines**:
-- Focus on **user-facing features and functionality**
+- Only include changes **users will notice**
 - Keep entries **concise** (1 line per item, under 10 words)
 - Write from user perspective, not developer perspective
-- Omit internal details (tests, refactors, implementation)
-- No technical jargon (IPC, subprocess, state tracking)
+- Omit internal fixes and implementation details
+
+**Notable (include)**:
+- New UI elements user can see
+- Changed behavior user will notice
+- Features user can interact with
+
+**Not notable (omit)**:
+- Background reliability improvements
+- Performance optimizations user won't perceive
+- Internal bug fixes (flickering, timing, etc.)
+- Auto-save frequency changes
 
 **Sections** (only include if applicable):
 - `Added` - New features
@@ -221,15 +231,14 @@ Each app/service has a `CHANGELOG.md` following [Keep a Changelog](https://keepa
 - ✅ "Version display in tray menu"
 - ✅ "Double-click to start/stop"
 - ✅ "Language selector in tray menu"
-- ✅ "More frequent auto-save (every 30s)"
+- ✅ "No-audio detection prompt"
 
-**Bad examples (too technical/verbose)**:
-- ❌ "Graceful shutdown via file-based IPC" → ✅ "Recording saves reliably on stop"
-- ❌ "10-second no-audio detection with stop confirmation" → ✅ "Prompt to stop when no audio detected"
-- ❌ "Upload timing: 3s initial, 30s second, then every 30s" → ✅ "More frequent auto-save"
-- ❌ "Icon flickering when monitoring status (state tracking)" → ✅ "Tray icon flickering"
-- ❌ "Add unit tests for X" (internal, omit entirely)
-- ❌ "Increased shutdown timeout from 3s to 10s" (implementation detail, omit)
+**Bad examples (omit entirely)**:
+- ❌ "Recording saves reliably on stop" (background fix)
+- ❌ "More frequent auto-save" (user doesn't notice)
+- ❌ "Tray icon flickering" (minor internal fix)
+- ❌ "Add unit tests for X" (internal)
+- ❌ "Increased shutdown timeout" (implementation)
 
 ## Git Commit Guidelines
 
