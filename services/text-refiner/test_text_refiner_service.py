@@ -401,7 +401,7 @@ class TestModelLoading:
 
     def test_model_configuration(self):
         """Test model names are configured correctly."""
-        from text_refiner_service import PUNCTUATION_MODEL, CORRECTION_MODEL
+        from text_refiner_service import CORRECTION_MODEL, PUNCTUATION_MODEL
 
         assert PUNCTUATION_MODEL == "pcs_en"
         assert CORRECTION_MODEL == "oliverguhr/spelling-correction-english-base"

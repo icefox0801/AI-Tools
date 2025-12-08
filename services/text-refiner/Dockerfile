@@ -39,12 +39,14 @@ RUN python -c "from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; \
     AutoTokenizer.from_pretrained('oliverguhr/spelling-correction-english-base'); \
     AutoModelForSeq2SeqLM.from_pretrained('oliverguhr/spelling-correction-english-base')"
 
-# Copy application
-COPY text_refiner_service.py .
-COPY download_models.sh .
-
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/
+
+# Copy application code
+COPY text_refiner_service.py ./
+
+# Copy download script LAST
+COPY download_models.sh .
 
 EXPOSE 8000
 
