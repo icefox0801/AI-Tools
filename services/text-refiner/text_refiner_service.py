@@ -86,10 +86,8 @@ def get_punctuation_model():
             from punctuators.models import PunctCapSegModelONNX
 
             logger.info(f"Loading punctuation model: {PUNCTUATION_MODEL}")
-            # Load from pre-downloaded cache only (no network requests)
-            _punctuation_model = PunctCapSegModelONNX.from_pretrained(
-                PUNCTUATION_MODEL, local_files_only=True
-            )
+            # PunctCapSegModelONNX doesn't support local_files_only (uses cache by default)
+            _punctuation_model = PunctCapSegModelONNX.from_pretrained(PUNCTUATION_MODEL)
             logger.info("Punctuation model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load punctuation model: {e}")
