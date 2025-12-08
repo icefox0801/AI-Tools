@@ -27,6 +27,8 @@ datas = [
     ('src', 'src'),
     # Include shared modules
     (os.path.join(project_root, 'shared'), 'shared'),
+    # Include build timestamp
+    ('build_time.txt', '.'),
 ]
 
 # Add icon if exists

@@ -37,6 +37,13 @@ echo Cleaning previous build...
 if exist "dist\Live Captions.exe" del "dist\Live Captions.exe"
 if exist "build\Live Captions" rmdir /s /q "build\Live Captions"
 
+REM Generate build timestamp file (format: YYYYMMDDHHmm)
+echo.
+echo Generating build timestamp...
+for /f %%I in ('powershell -Command "Get-Date -Format 'yyyyMMddHHmm'"') do set BUILD_TIME=%%I
+echo %BUILD_TIME%> build_time.txt
+echo Build time: %BUILD_TIME%
+
 REM Build with PyInstaller
 echo.
 echo Building executable...
@@ -62,6 +69,3 @@ if exist "dist\Live Captions.exe" (
     echo Build failed! Check the output above for errors.
     exit /b 1
 )
-
-echo.
-pause
