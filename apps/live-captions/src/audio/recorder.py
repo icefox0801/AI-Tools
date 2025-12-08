@@ -29,7 +29,8 @@ CHANNELS = 1
 
 # Auto-upload timing
 INITIAL_UPLOAD_DELAY = 3  # First upload after 3 seconds of audio
-AUTO_UPLOAD_INTERVAL = 60  # Then upload every 60 seconds (1 minute)
+SECOND_UPLOAD_DELAY = 27  # Second upload 27 seconds after first (at 30s total)
+AUTO_UPLOAD_INTERVAL = 30  # Then upload every 30 seconds
 
 # Audio Notes API URL (default for local development)
 AUDIO_NOTES_API = os.getenv("AUDIO_NOTES_URL", "http://localhost:7860")
@@ -70,6 +71,7 @@ class AudioRecorder:
 
         # Track total bytes for duration calculation
         self._total_bytes = 0
+        self._last_audio_time: datetime | None = None  # Track when audio was last received
 
         # Auto-upload state
         self._upload_timer: threading.Timer | None = None
@@ -122,6 +124,7 @@ class AudioRecorder:
             self._start_time = datetime.now()
             self._recording = True
             self._first_upload_done = False
+            self._second_upload_done = False
             self._last_upload_bytes = 0
 
             # Generate filename with timestamp
@@ -190,8 +193,16 @@ class AudioRecorder:
         if self._upload_timer:
             self._upload_timer.cancel()
 
-        # Use shorter delay for first upload, then regular interval
-        delay = INITIAL_UPLOAD_DELAY if not self._first_upload_done else AUTO_UPLOAD_INTERVAL
+        # Determine delay based on upload stage:
+        # - First upload: 3 seconds
+        # - Second upload: 27 seconds after first (at 30s total)
+        # - After that: every 30 seconds
+        if not self._first_upload_done:
+            delay = INITIAL_UPLOAD_DELAY
+        elif not self._second_upload_done:
+            delay = SECOND_UPLOAD_DELAY
+        else:
+            delay = AUTO_UPLOAD_INTERVAL
 
         self._upload_timer = threading.Timer(delay, self._auto_upload)
         self._upload_timer.daemon = True
@@ -220,12 +231,21 @@ class AudioRecorder:
 
                 if self._upload_to_api(audio_data):
                     self._last_upload_bytes = self._total_bytes
-                    upload_type = "Initial" if not self._first_upload_done else "Auto"
+                    if not self._first_upload_done:
+                        upload_type = "Initial"
+                    elif not self._second_upload_done:
+                        upload_type = "Second"
+                    else:
+                        upload_type = "Auto"
                     logger.info(
                         f"{upload_type} upload: {self.duration_str}, {self.file_size_mb:.1f} MB"
                     )
 
-                self._first_upload_done = True
+                # Track upload stages
+                if not self._first_upload_done:
+                    self._first_upload_done = True
+                elif not self._second_upload_done:
+                    self._second_upload_done = True
 
         # Schedule next upload
         if self._recording:
@@ -263,6 +283,7 @@ class AudioRecorder:
         with self._lock:
             self._chunks.append(audio_bytes)
             self._total_bytes += len(audio_bytes)
+            self._last_audio_time = datetime.now()  # Track last audio time
 
         # Notify duration change
         if self.on_duration_change:
@@ -332,6 +353,9 @@ class AudioRecorder:
                 status = {
                     "recording": True,
                     "start_time": self._start_time.isoformat() if self._start_time else None,
+                    "last_audio_time": (
+                        self._last_audio_time.isoformat() if self._last_audio_time else None
+                    ),
                     "duration": self.duration,
                     "duration_str": self.duration_str,
                 }
@@ -352,11 +376,50 @@ def get_status_file_path():
     return Path(os.environ.get("TEMP", "/tmp")) / "live_captions_recording.json"
 
 
-def read_recording_status() -> tuple[bool, str, float]:
+def get_stop_request_file_path():
+    """Get the path for the stop request file (IPC for graceful shutdown)."""
+    from pathlib import Path
+
+    return Path(os.environ.get("TEMP", "/tmp")) / "live_captions_stop_request"
+
+
+def request_stop():
+    """Write a stop request file (called by tray app)."""
+    try:
+        stop_file = get_stop_request_file_path()
+        stop_file.touch()
+        logger.debug(f"Stop request written: {stop_file}")
+    except Exception as e:
+        logger.warning(f"Failed to write stop request: {e}")
+
+
+def check_stop_requested() -> bool:
+    """Check if a stop request has been made (called by subprocess)."""
+    try:
+        stop_file = get_stop_request_file_path()
+        if stop_file.exists():
+            stop_file.unlink()  # Remove the file after reading
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def clear_stop_request():
+    """Clear any existing stop request file."""
+    try:
+        stop_file = get_stop_request_file_path()
+        if stop_file.exists():
+            stop_file.unlink()
+    except Exception:
+        pass
+
+
+def read_recording_status() -> tuple[bool, str, float, float]:
     """Read recording status from the status file (for tray app).
 
     Returns:
-        Tuple of (is_recording, duration_str, duration_seconds)
+        Tuple of (is_recording, duration_str, duration_seconds, seconds_since_last_audio)
     """
     try:
         import json
@@ -364,19 +427,26 @@ def read_recording_status() -> tuple[bool, str, float]:
 
         status_file = get_status_file_path()
         if not status_file.exists():
-            return False, "00:00", 0.0
+            return False, "00:00", 0.0, 0.0
 
         # Check if file is stale (older than 5 seconds means process died)
         import time
 
         if time.time() - status_file.stat().st_mtime > 5:
-            return False, "00:00", 0.0
+            return False, "00:00", 0.0, 0.0
 
         with open(status_file, "r") as f:
             status = json.load(f)
 
         if not status.get("recording"):
-            return False, "00:00", 0.0
+            return False, "00:00", 0.0, 0.0
+
+        # Calculate seconds since last audio
+        seconds_since_audio = 0.0
+        last_audio_str = status.get("last_audio_time")
+        if last_audio_str:
+            last_audio_time = datetime.fromisoformat(last_audio_str)
+            seconds_since_audio = (datetime.now() - last_audio_time).total_seconds()
 
         # Calculate current duration from start_time
         start_time_str = status.get("start_time")
@@ -386,11 +456,16 @@ def read_recording_status() -> tuple[bool, str, float]:
             mins = int(duration // 60)
             secs = int(duration % 60)
             duration_str = f"{mins:02d}:{secs:02d}"
-            return True, duration_str, duration
+            return True, duration_str, duration, seconds_since_audio
 
-        return True, status.get("duration_str", "00:00"), status.get("duration", 0.0)
+        return (
+            True,
+            status.get("duration_str", "00:00"),
+            status.get("duration", 0.0),
+            seconds_since_audio,
+        )
     except Exception:
-        return False, "00:00", 0.0
+        return False, "00:00", 0.0, 0.0
 
 
 # Global recorder instance for tray app access

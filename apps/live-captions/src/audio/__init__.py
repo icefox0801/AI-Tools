@@ -2,7 +2,15 @@
 
 from .capture import AudioCapture, MicrophoneCapture, SystemAudioCapture
 from .devices import get_default_loopback_info, get_default_microphone_info, list_devices
-from .recorder import AudioRecorder, get_recorder, read_recording_status, set_recorder
+from .recorder import (
+    AudioRecorder,
+    check_stop_requested,
+    clear_stop_request,
+    get_recorder,
+    read_recording_status,
+    request_stop,
+    set_recorder,
+)
 from .utils import (
     CHUNK_DURATION_MS,
     TARGET_SAMPLE_RATE,
@@ -28,8 +36,11 @@ __all__ = [
     # Device functions
     "list_devices",
     "read_recording_status",
+    "request_stop",
     # Utility functions
     "resample_audio",
     "set_recorder",
     "stereo_to_mono",
+    "check_stop_requested",
+    "clear_stop_request",
 ]
