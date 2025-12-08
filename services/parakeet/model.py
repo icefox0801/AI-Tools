@@ -113,20 +113,13 @@ def load_model(mode: str = "streaming"):
     Args:
         mode: "streaming" for TDT model (FP16) or "offline" for RNNT model (FP32)
     """
-    # Unload the other model if loading a different one
-    if mode == "offline" and _model_state.streaming_loaded:
-        logger.info("Unloading streaming model to load offline model...")
-        _unload_streaming()
-    elif mode == "streaming" and _model_state.offline_loaded:
-        logger.info("Unloading offline model to load streaming model...")
-        _unload_offline()
-
     if mode == "offline":
         if _model_state.offline_loaded:
             return _model_state.offline_model
         model_name = OFFLINE_MODEL
         use_fp16 = False  # RNNT uses FP32 for best accuracy
-        required_memory_gb = 12.0  # Offline model + NeMo dataloader + inference overhead
+        # Offline model (8GB) + NeMo dataloader (3GB) + inference buffers (3GB) = 14GB
+        required_memory_gb = 14.0
     else:
         if _model_state.streaming_loaded:
             return _model_state.streaming_model
@@ -140,6 +133,10 @@ def load_model(mode: str = "streaming"):
         raise RuntimeError(
             f"Insufficient GPU memory for {mode} model. " f"Required: {required_memory_gb:.1f}GB"
         )
+
+    # Clear GPU cache before loading to maximize available memory
+    if DEVICE == "cuda":
+        clear_gpu_cache()
 
     logger.info(f"Loading {mode} model: {model_name}")
     logger.info(f"Device: {DEVICE}, FP16: {use_fp16}")
