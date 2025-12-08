@@ -18,15 +18,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Copy service code
 COPY vosk_service.py .
-COPY download_model.sh .
-RUN chmod +x download_model.sh
+COPY download_models.sh .
+RUN chmod +x download_models.sh
 
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/
 
 # Model will be mounted as volume at /app/model
-# Download script runs on startup if model is missing
+# Run download_models.sh manually before starting service
 
 EXPOSE 8000
 
-CMD ["./download_model.sh"]
+CMD ["python", "vosk_service.py"]
