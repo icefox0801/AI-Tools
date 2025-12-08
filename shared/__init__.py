@@ -28,16 +28,13 @@ from .core import (
 )
 from .utils import get_logger, setup_logging
 
-# Text refiner (backward compatibility - re-export from utils.text_refiner)
-from .utils.text_refiner import (
+# Text refiner
+from .text_refiner import (
     capitalize_text,
     check_text_refiner,
     get_client,
     refine_text,
 )
-
-# Create backward-compatible module alias
-from .utils import text_refiner
 
 __all__ = [
     "BACKEND",

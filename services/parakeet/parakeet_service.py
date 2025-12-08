@@ -38,13 +38,13 @@ from model import (
     unload_models,
 )
 
-from shared.utils import setup_logging
-from shared.utils.text_refiner import (
+from shared.text_refiner import (
     capitalize_text,
     check_text_refiner,
     get_client,
     refine_text,
 )
+from shared.utils import setup_logging
 
 # ==============================================================================
 # Configuration
