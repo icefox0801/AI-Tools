@@ -215,7 +215,7 @@ class TestParakeetASR:
 
 
 class TestWhisperASR:
-    """End-to-end tests for Whisper ASR service."""
+    """End-to-end tests for Whisper ASR service with dual model support."""
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self, whisper_service: dict[str, Any]) -> None:
@@ -228,6 +228,43 @@ class TestWhisperASR:
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "healthy"
+
+    @pytest.mark.asyncio
+    async def test_health_shows_dual_models(self, whisper_service: dict[str, Any]) -> None:
+        """Test health endpoint shows both streaming and offline models."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}{whisper_service['health_endpoint']}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            assert response.status_code == 200
+            data = response.json()
+
+            # Check for dual model fields
+            assert "streaming_model" in data, "Expected streaming_model in health response"
+            assert "offline_model" in data, "Expected offline_model in health response"
+            assert "streaming_loaded" in data, "Expected streaming_loaded status"
+            assert "offline_loaded" in data, "Expected offline_loaded status"
+
+            # Verify model names
+            assert "whisper-large-v3-turbo" in data["streaming_model"]
+            assert "whisper-large-v3" in data["offline_model"]
+
+    @pytest.mark.asyncio
+    async def test_info_endpoint(self, whisper_service: dict[str, Any]) -> None:
+        """Test Whisper info endpoint shows dual model configuration."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}/info"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            assert response.status_code == 200
+            data = response.json()
+
+            assert data["service"] == "whisper-asr"
+            assert "streaming_model" in data
+            assert "offline_model" in data
+            assert "version" in data
 
     @pytest.mark.asyncio
     async def test_websocket_streaming(
@@ -274,7 +311,7 @@ class TestWhisperASR:
     async def test_transcribe_endpoint(
         self, whisper_service: dict[str, Any], hello_audio: bytes
     ) -> None:
-        """Test Whisper /transcribe file upload endpoint."""
+        """Test Whisper /transcribe uses offline model (large-v3)."""
         import httpx
 
         url = f"http://{whisper_service['host']}:{whisper_service['port']}/transcribe"
@@ -294,9 +331,87 @@ class TestWhisperASR:
             # Should have duration
             assert "duration" in data
 
+            # Should indicate which model was used
+            assert "model" in data, "Expected 'model' field in response"
+            assert (
+                "whisper-large-v3" in data["model"]
+            ), "Expected offline model (large-v3) for transcribe"
+
             # Text should contain "hello"
             text = data["text"].lower()
             assert "hello" in text, f"Expected 'hello' in transcription, got: {text}"
+
+    @pytest.mark.asyncio
+    async def test_transcribe_with_language(
+        self, whisper_service: dict[str, Any], hello_audio: bytes
+    ) -> None:
+        """Test Whisper /transcribe with language parameter."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}/transcribe"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            files = {"file": ("test.wav", hello_audio, "audio/wav")}
+            data_form = {"language": "en"}
+            response = await client.post(url, files=files, data=data_form)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "text" in data
+            assert len(data["text"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_unload_streaming_model(self, whisper_service: dict[str, Any]) -> None:
+        """Test unloading streaming model only."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}/unload"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, params={"mode": "streaming"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] in ["unloaded", "not_loaded"]
+
+    @pytest.mark.asyncio
+    async def test_unload_offline_model(self, whisper_service: dict[str, Any]) -> None:
+        """Test unloading offline model only."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}/unload"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, params={"mode": "offline"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] in ["unloaded", "not_loaded"]
+
+    @pytest.mark.asyncio
+    async def test_unload_all_models(self, whisper_service: dict[str, Any]) -> None:
+        """Test unloading all models."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}/unload"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, params={"mode": "all"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] in ["unloaded", "not_loaded"]
+
+    @pytest.mark.asyncio
+    async def test_unload_invalid_mode(self, whisper_service: dict[str, Any]) -> None:
+        """Test unload with invalid mode returns error."""
+        import httpx
+
+        url = f"http://{whisper_service['host']}:{whisper_service['port']}/unload"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, params={"mode": "invalid_mode"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+            assert "Invalid mode" in data["message"]
 
 
 class TestTextRefiner:
