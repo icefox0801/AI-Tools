@@ -11,6 +11,7 @@ Features:
 - Right-click menu to select backends or audio source
 - Shows running status in tray tooltip
 - High DPI support for crisp icons
+- 10s no-audio detection in recording-only mode
 
 Usage:
   python live_captions_tray.py           # Run as tray app
@@ -65,7 +66,7 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from shared.config import BACKENDS
-from src.audio.recorder import read_recording_status
+from src.audio.recorder import read_recording_status, request_stop
 
 # Setup logging
 logging.basicConfig(
@@ -148,7 +149,25 @@ def check_all_backends() -> dict[str, tuple[bool, str]]:
 # ==============================================================================
 
 APP_NAME = "Live Captions"
+APP_VERSION = "1.3"
 DEFAULT_BACKEND = "whisper"
+
+
+def get_build_time() -> str:
+    """Get build timestamp from build_time.txt file."""
+    try:
+        # When frozen (PyInstaller), files are in sys._MEIPASS
+        if getattr(sys, "frozen", False):
+            base_path = Path(sys._MEIPASS)
+        else:
+            base_path = Path(__file__).parent
+        build_file = base_path / "build_time.txt"
+        if build_file.exists():
+            return build_file.read_text().strip()
+    except Exception:
+        pass
+    return ""
+
 
 # Detect if running as frozen executable (PyInstaller)
 IS_FROZEN = getattr(sys, "frozen", False)
@@ -218,6 +237,8 @@ class LiveCaptionsTray:
         self._running = True  # For background thread
         self._last_running_state = False  # Track state changes
         self._animation_frame = 0  # For pulsing animation
+        self._last_icon_state = None  # Track icon state to prevent flickering
+        self._no_audio_prompted = False  # Track if no-audio prompt was shown
         self._check_backends()  # Initial check
 
         # Start background status monitor
@@ -241,42 +262,98 @@ class LiveCaptionsTray:
         """Background thread to monitor process status, recording, and sync icon."""
         import time
 
-        last_recording_duration = ""
-
         while self._running:
             try:
                 # Check if running state changed
                 current_running = self.is_running()
-                if current_running != self._last_running_state:
+                state_changed = current_running != self._last_running_state
+                if state_changed:
                     logger.info(f"Status changed: {'Running' if current_running else 'Stopped'}")
                     self._last_running_state = current_running
+                    # Reset no-audio tracking on state change
+                    self._no_audio_prompted = False
 
-                # Check recording status
-                is_recording, duration_str, _ = self.get_recording_info()
-                duration_changed = is_recording and duration_str != last_recording_duration
-                recording_stopped = not is_recording and last_recording_duration
+                # Check recording status (now includes seconds_since_last_audio)
+                is_recording, duration_str, duration_seconds, seconds_since_audio = (
+                    self.get_recording_info()
+                )
 
-                if duration_changed:
-                    last_recording_duration = duration_str
-                elif recording_stopped:
-                    last_recording_duration = ""
+                # Check for 10s no-audio in recording-only mode
+                if (
+                    current_running
+                    and self.enable_recording
+                    and not self.enable_transcription
+                    and is_recording
+                    and seconds_since_audio >= 10.0
+                    and not self._no_audio_prompted
+                ):
+                    # 10 seconds of no new audio - prompt user
+                    self._no_audio_prompted = True
+                    self._prompt_no_audio_stop()
+                elif seconds_since_audio < 10.0:
+                    # Audio received, reset prompt flag
+                    self._no_audio_prompted = False
 
-                # Animate icon when running - advance frame every 500ms
-                # Also update when recording duration changes (for tooltip)
+                # Update icon based on running state
                 if current_running:
+                    # Advance animation frame
                     new_frame = (self._animation_frame + 1) % 3
-                    self._animation_frame = new_frame
-                    self.update_icon()  # Always update when running (for animation + tooltip)
-                elif self._animation_frame != 0:
-                    # Reset animation when stopped
-                    self._animation_frame = 0
-                    self.update_icon()
+
+                    # Build current icon state tuple for comparison
+                    # Use new_frame to check if we need to update
+                    current_icon_state = (
+                        current_running,
+                        is_recording,
+                        new_frame,
+                        duration_str,
+                    )
+
+                    # Only update icon if state actually changed to prevent flickering
+                    if current_icon_state != self._last_icon_state:
+                        self._animation_frame = new_frame
+                        self._last_icon_state = current_icon_state
+                        self.update_icon()
+                else:
+                    # When stopped, use static icon (no animation)
+                    current_icon_state = (False, False, 0, "")
+                    if current_icon_state != self._last_icon_state:
+                        self._animation_frame = 0
+                        self._last_icon_state = current_icon_state
+                        self.update_icon()
 
             except Exception as e:
                 logger.debug(f"Status monitor error: {e}")
 
             # Sleep 500ms between updates
             time.sleep(0.5)
+
+    def _prompt_no_audio_stop(self):
+        """Prompt user to confirm stopping recording when no audio received for 10s."""
+        import ctypes
+
+        # Use Windows MessageBox on a separate thread to avoid blocking
+        def show_prompt():
+            try:
+                MB_YESNO = 0x04
+                MB_ICONQUESTION = 0x20
+                MB_TOPMOST = 0x40000
+                MB_SETFOREGROUND = 0x10000
+                IDYES = 6
+
+                result = ctypes.windll.user32.MessageBoxW(
+                    0,
+                    "No audio has been received for 10 seconds.\n\nDo you want to stop the recording?",
+                    "Live Captions - No Audio",
+                    MB_YESNO | MB_ICONQUESTION | MB_TOPMOST | MB_SETFOREGROUND,
+                )
+
+                if result == IDYES:
+                    self.stop_captions()
+            except Exception as e:
+                logger.error(f"Error showing no-audio prompt: {e}")
+
+        # Run prompt on separate thread to avoid blocking status monitor
+        threading.Thread(target=show_prompt, daemon=True).start()
 
     def is_backend_available(self, backend: str) -> bool:
         """Check if a specific backend is available."""
@@ -395,7 +472,7 @@ class LiveCaptionsTray:
         """Update tray icon based on running and recording state."""
         if self.icon:
             running = self.current_process is not None and self.current_process.poll() is None
-            is_recording, duration_str, _ = self.get_recording_info()
+            is_recording, duration_str, _, _ = self.get_recording_info()
 
             # Create animated icon (pulses green when running, red when recording)
             img = self.create_icon_image(running, is_recording)
@@ -525,10 +602,20 @@ class LiveCaptionsTray:
         """Stop running Live Captions."""
         if self.current_process:
             try:
-                self.current_process.terminate()
-                self.current_process.wait(timeout=3)
+                # Send stop request via IPC file (for graceful shutdown)
+                request_stop()
+                logger.info("Sent stop request, waiting for graceful shutdown...")
+
+                # Wait for graceful shutdown
+                self.current_process.wait(timeout=10)
+                logger.info("Process exited gracefully")
             except subprocess.TimeoutExpired:
-                self.current_process.kill()
+                logger.warning("Process did not exit in time, force killing")
+                self.current_process.terminate()
+                try:
+                    self.current_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.current_process.kill()
             except Exception as e:
                 logger.error(f"Error stopping process: {e}")
 
@@ -536,14 +623,17 @@ class LiveCaptionsTray:
             self.current_backend = None
             logger.info("Stopped Live Captions")
 
-            # Update icon
+            # Reset icon state and update immediately
+            self._animation_frame = 0
+            self._last_icon_state = (False, False, 0, "")
+            self._no_audio_prompted = False
             self.update_icon()
 
-    def get_recording_info(self) -> tuple[bool, str, float]:
+    def get_recording_info(self) -> tuple[bool, str, float, float]:
         """Get current recording info from status file (IPC with subprocess).
 
         Returns:
-            Tuple of (is_recording, duration_str, duration_seconds)
+            Tuple of (is_recording, duration_str, duration_seconds, seconds_since_last_audio)
         """
         return read_recording_status()
 
@@ -606,7 +696,7 @@ class LiveCaptionsTray:
         return self.enable_recording or self.enable_transcription
 
     def on_click(self, icon, item):
-        """Handle single left-click on tray icon to start/stop."""
+        """Handle double-click on tray icon to start/stop."""
         if self.is_running():
             self.stop_captions()
         else:
@@ -674,9 +764,20 @@ class LiveCaptionsTray:
         def get_available_count():
             return sum(1 for b in BACKENDS if self.is_backend_available(b))
 
+        # Get version string with build time
+        build_time = get_build_time()
+        version_str = f"{APP_NAME} v{APP_VERSION}"
+        if build_time:
+            version_str = f"{version_str}.{build_time}"
+
         # Build menu
         menu = pystray.Menu(
-            # Status section
+            # Version and status section
+            pystray.MenuItem(
+                version_str,
+                None,
+                enabled=False,
+            ),
             pystray.MenuItem(
                 lambda text: (
                     f"● Running: {BACKENDS.get(self.current_backend, {}).get('name', 'None')}"
@@ -799,11 +900,10 @@ class LiveCaptionsTray:
                 visible=lambda item: self.enable_recording,
             ),
             pystray.Menu.SEPARATOR,
-            # Quick actions - both have default=True so left-click works in either state
+            # Quick actions - use right-click menu (double-click handled separately)
             pystray.MenuItem(
                 "Stop",
                 self.on_click,
-                default=True,  # Left-click action when running
                 visible=lambda item: self.is_running(),
             ),
             pystray.MenuItem(
@@ -817,7 +917,6 @@ class LiveCaptionsTray:
                     )
                 ),
                 self.on_click,
-                default=True,  # Left-click action when stopped
                 visible=lambda item: not self.is_running(),
                 enabled=lambda item: self.is_backend_available(DEFAULT_BACKEND)
                 and self.can_start(),
@@ -852,8 +951,31 @@ class LiveCaptionsTray:
         """Run the tray application."""
         logger.info(f"Starting {APP_NAME} Tray")
         logger.info(f"Default backend: {DEFAULT_BACKEND}")
-        logger.info("Left-click icon to start/stop")
+        logger.info("Double-click icon to start/stop")
         logger.info("Right-click for options")
+
+        # Track click timing for double-click detection
+        self._last_click_time = 0
+        self._click_timer = None
+
+        def on_activated(icon, item):
+            """Handle left-click on tray icon - detect double-click with timer."""
+            import time
+
+            current_time = time.time()
+            time_diff = current_time - self._last_click_time
+            self._last_click_time = current_time
+
+            # Cancel any pending single-click timer
+            if self._click_timer:
+                self._click_timer.cancel()
+                self._click_timer = None
+
+            # Windows double-click threshold is ~500ms (use system setting ideally)
+            if time_diff < 0.4:
+                # Double-click detected - execute action immediately
+                self.on_click(icon, item)
+            # else: Single click - do nothing (just opens menu with right-click)
 
         # Create tray icon with a consistent name for Windows to identify
         # Using APP_NAME ensures Windows can track this in taskbar settings
@@ -861,11 +983,30 @@ class LiveCaptionsTray:
             name=APP_NAME,  # Must be consistent for Windows taskbar settings
             icon=self.create_icon_image(running=False),
             title=f"{APP_NAME} - Stopped",
-            menu=self.create_menu(),
+            menu=self._create_menu_with_double_click(on_activated),
         )
 
         # Run (blocks until quit)
         self.icon.run()
+
+    def _create_menu_with_double_click(self, on_activated):
+        """Create menu with double-click handler as default action."""
+        # Get original menu items
+        original_menu = self.create_menu()
+
+        # Add a hidden default item that handles double-click
+        # This item catches all left-clicks and we detect double-click in the handler
+        items = list(original_menu.items)
+
+        # Insert invisible default handler at the beginning
+        default_handler = pystray.MenuItem(
+            "",  # Empty text (not visible anyway)
+            on_activated,
+            default=True,
+            visible=False,
+        )
+
+        return pystray.Menu(default_handler, *items)
 
 
 # ==============================================================================
