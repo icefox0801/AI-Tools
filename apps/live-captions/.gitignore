@@ -5,6 +5,7 @@
 build/
 dist/
 *.spec.bak
+.build_time
 
 # Python cache
 __pycache__/

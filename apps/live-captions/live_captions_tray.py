@@ -154,14 +154,14 @@ DEFAULT_BACKEND = "whisper"
 
 
 def get_build_time() -> str:
-    """Get build timestamp from build_time.txt file."""
+    """Get build timestamp from .build_time file."""
     try:
         # When frozen (PyInstaller), files are in sys._MEIPASS
         if getattr(sys, "frozen", False):
             base_path = Path(sys._MEIPASS)
         else:
             base_path = Path(__file__).parent
-        build_file = base_path / "build_time.txt"
+        build_file = base_path / ".build_time"
         if build_file.exists():
             return build_file.read_text().strip()
     except Exception:

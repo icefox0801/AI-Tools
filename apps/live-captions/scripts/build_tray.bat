@@ -41,7 +41,7 @@ REM Generate build timestamp file (format: YYYYMMDDHHmm)
 echo.
 echo Generating build timestamp...
 for /f %%I in ('powershell -Command "Get-Date -Format 'yyyyMMddHHmm'"') do set BUILD_TIME=%%I
-echo %BUILD_TIME%> build_time.txt
+echo %BUILD_TIME%> .build_time
 echo Build time: %BUILD_TIME%
 
 REM Build with PyInstaller
