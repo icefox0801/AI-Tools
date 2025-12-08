@@ -13,13 +13,19 @@ from .llm import (
     generate_chat_title,
     summarize_streaming,
 )
-from .recordings import clean_transcribed_recordings, get_audio_duration, list_recordings
+from .recordings import (
+    clean_transcribed_recordings,
+    delete_selected_recordings,
+    get_audio_duration,
+    list_recordings,
+)
 
 __all__ = [
     "check_ollama_health",
     "check_parakeet_health",
     "check_whisper_health",
     "clean_transcribed_recordings",
+    "delete_selected_recordings",
     "generate_chat_title",
     "get_audio_duration",
     "get_ollama_models",

@@ -360,5 +360,62 @@ class TestCleanTranscribedRecordings:
         assert count == 3
 
 
+class TestDeleteSelectedRecordings:
+    """Tests for delete_selected_recordings function."""
+
+    def test_delete_selected_empty_list(self, temp_recordings_dir, mock_config):
+        """Test deleting with empty list."""
+        from services.recordings import delete_selected_recordings
+
+        count = delete_selected_recordings([])
+        assert count == 0
+
+    def test_delete_selected_single(self, temp_recordings_dir, mock_config):
+        """Test deleting a single recording."""
+        audio_file = temp_recordings_dir / "test.wav"
+        create_test_wav(audio_file)
+        assert audio_file.exists()
+
+        from services.recordings import delete_selected_recordings
+
+        count = delete_selected_recordings([str(audio_file)])
+        assert count == 1
+        assert not audio_file.exists()
+
+    def test_delete_selected_with_transcript(self, temp_recordings_dir, mock_config):
+        """Test deleting recording also deletes transcript."""
+        audio_file = temp_recordings_dir / "test.wav"
+        transcript_file = temp_recordings_dir / "test.txt"
+        create_test_wav(audio_file)
+        transcript_file.write_text("transcript")
+
+        from services.recordings import delete_selected_recordings
+
+        count = delete_selected_recordings([str(audio_file)])
+        assert count == 1
+        assert not audio_file.exists()
+        assert not transcript_file.exists()
+
+    def test_delete_selected_multiple(self, temp_recordings_dir, mock_config):
+        """Test deleting multiple recordings."""
+        files = []
+        for i in range(3):
+            audio_file = temp_recordings_dir / f"rec{i}.wav"
+            create_test_wav(audio_file)
+            files.append(str(audio_file))
+
+        from services.recordings import delete_selected_recordings
+
+        count = delete_selected_recordings(files)
+        assert count == 3
+
+    def test_delete_selected_nonexistent(self, temp_recordings_dir, mock_config):
+        """Test deleting nonexistent file doesn't error."""
+        from services.recordings import delete_selected_recordings
+
+        count = delete_selected_recordings(["/nonexistent/file.wav"])
+        assert count == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

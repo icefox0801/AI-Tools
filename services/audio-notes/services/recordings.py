@@ -90,3 +90,35 @@ def clean_transcribed_recordings() -> int:
                     logger.warning(f"Error deleting {audio_file}: {e}")
 
     return deleted_count
+
+
+def delete_selected_recordings(file_paths: list[str]) -> int:
+    """Delete selected recordings and their transcript files.
+
+    Args:
+        file_paths: List of audio file paths to delete
+
+    Returns:
+        Number of recordings deleted
+    """
+    from pathlib import Path
+
+    deleted_count = 0
+
+    for file_path in file_paths:
+        try:
+            audio_file = Path(file_path)
+            if audio_file.exists():
+                # Delete transcript if exists
+                transcript_path = audio_file.with_suffix(".txt")
+                if transcript_path.exists():
+                    transcript_path.unlink()
+
+                # Delete audio file
+                audio_file.unlink()
+                deleted_count += 1
+                logger.info(f"Deleted recording: {audio_file.name}")
+        except Exception as e:
+            logger.warning(f"Error deleting {file_path}: {e}")
+
+    return deleted_count
