@@ -246,7 +246,13 @@ def stream_transcribe_chunk(
     """Transcribe audio chunk using NeMo's cache-aware streaming."""
     model_state = get_model_state()
     if not model_state.streaming_loaded:
-        return state.accumulated_text, state
+        # Auto-load streaming model if not loaded
+        try:
+            get_model(mode="streaming")
+            model_state = get_model_state()
+        except Exception as e:
+            logger.error(f"Failed to load streaming model: {e}")
+            return state.accumulated_text, state
 
     model = model_state.streaming_model
     preprocessor = model_state.streaming_preprocessor
@@ -419,6 +425,14 @@ async def websocket_stream(websocket: WebSocket):
     """Real-time streaming transcription endpoint."""
     await websocket.accept()
     logger.info("WebSocket connected")
+
+    # Ensure streaming model is loaded before processing
+    try:
+        get_model(mode="streaming")  # Auto-loads if not loaded
+    except Exception as e:
+        logger.error(f"Failed to load streaming model: {e}")
+        await websocket.close(code=1011, reason="Model loading failed")
+        return
 
     state = StreamingState()
     audio_buffer = bytearray()
