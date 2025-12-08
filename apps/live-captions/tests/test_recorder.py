@@ -284,9 +284,11 @@ class TestAudioRecorderStartStop:
         """Test starting a recording."""
         recorder = AudioRecorder()
 
-        with patch.object(recorder, "_start_upload_timer"), patch.object(
-            recorder, "_start_status_timer"
-        ), patch.object(recorder, "_update_status_file"):
+        with (
+            patch.object(recorder, "_start_upload_timer"),
+            patch.object(recorder, "_start_status_timer"),
+            patch.object(recorder, "_update_status_file"),
+        ):
             result = recorder.start()
 
         assert result is True
