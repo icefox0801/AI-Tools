@@ -352,6 +352,80 @@ class TestErrorHandling:
 
 
 # ==============================================================================
+# Model Loading Tests
+# ==============================================================================
+
+
+class TestModelLoading:
+    """Tests for model loading with local_files_only."""
+
+    @patch("text_refiner_service.PunctCapSegModelONNX")
+    def test_punctuation_model_uses_local_files_only(self, mock_punct_class):
+        """Test punctuation model loads with local_files_only=True."""
+        # Remove cached module
+        if "text_refiner_service" in sys.modules:
+            del sys.modules["text_refiner_service"]
+
+        mock_model = MagicMock()
+        mock_punct_class.from_pretrained.return_value = mock_model
+
+        import text_refiner_service
+
+        # Call the get function
+        text_refiner_service.get_punctuation_model()
+
+        # Verify local_files_only=True was used
+        mock_punct_class.from_pretrained.assert_called_once()
+        call_kwargs = mock_punct_class.from_pretrained.call_args[1]
+        assert call_kwargs.get("local_files_only") is True
+
+    @patch("text_refiner_service.AutoTokenizer")
+    @patch("text_refiner_service.AutoModelForSeq2SeqLM")
+    def test_correction_model_uses_local_files_only(self, mock_model_class, mock_tokenizer_class):
+        """Test correction model loads with local_files_only=True."""
+        # Remove cached module
+        if "text_refiner_service" in sys.modules:
+            del sys.modules["text_refiner_service"]
+
+        mock_tokenizer = MagicMock()
+        mock_model = MagicMock()
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
+        mock_model_class.from_pretrained.return_value = mock_model
+
+        import text_refiner_service
+
+        # Call the get function
+        text_refiner_service.get_correction_model()
+
+        # Verify local_files_only=True was used for both
+        mock_tokenizer_class.from_pretrained.assert_called_once()
+        tokenizer_kwargs = mock_tokenizer_class.from_pretrained.call_args[1]
+        assert tokenizer_kwargs.get("local_files_only") is True
+
+        mock_model_class.from_pretrained.assert_called_once()
+        model_kwargs = mock_model_class.from_pretrained.call_args[1]
+        assert model_kwargs.get("local_files_only") is True
+
+    @patch("text_refiner_service.PunctCapSegModelONNX")
+    def test_model_loading_fails_when_not_cached(self, mock_punct_class):
+        """Test model loading fails gracefully when not in cache."""
+        # Remove cached module
+        if "text_refiner_service" in sys.modules:
+            del sys.modules["text_refiner_service"]
+
+        mock_punct_class.from_pretrained.side_effect = OSError("Model not found")
+
+        import text_refiner_service
+
+        with pytest.raises(OSError, match="Model not found"):
+            text_refiner_service.get_punctuation_model()
+
+        # Verify it tried with local_files_only=True
+        call_kwargs = mock_punct_class.from_pretrained.call_args[1]
+        assert call_kwargs.get("local_files_only") is True
+
+
+# ==============================================================================
 # Run Standalone
 # ==============================================================================
 

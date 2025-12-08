@@ -86,7 +86,10 @@ def get_punctuation_model():
             from punctuators.models import PunctCapSegModelONNX
 
             logger.info(f"Loading punctuation model: {PUNCTUATION_MODEL}")
-            _punctuation_model = PunctCapSegModelONNX.from_pretrained(PUNCTUATION_MODEL)
+            # Load from pre-downloaded cache only (no network requests)
+            _punctuation_model = PunctCapSegModelONNX.from_pretrained(
+                PUNCTUATION_MODEL, local_files_only=True
+            )
             logger.info("Punctuation model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load punctuation model: {e}")
@@ -119,8 +122,13 @@ def get_correction_model():
 
             logger.info(f"Loading correction model: {CORRECTION_MODEL}")
 
-            _correction_tokenizer = AutoTokenizer.from_pretrained(CORRECTION_MODEL)
-            _correction_model = AutoModelForSeq2SeqLM.from_pretrained(CORRECTION_MODEL)
+            # Load from pre-downloaded cache only (no network requests)
+            _correction_tokenizer = AutoTokenizer.from_pretrained(
+                CORRECTION_MODEL, local_files_only=True
+            )
+            _correction_model = AutoModelForSeq2SeqLM.from_pretrained(
+                CORRECTION_MODEL, local_files_only=True
+            )
 
             if device == "cuda":
                 _correction_model = _correction_model.to(device)
