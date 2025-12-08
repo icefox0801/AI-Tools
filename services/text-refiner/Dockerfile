@@ -41,6 +41,7 @@ RUN python -c "from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; \
 
 # Copy application
 COPY text_refiner_service.py .
+COPY download_models.sh .
 
 # Copy shared modules from additional context
 COPY --from=shared . /app/shared/
