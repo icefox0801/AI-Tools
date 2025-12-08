@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-download Whisper models to cache volume using Python
+# Pre-download Whisper models to cache volume using HuggingFace CLI
 # This script checks for cached models and prompts before downloading
 # The service uses local_files_only=True to avoid any network requests.
 
@@ -21,29 +21,19 @@ OFFLINE_MODEL="openai/whisper-large-v3"
 TURBO_SIZE="~1.6GB"
 LARGE_SIZE="~3.1GB"
 
-# Model information
-STREAMING_MODEL="openai/whisper-large-v3-turbo"
-OFFLINE_MODEL="openai/whisper-large-v3"
-TURBO_SIZE="~1.6GB"
-LARGE_SIZE="~3.1GB"
-
-# Function to check if model is cached
+# Function to check if model is fully cached
 check_model_cached() {
     local model_id=$1
     echo "Checking cache for $model_id..."
     
-    python3 -c "
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-import sys
-try:
-    AutoModelForSpeechSeq2Seq.from_pretrained('${model_id}', local_files_only=True)
-    AutoProcessor.from_pretrained('${model_id}', local_files_only=True)
-    print('✓ Model found in cache')
-    sys.exit(0)
-except Exception:
-    print('✗ Model not in cache')
-    sys.exit(1)
-" 2>/dev/null
+    # Use hf scan-cache to check if model exists and is complete
+    if hf scan-cache | grep -q "$model_id"; then
+        echo "✓ Model found in cache"
+        return 0
+    else
+        echo "✗ Model not in cache"
+        return 1
+    fi
 }
 
 # Function to download a model
@@ -62,20 +52,14 @@ download_model() {
         return 1
     fi
     
-    echo "Downloading $model_id..."
-    python3 -c "
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-try:
-    print('Downloading model...')
-    model = AutoModelForSpeechSeq2Seq.from_pretrained('${model_id}')
-    print('Downloading processor...')
-    processor = AutoProcessor.from_pretrained('${model_id}')
-    print('✓ ${model_id} downloaded successfully')
-except Exception as e:
-    print(f'✗ Failed to download ${model_id}: {e}')
-    exit(1)
-"
-    return $?
+    echo "Downloading $model_id using HuggingFace CLI..."
+    if hf download "$model_id" --cache-dir "$CACHE_DIR"; then
+        echo "✓ $model_id downloaded successfully"
+        return 0
+    else
+        echo "✗ Failed to download $model_id"
+        return 1
+    fi
 }
 
 # Check and download streaming model
