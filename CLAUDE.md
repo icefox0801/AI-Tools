@@ -206,9 +206,10 @@ Each app/service has a `CHANGELOG.md` following [Keep a Changelog](https://keepa
 
 **Entry Guidelines**:
 - Focus on **user-facing features and functionality**
-- Keep entries **concise** (1 line per item)
+- Keep entries **concise** (1 line per item, under 10 words)
 - Write from user perspective, not developer perspective
 - Omit internal details (tests, refactors, implementation)
+- No technical jargon (IPC, subprocess, state tracking)
 
 **Sections** (only include if applicable):
 - `Added` - New features
@@ -217,15 +218,18 @@ Each app/service has a `CHANGELOG.md` following [Keep a Changelog](https://keepa
 - `Removed` - Removed features
 
 **Good examples**:
-- ✅ "Animated tray icon when captions are active"
-- ✅ "Single-click to start/stop"
-- ✅ "Recording timer in caption window"
+- ✅ "Version display in tray menu"
+- ✅ "Double-click to start/stop"
+- ✅ "Language selector in tray menu"
+- ✅ "More frequent auto-save (every 30s)"
 
-**Avoid**:
-- ❌ "Add unit tests for X" (internal)
-- ❌ "Path handling for frozen exe" (too technical)
-- ❌ "Remove unused module" (internal cleanup)
-- ❌ "Improved subprocess error monitoring" (implementation detail)
+**Bad examples (too technical/verbose)**:
+- ❌ "Graceful shutdown via file-based IPC" → ✅ "Recording saves reliably on stop"
+- ❌ "10-second no-audio detection with stop confirmation" → ✅ "Prompt to stop when no audio detected"
+- ❌ "Upload timing: 3s initial, 30s second, then every 30s" → ✅ "More frequent auto-save"
+- ❌ "Icon flickering when monitoring status (state tracking)" → ✅ "Tray icon flickering"
+- ❌ "Add unit tests for X" (internal, omit entirely)
+- ❌ "Increased shutdown timeout from 3s to 10s" (implementation detail, omit)
 
 ## Git Commit Guidelines
 

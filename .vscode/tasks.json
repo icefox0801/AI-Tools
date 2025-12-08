@@ -236,6 +236,46 @@
 				"panel": "dedicated"
 			}
 		},
+		{
+			"label": "Run: Live Captions Tray",
+			"type": "shell",
+			"command": "dist\\\"Live Captions.exe\"",
+			"options": {
+				"cwd": "${workspaceFolder}\\apps\\live-captions",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "silent",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "Rebuild: Live Captions Tray",
+			"type": "shell",
+			"command": "scripts\\build_tray.bat && start \"\" dist\\\"Live Captions.exe\"",
+			"options": {
+				"cwd": "${workspaceFolder}\\apps\\live-captions",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
 		// ===== Docker: Refresh (Build + Restart) =====
 		{
 			"label": "Docker: Refresh Audio Notes",
