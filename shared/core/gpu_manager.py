@@ -114,40 +114,51 @@ class GPUMemoryManager:
         if available >= required_gb:
             return True
 
-        # Need to free memory - unload models from OTHER services first
+        # Need to free memory - try same-service models first, then other services
         needed = required_gb - available
         logger.warning(
             f"Insufficient GPU memory. Need to free {needed:.2f}GB. "
             f"Currently loaded: {list(self._loaded_models.keys())}"
         )
 
-        # Sort models by memory size (largest first) and unload from other services
+        # Sort models by memory size (largest first)
+        # Prioritize: same-service first (to avoid cross-service unloading), then other services
+        same_service_models = [
+            (key, info)
+            for key, info in self._loaded_models.items()
+            if info.service_name == service_name
+        ]
         other_service_models = [
             (key, info)
             for key, info in self._loaded_models.items()
             if info.service_name != service_name
         ]
-        other_service_models.sort(key=lambda x: x[1].memory_gb, reverse=True)
+        
+        # Try same-service models first, then others
+        models_to_unload = same_service_models + other_service_models
+        models_to_unload.sort(key=lambda x: x[1].memory_gb, reverse=True)
 
         freed = 0.0
-        for key, info in other_service_models:
+        for key, info in models_to_unload:
             if freed >= needed:
                 break
 
-            logger.info(f"Unloading {key} from {info.service_name} to free {info.memory_gb:.2f}GB")
+            logger.info(f"Unloading {key} to free {info.memory_gb:.2f}GB")
 
-            # Try to unload via HTTP API first
-            if self._unload_via_http(info.service_name):
-                freed += info.memory_gb
-                self.unregister_model(info.service_name, info.model_name)
-            # Fallback to local callback
-            elif info.unload_callback:
+            # Try callback first (faster for same-service)
+            if info.unload_callback:
                 try:
                     info.unload_callback()
                     freed += info.memory_gb
                     self.unregister_model(info.service_name, info.model_name)
+                    continue
                 except Exception as e:
                     logger.error(f"Failed to unload {key} via callback: {e}")
+
+            # Fallback to HTTP API for other services
+            if info.service_name != service_name and self._unload_via_http(info.service_name):
+                freed += info.memory_gb
+                self.unregister_model(info.service_name, info.model_name)
 
         # Check if we freed enough
         available = self._get_available_memory()

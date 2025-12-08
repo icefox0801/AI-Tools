@@ -260,10 +260,6 @@ def _unload_streaming() -> None:
             clear_gpu_cache()
             torch.cuda.synchronize()
 
-        # Unregister from GPU manager
-        gpu_mgr = get_gpu_manager()
-        gpu_mgr.unregister_model(SERVICE_NAME, "streaming")
-
         logger.info(f"Streaming model unloaded ({_model_state.streaming_model_name})")
         _model_state.streaming_model_name = ""
 
@@ -285,10 +281,6 @@ def _unload_offline() -> None:
             gc.collect()
             clear_gpu_cache()
             torch.cuda.synchronize()
-
-        # Unregister from GPU manager
-        gpu_mgr = get_gpu_manager()
-        gpu_mgr.unregister_model(SERVICE_NAME, "offline")
 
         logger.info(f"Offline model unloaded ({_model_state.offline_model_name})")
         _model_state.offline_model_name = ""
