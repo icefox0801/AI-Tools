@@ -143,8 +143,6 @@ def _transcribe_chunk(
                         timestamps=True,
                         return_hypotheses=True,
                         verbose=False,
-                        batch_size=1,
-                        num_workers=1,
                     )
                 torch.cuda.synchronize()
             else:
@@ -153,8 +151,6 @@ def _transcribe_chunk(
                     timestamps=True,
                     return_hypotheses=True,
                     verbose=False,
-                    batch_size=1,
-                    num_workers=1,
                 )
 
         words = _extract_word_timestamps(results, audio_array, sample_rate)
