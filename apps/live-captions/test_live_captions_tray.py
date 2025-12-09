@@ -479,7 +479,7 @@ class TestLiveCaptionsTrayRecording:
             app = LiveCaptionsTray()
             mock_icon = MagicMock()
             app.icon = mock_icon
-            
+
             app.clear_recording()
 
             # Should show notification that clearing from tray is not supported
