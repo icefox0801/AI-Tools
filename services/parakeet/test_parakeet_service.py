@@ -77,6 +77,21 @@ def mock_env(monkeypatch):
 @pytest.fixture
 def mock_modules():
     """Patch all external modules before importing the service."""
+    # Create mock for shared.core
+    mock_shared_core = MagicMock()
+    mock_shared_core.clear_gpu_cache = MagicMock()
+    mock_shared_core.get_gpu_manager = MagicMock(
+        return_value=MagicMock(
+            ensure_model_ready=MagicMock(return_value=True),
+            register_model=MagicMock(),
+            unregister_model=MagicMock(),
+        )
+    )
+
+    # Create mock for shared.utils
+    mock_shared_utils = MagicMock()
+    mock_shared_utils.setup_logging = MagicMock(return_value=MagicMock())
+
     with patch.dict(
         "sys.modules",
         {
@@ -85,6 +100,8 @@ def mock_modules():
             "soundfile": mock_soundfile,
             "uvicorn": mock_uvicorn,
             "shared": MagicMock(),
+            "shared.core": mock_shared_core,
+            "shared.utils": mock_shared_utils,
             "shared.logging": mock_shared_logging,
             "shared.text_refiner": mock_text_refiner,
         },

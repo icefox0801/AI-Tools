@@ -35,6 +35,21 @@ mock_torch.tensor = MagicMock(return_value=MagicMock(to=MagicMock()))
 mock_shared_logging = MagicMock()
 mock_shared_logging.setup_logging = MagicMock(return_value=MagicMock())
 
+# Create mock for shared.core
+mock_shared_core = MagicMock()
+mock_shared_core.clear_gpu_cache = MagicMock(side_effect=lambda: mock_torch.cuda.empty_cache())
+mock_shared_core.get_gpu_manager = MagicMock(
+    return_value=MagicMock(
+        ensure_model_ready=MagicMock(return_value=True),
+        register_model=MagicMock(),
+        unregister_model=MagicMock(),
+    )
+)
+
+# Create mock for shared.utils
+mock_shared_utils = MagicMock()
+mock_shared_utils.setup_logging = MagicMock(return_value=MagicMock())
+
 
 # ==============================================================================
 # Fixtures
@@ -56,6 +71,8 @@ def mock_modules():
         {
             "torch": mock_torch,
             "shared": MagicMock(),
+            "shared.core": mock_shared_core,
+            "shared.utils": mock_shared_utils,
             "shared.logging": mock_shared_logging,
         },
     ):
