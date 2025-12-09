@@ -87,6 +87,8 @@ class CaptionWindow:
         self.root.bind("<Button-3>", lambda e: self._handle_close())
         self.root.bind("<Escape>", lambda e: self._handle_close())
         self.root.bind("<MouseWheel>", self._on_mousewheel)
+        self.root.bind("<KeyPress-w>", self._toggle_word_animation)
+        self.root.focus_set()  # Allow keyboard input
 
         # Fonts
         self.caption_font = tkfont.Font(family="Segoe UI", size=self.base_font_size, weight="bold")
@@ -103,6 +105,8 @@ class CaptionWindow:
             fg=self.TEXT_COLOR_DIM,
             bg=self.BG_COLOR,
             anchor="w",
+            justify="left",
+            wraplength=self.width - 40,
         )
         self.line1.pack(expand=True, fill="both")
 
@@ -113,8 +117,27 @@ class CaptionWindow:
             fg=self.TEXT_COLOR,
             bg=self.BG_COLOR,
             anchor="w",
+            justify="left",
+            wraplength=self.width - 40,
         )
         self.line2.pack(expand=True, fill="both")
+
+        # Track current display state
+        self._current_line1 = ""
+        self._current_line2 = ""
+        self._full_text = ""  # Complete transcript (grows bottom-to-top)
+        self._previous_text = ""  # Previous text for detecting new words
+
+        # Word-by-word animation state
+        self._word_animation_enabled = True
+        self._word_timer = None
+        self._current_word_index = 0
+        self._words_to_animate = []
+        self._animation_speed_ms = 200  # Base speed (ms per word)
+        self._target_speed_words_per_5s = 25  # Target: 5 words per second
+        self._speed_start_time = None
+        self._speed_word_count = 0
+        self._turbo_mode = False  # 3x speed when catching up
 
         # Status labels
         self._create_status_labels()
@@ -195,8 +218,29 @@ class CaptionWindow:
             self.base_font_size = max(self.base_font_size - 2, self.MIN_FONT_SIZE)
         self.caption_font.configure(size=self.base_font_size)
 
+        # Update wraplength for consistent layout
+        wrap_width = self.width - 40
+        self.line1.configure(wraplength=wrap_width)
+        self.line2.configure(wraplength=wrap_width)
+
+    def _toggle_word_animation(self, event):
+        """Toggle word-by-word animation mode."""
+        self._word_animation_enabled = not self._word_animation_enabled
+        status = "ON" if self._word_animation_enabled else "OFF"
+        # Show brief status message
+        old_line2 = self._current_line2
+        self._current_line2 = f"Word Animation: {status}"
+        self._update_display(False)
+        # Restore after 1 second
+        self.root.after(
+            1000, lambda: (setattr(self, "_current_line2", old_line2), self._update_display(False))
+        )
+
     def _handle_close(self):
         """Handle window close."""
+        # Cancel any active timers
+        if self._word_timer:
+            self.root.after_cancel(self._word_timer)
         if self.on_close:
             self.on_close()
 
@@ -231,30 +275,164 @@ class CaptionWindow:
 
         return lines
 
-    # Public API
+    def set_word_animation(self, enabled: bool, speed_ms: int = 200):
+        """Enable/disable word-by-word animation."""
+        self._word_animation_enabled = enabled
+        self._animation_speed_ms = speed_ms
+        if not enabled and self._word_timer:
+            self.root.after_cancel(self._word_timer)
+            self._word_timer = None
+
+    def _animate_words(self):
+        """Animate words one by one with dynamic speed adaptation."""
+        if not self._words_to_animate or self._current_word_index >= len(self._words_to_animate):
+            # Animation complete - update previous text to include animated words
+            self._previous_text = self._full_text
+            self._words_to_animate = []
+            self._word_timer = None
+            self._turbo_mode = False
+            self._reset_speed_tracking()
+            # Final display update
+            self._update_display_from_segments()
+            return
+
+        # Dynamic speed calculation
+        current_speed = self._calculate_dynamic_speed()
+
+        # Move to next word first, then update display
+        self._current_word_index += 1
+
+        # Build display text up to current word
+        self._update_display_from_segments()
+
+        # Track speed metrics
+        self._speed_word_count += 1
+
+        # Schedule next word
+        if self._current_word_index < len(self._words_to_animate):
+            self._word_timer = self.root.after(current_speed, self._animate_words)
+        else:
+            # Final word shown - complete animation
+            self._previous_text = self._full_text
+            self._words_to_animate = []
+            self._word_timer = None
+            self._turbo_mode = False
+            self._reset_speed_tracking()
+
+    def _calculate_dynamic_speed(self) -> int:
+        """Calculate dynamic animation speed based on target rate."""
+        import time
+
+        # Initialize speed tracking
+        if self._speed_start_time is None:
+            self._speed_start_time = time.time()
+            self._speed_word_count = 0
+
+        # Check if we need turbo mode (catching up)
+        if self._turbo_mode:
+            return max(self._animation_speed_ms // 3, 50)  # 3x speed, minimum 50ms
+
+        # Calculate current rate
+        elapsed = time.time() - self._speed_start_time
+        if elapsed >= 5.0 and self._speed_word_count > 0:
+            current_rate = self._speed_word_count / elapsed
+            target_rate = self._target_speed_words_per_5s / 5.0  # words per second
+
+            # Adjust speed to meet target rate
+            if current_rate < target_rate * 0.8:  # Too slow
+                self._animation_speed_ms = max(self._animation_speed_ms - 20, 80)
+            elif current_rate > target_rate * 1.2:  # Too fast
+                self._animation_speed_ms = min(self._animation_speed_ms + 20, 500)
+
+            # Reset tracking for next interval
+            self._reset_speed_tracking()
+
+        return self._animation_speed_ms
+
+    def _reset_speed_tracking(self):
+        """Reset speed tracking metrics."""
+        import time
+
+        self._speed_start_time = time.time()
+        self._speed_word_count = 0
+
+    def _update_display_from_segments(self):
+        """Update display showing last two lines from full text."""
+        full_display_text = self._full_text
+
+        # For word animation: only show up to current animated word
+        if self._word_animation_enabled and self._words_to_animate:
+            # Show previous text + animated portion of new words
+            prev_words = self._previous_text.split() if self._previous_text else []
+            animated_new_words = self._words_to_animate[:self._current_word_index]
+            all_words = prev_words + animated_new_words
+            full_display_text = " ".join(all_words)
+
+        # Get last two lines (bottom-to-top growth)
+        if full_display_text:
+            lines = self._wrap_text(full_display_text)
+
+            if len(lines) >= 2:
+                self._current_line1 = lines[-2]
+                self._current_line2 = lines[-1]
+            elif len(lines) == 1:
+                self._current_line1 = ""
+                self._current_line2 = lines[0]
+            else:
+                self._current_line1 = ""
+                self._current_line2 = ""
+        else:
+            self._current_line1 = ""
+            self._current_line2 = ""
+
+        # Update display
+        self.line1.configure(text=self._current_line1, fg=self.TEXT_COLOR_DIM)
+        self.line2.configure(text=self._current_line2, fg=self.TEXT_COLOR)
 
     def update_text(self, text: str):
         """
-        Update displayed caption text.
+        Update displayed caption text with bottom-to-top growth and word animation.
 
         Args:
-            text: Full text to display (will be wrapped and show last 2 lines)
+            text: Full text to display (grows continuously, no truncation)
         """
         if not text or not text.strip():
             return
 
-        lines = self._wrap_text(text.strip())
-        if not lines:
-            return
+        text = text.strip()
+        
+        # Detect new words added to the text
+        if self._word_animation_enabled and text != self._full_text:
+            old_words = self._full_text.split() if self._full_text else []
+            new_words = text.split()
+            
+            # Find newly added words
+            if len(new_words) > len(old_words):
+                # Words were added - animate them
+                added_words = new_words[len(old_words):]
+                
+                # If already animating, enable turbo mode to catch up
+                if self._word_timer and self._words_to_animate:
+                    self._turbo_mode = True
+                    # Add new words to animation queue
+                    self._words_to_animate.extend(added_words)
+                else:
+                    # Start new animation
+                    self._previous_text = self._full_text
+                    self._words_to_animate = added_words
+                    self._current_word_index = 0
+                    self._reset_speed_tracking()
+                    self._animate_words()
+                
+                # Update full text but don't display yet (animation will handle it)
+                self._full_text = text
+                return
 
-        if len(lines) >= 2:
-            line1_text = lines[-2]
-            line2_text = lines[-1]
-        else:
-            line1_text = ""
-            line2_text = lines[-1]
-
-        self.root.after(0, lambda: self._set_lines(line1_text, line2_text))
+        # No animation or text replaced - update directly
+        self._full_text = text
+        self._previous_text = text
+        self._words_to_animate = []
+        self._update_display_from_segments()
 
     def _set_lines(self, line1: str, line2: str):
         """Set caption line text."""
@@ -263,9 +441,33 @@ class CaptionWindow:
         self.line1.pack_configure(padx=(20, 0))
         self.line2.pack_configure(padx=(20, 0))
 
+    def _update_display(self):
+        """Update the display with current line text."""
+        # Don't interfere with active word animation
+        if self._word_timer:
+            return
+
+        # Update from segments
+        self._update_display_from_segments()
+
+        # Update padding
+        self.line1.pack_configure(padx=(20, 0))
+        self.line2.pack_configure(padx=(20, 0))
+
     def set_message(self, message: str):
         """Set a message on the second line (clears first line)."""
-        self.root.after(0, lambda: self._set_lines("", message))
+        # Cancel any animation
+        if self._word_timer:
+            self.root.after_cancel(self._word_timer)
+            self._word_timer = None
+        self._words_to_animate = []
+        
+        self._current_line1 = ""
+        self._current_line2 = message
+        self._full_text = message
+        self._previous_text = message
+        self.line1.configure(text="", fg=self.TEXT_COLOR_DIM)
+        self.line2.configure(text=message, fg=self.TEXT_COLOR)
 
     def set_connection_status(self, connected: bool):
         """Update connection status indicator."""

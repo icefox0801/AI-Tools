@@ -52,8 +52,8 @@ __version__ = "1.1"
 # ==============================================================================
 
 # Streaming parameters
-CHUNK_DURATION_SEC = 1.0
-MIN_CHUNK_SEC = 0.3
+CHUNK_DURATION_SEC = 0.5  # Reduced from 1.0 for faster initial output
+MIN_CHUNK_SEC = 0.2  # Reduced from 0.3 for lower latency
 SILENCE_THRESHOLD_SEC = 2.0
 MAX_WORDS_PER_SEGMENT = 30
 

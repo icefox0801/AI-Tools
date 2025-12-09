@@ -46,7 +46,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY --from=shared . /app/shared/
 
 # Copy application code
-COPY parakeet_service.py audio.py model.py ./
+COPY parakeet_service.py audio.py parakeet_model.py ./
 
 # Copy download script LAST (changes here won't invalidate above layers)
 COPY download_models.sh .
