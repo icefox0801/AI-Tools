@@ -178,14 +178,10 @@ def load_model(mode: str = "streaming"):
         return
 
     model_name = MODEL
-    required_memory_gb = 4.0  # turbo + inference overhead
 
-    # Request GPU memory from manager (will unload other services if needed)
+    # Ensure GPU is ready - unloads ALL other models (same-service + other-services)
     gpu_mgr = get_gpu_manager()
-    if not gpu_mgr.request_memory(SERVICE_NAME, "whisper-turbo", required_memory_gb):
-        raise RuntimeError(
-            f"Insufficient GPU memory for model. Required: {required_memory_gb:.1f}GB"
-        )
+    gpu_mgr.ensure_model_ready(SERVICE_NAME, "whisper-turbo")
 
     # Load the model
     pipe = _create_pipeline(model_name)

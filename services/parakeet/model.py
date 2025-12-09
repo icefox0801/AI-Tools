@@ -110,6 +110,9 @@ def get_preprocessor(mode: str = "streaming"):
 def load_model(mode: str = "streaming"):
     """Load NeMo Parakeet model for the specified mode.
 
+    Only one model can be loaded at a time across all GPU services.
+    GPU manager ensures exclusive access by unloading all other models first.
+
     Args:
         mode: "streaming" for TDT model (FP16) or "offline" for RNNT model (FP32)
     """
@@ -118,25 +121,15 @@ def load_model(mode: str = "streaming"):
             return _model_state.offline_model
         model_name = OFFLINE_MODEL
         use_fp16 = False  # RNNT uses FP32 for best accuracy
-        # Offline model (8GB) + NeMo dataloader (3GB) + inference buffers (3GB) = 14GB
-        required_memory_gb = 14.0
     else:
         if _model_state.streaming_loaded:
             return _model_state.streaming_model
         model_name = STREAMING_MODEL
         use_fp16 = True  # TDT can use FP16
-        required_memory_gb = 6.5  # Streaming model + overhead
 
-    # Request GPU memory from manager (will unload other services if needed)
+    # Ensure GPU is ready - unloads ALL other models (same-service + other-services)
     gpu_mgr = get_gpu_manager()
-    if not gpu_mgr.request_memory(SERVICE_NAME, mode, required_memory_gb):
-        raise RuntimeError(
-            f"Insufficient GPU memory for {mode} model. " f"Required: {required_memory_gb:.1f}GB"
-        )
-
-    # Clear GPU cache before loading to maximize available memory
-    if DEVICE == "cuda":
-        clear_gpu_cache()
+    gpu_mgr.ensure_model_ready(SERVICE_NAME, mode)
 
     logger.info(f"Loading {mode} model: {model_name}")
     logger.info(f"Device: {DEVICE}, FP16: {use_fp16}")

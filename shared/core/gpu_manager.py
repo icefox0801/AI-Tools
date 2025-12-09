@@ -194,6 +194,65 @@ class GPUMemoryManager:
             logger.warning(f"HTTP unload failed for {service_name}: {e}")
             return False
 
+    def ensure_model_ready(self, service_name: str, model_name: str) -> bool:
+        """Ensure GPU is ready for a specific model by unloading ALL other models.
+
+        This provides exclusive GPU access - only one model loaded at a time across
+        all services. Call this before loading any GPU model.
+
+        Args:
+            service_name: Service requesting exclusive access (e.g., "parakeet-asr")
+            model_name: Model to be loaded (e.g., "streaming", "offline")
+
+        Returns:
+            True if GPU is ready (all other models unloaded)
+        """
+        target_key = f"{service_name}:{model_name}"
+
+        # Check if target model is already the only loaded model
+        if target_key in self._loaded_models and len(self._loaded_models) == 1:
+            logger.info(f"Model {target_key} is already loaded and ready")
+            return True
+
+        # Unload ALL other models (different service or different model within same service)
+        models_to_unload = [
+            (key, info)
+            for key, info in self._loaded_models.items()
+            if key != target_key
+        ]
+
+        if models_to_unload:
+            logger.info(
+                f"Unloading {len(models_to_unload)} model(s) to prepare for {target_key}: "
+                f"{[k for k, _ in models_to_unload]}"
+            )
+
+        for key, info in models_to_unload:
+            logger.info(f"Unloading {key} ({info.memory_gb:.2f}GB)")
+
+            # Try callback first (for same-process models)
+            if info.unload_callback:
+                try:
+                    info.unload_callback()
+                    # Note: callback should call unregister_model
+                    if key in self._loaded_models:
+                        self.unregister_model(info.service_name, info.model_name)
+                    continue
+                except Exception as e:
+                    logger.error(f"Failed to unload {key} via callback: {e}")
+
+            # Fallback to HTTP API for other services
+            if self._unload_via_http(info.service_name):
+                if key in self._loaded_models:
+                    self.unregister_model(info.service_name, info.model_name)
+
+        # Clear GPU cache after unloading
+        clear_gpu_cache()
+
+        available = self._get_available_memory()
+        logger.info(f"GPU ready for {target_key}. Available: {available:.2f}GB")
+        return True
+
     def get_status(self) -> dict:
         """Get current GPU memory status.
 
