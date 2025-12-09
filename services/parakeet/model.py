@@ -25,13 +25,22 @@ STREAMING_MODEL = os.environ["PARAKEET_STREAMING_MODEL"]
 OFFLINE_MODEL = os.environ["PARAKEET_OFFLINE_MODEL"]
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Flag to track CUDA initialization
+_cuda_initialized = False
+
 # ==============================================================================
 # CUDA Optimization
 # ==============================================================================
 
 
 def setup_cuda():
-    """Configure CUDA optimizations."""
+    """Configure CUDA optimizations and initialize CUDA context.
+
+    This should be called at service startup to ensure CUDA context
+    is ready before any model loading. This is required for proper
+    CUDA graph support in NeMo.
+    """
+    global _cuda_initialized
     if DEVICE != "cuda":
         return
 
@@ -39,8 +48,18 @@ def setup_cuda():
     torch.backends.cudnn.enabled = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+
+    # Initialize CUDA context by allocating a small tensor
+    # This is required before NeMo model loading for proper CUDA graph support
+    _ = torch.zeros(1, device="cuda")
+    torch.cuda.synchronize()
     clear_gpu_cache()
 
+    _cuda_initialized = True
+
+    gpu_name = torch.cuda.get_device_name(0)
+    compute_cap = torch.cuda.get_device_capability(0)
+    logger.info(f"CUDA initialized: {gpu_name} (compute {compute_cap[0]}.{compute_cap[1]})")
     logger.info("CUDA optimizations enabled")
 
 
@@ -127,7 +146,7 @@ def load_model(mode: str = "streaming"):
         model_name = STREAMING_MODEL
         use_fp16 = True  # TDT can use FP16
 
-    # Ensure GPU is ready - unloads ALL other models (same-service + other-services)
+    # Ensure GPU is ready - unloads ALL other models first
     gpu_mgr = get_gpu_manager()
     gpu_mgr.ensure_model_ready(SERVICE_NAME, mode)
 
@@ -139,6 +158,7 @@ def load_model(mode: str = "streaming"):
 
     try:
         import nemo.collections.asr as nemo_asr
+        from omegaconf import OmegaConf
 
         # Load model from pre-downloaded cache only (no network requests)
         model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(model_name, map_location=DEVICE)
@@ -152,6 +172,24 @@ def load_model(mode: str = "streaming"):
                 logger.info("Model converted to FP16")
             except Exception as e:
                 logger.warning(f"FP16 conversion failed: {e}")
+
+        # Disable CUDA graphs for RNNT offline model (RTX 50 series compatibility)
+        # CUDA graphs have issues on Blackwell architecture (compute capability 12.0)
+        if mode == "offline" and DEVICE == "cuda":
+            compute_cap = torch.cuda.get_device_capability(0)
+            if compute_cap[0] >= 12:  # Blackwell or newer
+                logger.info("Disabling CUDA graphs for RNNT decoding (Blackwell GPU detected)")
+                decoding_cfg = OmegaConf.create(
+                    {
+                        "strategy": "greedy_batch",
+                        "greedy": {
+                            "max_symbols": 10,
+                            "loop_labels": False,
+                            "use_cuda_graph_decoder": False,
+                        },
+                    }
+                )
+                model.change_decoding_strategy(decoding_cfg)
 
         # Store references based on mode
         if mode == "offline":
@@ -177,13 +215,12 @@ def load_model(mode: str = "streaming"):
             logger.info(f"GPU memory allocated: {mem_gb:.2f} GB")
 
             # Register with GPU manager
-            gpu_mgr = get_gpu_manager()
             gpu_mgr.register_model(
                 service_name=SERVICE_NAME,
                 model_name=mode,
                 memory_gb=mem_gb,
-                unload_callback=lambda: (
-                    _unload_streaming() if mode == "streaming" else _unload_offline()
+                unload_callback=lambda m=mode: (
+                    _unload_streaming() if m == "streaming" else _unload_offline()
                 ),
             )
 
@@ -196,23 +233,26 @@ def load_model(mode: str = "streaming"):
 
 
 def _warmup_model(model, mode: str = "streaming"):
-    """Warm up model with a test inference."""
+    """Warm up model with a test inference.
+
+    For streaming mode: Uses conformer_stream_step
+    For offline mode: Skip warmup (CUDA graphs already disabled)
+    """
     if DEVICE != "cuda":
         return
 
-    use_fp16 = mode == "streaming"  # Only streaming uses FP16
+    # Skip warmup for offline mode - CUDA graphs are disabled so no warmup needed
+    if mode == "offline":
+        logger.info("Skipping warmup for offline model (CUDA graphs disabled)")
+        return
+
+    use_fp16 = True  # Streaming uses FP16
 
     logger.info(f"Warming up {mode} model...")
     try:
-        dummy_audio = torch.randn(1, 16000).to(DEVICE)
-        if use_fp16:
-            dummy_audio = dummy_audio.half()
+        dummy_audio = torch.randn(1, 16000).to(DEVICE).half()
 
-        preprocessor = (
-            _model_state.offline_preprocessor
-            if mode == "offline"
-            else _model_state.streaming_preprocessor
-        )
+        preprocessor = _model_state.streaming_preprocessor
 
         with torch.no_grad():
             processed, processed_len = preprocessor(
@@ -240,6 +280,7 @@ def _unload_streaming() -> None:
     import gc
 
     if _model_state.streaming_loaded:
+        model_name = _model_state.streaming_model_name
         if _model_state.streaming_model is not None:
             del _model_state.streaming_model
         if _model_state.streaming_preprocessor is not None:
@@ -247,14 +288,14 @@ def _unload_streaming() -> None:
         _model_state.streaming_model = None
         _model_state.streaming_preprocessor = None
         _model_state.streaming_loaded = False
+        _model_state.streaming_model_name = ""
 
         if DEVICE == "cuda":
             gc.collect()
             clear_gpu_cache()
             torch.cuda.synchronize()
 
-        logger.info(f"Streaming model unloaded ({_model_state.streaming_model_name})")
-        _model_state.streaming_model_name = ""
+        logger.info(f"Streaming model unloaded ({model_name})")
 
 
 def _unload_offline() -> None:
@@ -262,6 +303,7 @@ def _unload_offline() -> None:
     import gc
 
     if _model_state.offline_loaded:
+        model_name = _model_state.offline_model_name
         if _model_state.offline_model is not None:
             del _model_state.offline_model
         if _model_state.offline_preprocessor is not None:
@@ -269,14 +311,14 @@ def _unload_offline() -> None:
         _model_state.offline_model = None
         _model_state.offline_preprocessor = None
         _model_state.offline_loaded = False
+        _model_state.offline_model_name = ""
 
         if DEVICE == "cuda":
             gc.collect()
             clear_gpu_cache()
             torch.cuda.synchronize()
 
-        logger.info(f"Offline model unloaded ({_model_state.offline_model_name})")
-        _model_state.offline_model_name = ""
+        logger.info(f"Offline model unloaded ({model_name})")
 
 
 def unload_models() -> dict:
@@ -293,11 +335,19 @@ def unload_models() -> dict:
         _unload_streaming()
         models_unloaded.append(f"streaming ({model_name})")
 
+        # Unregister from GPU manager
+        gpu_mgr = get_gpu_manager()
+        gpu_mgr.unregister_model(SERVICE_NAME, "streaming")
+
     # Unload offline model
     if _model_state.offline_loaded:
         model_name = _model_state.offline_model_name
         _unload_offline()
         models_unloaded.append(f"offline ({model_name})")
+
+        # Unregister from GPU manager
+        gpu_mgr = get_gpu_manager()
+        gpu_mgr.unregister_model(SERVICE_NAME, "offline")
 
     if not models_unloaded:
         return {"status": "not_loaded", "message": "No models were loaded"}

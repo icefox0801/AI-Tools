@@ -38,13 +38,14 @@ from model import (
     unload_models,
 )
 
-from shared.text_refiner import (
-    capitalize_text,
-    check_text_refiner,
-    get_client,
-    refine_text,
-)
 from shared.utils import setup_logging
+from shared.text_refiner import capitalize_text, check_text_refiner, get_client, refine_text
+
+# ==============================================================================
+# Version
+# ==============================================================================
+
+__version__ = "1.1"
 
 # ==============================================================================
 # Configuration
@@ -139,18 +140,12 @@ def _transcribe_chunk(
                 torch.cuda.synchronize()
                 with torch.amp.autocast("cuda", enabled=False):  # RNNT uses FP32
                     results = model.transcribe(
-                        [tmp_path],
-                        timestamps=True,
-                        return_hypotheses=True,
-                        verbose=False,
+                        [tmp_path], timestamps=True, return_hypotheses=True, verbose=False
                     )
                 torch.cuda.synchronize()
             else:
                 results = model.transcribe(
-                    [tmp_path],
-                    timestamps=True,
-                    return_hypotheses=True,
-                    verbose=False,
+                    [tmp_path], timestamps=True, return_hypotheses=True, verbose=False
                 )
 
         words = _extract_word_timestamps(results, audio_array, sample_rate)
@@ -242,7 +237,7 @@ def stream_transcribe_chunk(
     """Transcribe audio chunk using NeMo's cache-aware streaming."""
     model_state = get_model_state()
     if not model_state.streaming_loaded:
-        # Auto-load streaming model if not loaded
+        # Auto-load streaming model
         try:
             get_model(mode="streaming")
             model_state = get_model_state()
@@ -313,6 +308,8 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     # Startup
     try:
+        # Initialize CUDA context (required before model loading)
+        setup_cuda()
         await check_text_refiner()
         logger.info("Service ready, models will load on first request")
         logger.info(f"Streaming: {STREAMING_MODEL}, Offline: {OFFLINE_MODEL}")
@@ -325,7 +322,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Parakeet ASR Service",
     description="GPU-accelerated streaming ASR with NeMo cache-aware streaming",
-    version="1.0",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -336,10 +333,10 @@ text_refiner = get_client()
 async def health_check():
     """Health check endpoint."""
     state = get_model_state()
-    any_loaded = state.streaming_loaded or state.offline_loaded
 
+    # Service is healthy when CUDA is ready (models load on demand)
     info = {
-        "status": "healthy" if any_loaded else "loading",
+        "status": "healthy",
         "streaming_model": STREAMING_MODEL,
         "streaming_loaded": state.streaming_loaded,
         "offline_model": OFFLINE_MODEL,
@@ -364,6 +361,12 @@ async def model_info():
     """Service information endpoint."""
     state = get_model_state()
     return {
+        "service": "parakeet-asr",
+        "version": __version__,
+        "models": {
+            "streaming": STREAMING_MODEL,
+            "offline": OFFLINE_MODEL,
+        },
         "streaming_model": STREAMING_MODEL,
         "offline_model": OFFLINE_MODEL,
         "streaming_loaded": state.streaming_loaded,
@@ -423,8 +426,10 @@ async def websocket_stream(websocket: WebSocket):
     logger.info("WebSocket connected")
 
     # Ensure streaming model is loaded before processing
+    # Run in thread pool to not block the async event loop during model loading
+    loop = asyncio.get_event_loop()
     try:
-        get_model(mode="streaming")  # Auto-loads if not loaded
+        await loop.run_in_executor(None, lambda: get_model(mode="streaming"))
     except Exception as e:
         logger.error(f"Failed to load streaming model: {e}")
         await websocket.close(code=1011, reason="Model loading failed")
@@ -460,12 +465,12 @@ async def websocket_stream(websocket: WebSocket):
                 if word_count >= MIN_WORDS_FOR_PUNCTUATION:
                     text = text.rstrip(".") + "."
 
-            await send_queue.put({"id": f"s{output_counter}", "text": text})
+            await send_queue.put({"id": f"s{output_counter}", "text": text, "final": True})
             output_counter += 1
             last_sent_text = ""
         else:
             text = capitalize_text(text)
-            await send_queue.put({"id": f"s{output_counter}", "text": text})
+            await send_queue.put({"id": f"s{output_counter}", "text": text, "final": False})
             last_sent_text = text
 
     async def receive_audio():
