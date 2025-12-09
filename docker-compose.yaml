@@ -178,10 +178,8 @@ services:
       - whisper-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (~13GB for both)
       - whisper-torch-cache:/root/.cache/torch     # Cache Silero VAD model (~100MB)
     environment:
-      # Streaming model: Fast turbo model for real-time WebSocket streaming (~3GB VRAM)
-      - WHISPER_STREAMING_MODEL=openai/whisper-large-v3-turbo
-      # Offline model: Accurate large-v3 model for file transcription (~10GB VRAM)
-      - WHISPER_OFFLINE_MODEL=openai/whisper-large-v3
+      - WHISPER_MODEL=openai/whisper-large-v3-turbo
+      - HF_HUB_OFFLINE=1                           # Force offline mode to prevent network requests
       - CUDA_VISIBLE_DEVICES=0
     deploy:
       resources:
