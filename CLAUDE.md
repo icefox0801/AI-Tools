@@ -62,9 +62,39 @@ AI-Tools is a Docker-based AI toolkit for real-time speech-to-text, audio transc
 
 ## Testing
 
+### Critical Testing Pattern
+
+**⚠️ UNIT TESTS ARE NEVER IN `integration/`!**
+
+This project enforces strict test organization:
+
+**Test Structure:**
+```
+integration/              # E2E TESTS ONLY!
+├── e2e/                 # End-to-end integration tests
+└── fixtures/            # Test data (audio files, etc.)
+
+apps/*/tests/            # Unit tests co-located with apps
+services/*/test_*.py     # Unit tests co-located with services
+shared/tests/            # Unit tests for shared modules
+```
+
+**Rules:**
+- ✅ Co-locate unit tests with the code they test
+- ✅ Use `integration/e2e/` ONLY for end-to-end tests
+- ❌ NEVER create `integration/unit/`
+- ❌ NEVER put unit tests in `integration/`
+
+### Running Tests
+
 Run all tests:
 ```bash
 python -m pytest apps/ services/ shared/ integration/ -v
+```
+
+Run only unit tests (no Docker required):
+```bash
+python -m pytest apps/ services/ shared/ -v
 ```
 
 Run specific test suites:
@@ -80,6 +110,11 @@ python -m pytest services/parakeet services/whisper services/vosk -v
 
 # E2E tests (require Docker services)
 python -m pytest integration/e2e -v -m e2e
+```
+
+Run with coverage:
+```bash
+python -m pytest apps/ services/ shared/ integration/ --cov=apps --cov=services --cov=shared
 ```
 
 ## WebSocket Protocol (v3.0)
