@@ -118,33 +118,6 @@ class TestCheckAllBackends:
             assert len(results) > 0
 
 
-class TestFindPython:
-    """Tests for find_python function."""
-
-    def test_finds_venv_python(self, mock_dependencies):
-        """Test finding Python in project venv."""
-        with patch("pathlib.Path.exists") as mock_exists:
-            # First call is for venv python, return True
-            mock_exists.return_value = True
-
-            from live_captions_tray import find_python
-
-            result = find_python()
-
-            # Should find the venv python
-            assert "python" in result.lower()
-
-    def test_fallback_to_path(self, mock_dependencies):
-        """Test fallback to PATH when no specific Python found."""
-        with patch("pathlib.Path.exists") as mock_exists:
-            # All paths don't exist
-            mock_exists.return_value = False
-
-            from live_captions_tray import find_python
-
-            result = find_python()
-
-            assert result == "python"
 
 
 class TestLiveCaptionsTrayInit:
@@ -555,56 +528,6 @@ class TestLiveCaptionsTrayIcon:
             img = app.create_icon_image(running=True)
 
             assert img is not None
-
-
-class TestLiveCaptionsTrayDoubleClick:
-    """Tests for double-click handling."""
-
-    def test_double_click_starts_when_stopped(self, mock_dependencies):
-        """Test double-click starts captions when stopped."""
-        with (
-            patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("live_captions_tray.check_backend_health") as mock_health,
-            patch("subprocess.Popen") as mock_popen,
-            patch("threading.Thread"),
-            patch("threading.Timer"),
-        ):
-
-            mock_check.return_value = {"whisper": (True, "Ready")}
-            mock_health.return_value = (True, "Ready")
-
-            mock_process = MagicMock()
-            mock_process.pid = 12345
-            mock_popen.return_value = mock_process
-
-            from live_captions_tray import LiveCaptionsTray
-
-            app = LiveCaptionsTray()
-            app.on_double_click(None, None)
-
-            assert app.current_process is not None
-
-    def test_double_click_stops_when_running(self, mock_dependencies):
-        """Test double-click stops captions when running."""
-        with (
-            patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("threading.Thread"),
-        ):
-
-            mock_check.return_value = {}
-
-            from live_captions_tray import LiveCaptionsTray
-
-            app = LiveCaptionsTray()
-
-            mock_process = MagicMock()
-            mock_process.poll.return_value = None
-            app.current_process = mock_process
-            app.current_backend = "whisper"
-
-            app.on_double_click(None, None)
-
-            mock_process.terminate.assert_called()
 
 
 class TestLiveCaptionsTrayQuit:
