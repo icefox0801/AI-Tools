@@ -216,9 +216,7 @@ class GPUMemoryManager:
 
         # Unload ALL other models (different service or different model within same service)
         models_to_unload = [
-            (key, info)
-            for key, info in self._loaded_models.items()
-            if key != target_key
+            (key, info) for key, info in self._loaded_models.items() if key != target_key
         ]
 
         if models_to_unload:
