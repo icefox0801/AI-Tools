@@ -79,8 +79,8 @@ python_files = ["*_test.py", "test_*.py"]
 markers = [
     "e2e: End-to-end tests (require Docker services running)",
 ]
-# E2E test timeout (seconds) - prevents hanging tests
-timeout = 30
+# E2E test timeout (seconds) - prevents hanging tests, allows for model loading
+timeout = 120
 
 [tool.mypy]
 python_version = "3.11"

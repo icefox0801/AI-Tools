@@ -204,6 +204,65 @@ def text_refiner_service(
 
 
 # ============================================================================
+# GPU Status Helpers
+# ============================================================================
+
+
+def get_gpu_status(service_config: dict[str, Any]) -> dict[str, Any]:
+    """Get GPU status from a service's health endpoint.
+
+    Returns dict with:
+        - device: "cuda" or "cpu"
+        - cuda_device: GPU name (if CUDA)
+        - memory_gb: GPU memory allocated (if CUDA)
+        - streaming_loaded: bool
+        - offline_loaded: bool
+    """
+    import httpx
+
+    url = f"http://{service_config['host']}:{service_config['port']}{service_config['health_endpoint']}"
+    try:
+        response = httpx.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return {}
+
+
+def assert_gpu_available(service_config: dict[str, Any]) -> None:
+    """Assert that the service has CUDA GPU available.
+
+    Raises AssertionError if GPU is not available.
+    """
+    status = get_gpu_status(service_config)
+    assert status.get("device") == "cuda", f"Expected CUDA device, got: {status.get('device')}"
+    assert "cuda_device" in status, f"Expected cuda_device in status: {status}"
+
+
+def assert_model_loaded(service_config: dict[str, Any], mode: str) -> None:
+    """Assert that a specific model is loaded.
+
+    Args:
+        service_config: Service configuration dict
+        mode: "streaming" or "offline"
+    """
+    status = get_gpu_status(service_config)
+    if mode == "streaming":
+        assert status.get("streaming_loaded") is True, f"Expected streaming model loaded: {status}"
+    elif mode == "offline":
+        assert status.get("offline_loaded") is True, f"Expected offline model loaded: {status}"
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+
+def get_gpu_memory_gb(service_config: dict[str, Any]) -> float:
+    """Get GPU memory allocated by a service in GB."""
+    status = get_gpu_status(service_config)
+    return status.get("memory_gb", 0.0)
+
+
+# ============================================================================
 # Test Audio Fixtures
 # ============================================================================
 
