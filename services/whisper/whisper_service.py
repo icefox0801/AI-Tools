@@ -50,16 +50,15 @@ logger = setup_logging(__name__)
 # Configuration
 # =============================================================================
 
+__version__ = "1.2"
+
 # VAD (Voice Activity Detection) - skip silence for faster processing
 USE_VAD = True
-VAD_THRESHOLD = 0.5  # Speech probability threshold
+VAD_THRESHOLD = 0.5  # Speech probability threshold (0.0-1.0)
 
 # Chunk settings for streaming (optimized for whisper-large-v3-turbo)
 CHUNK_DURATION_SEC = 1.5  # Process in 1.5s chunks
 MIN_AUDIO_SEC = 0.3  # Minimum audio to process
-
-# API version
-API_VERSION = "1.1"
 
 
 # =============================================================================
@@ -78,7 +77,7 @@ async def lifespan(app: FastAPI):
     # Shutdown (if needed)
 
 
-app = FastAPI(title="Whisper ASR Service", version=API_VERSION, lifespan=lifespan)
+app = FastAPI(title="Whisper ASR Service", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -202,7 +201,7 @@ async def info():
     state = get_model_state()
     return {
         "service": "whisper-asr",
-        "version": API_VERSION,
+        "version": __version__,
         "model": MODEL,
         "device": DEVICE,
         "vad_enabled": USE_VAD,
