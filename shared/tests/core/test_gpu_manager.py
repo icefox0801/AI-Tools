@@ -4,7 +4,6 @@ These tests require torch which is only available in Docker containers.
 Run via: docker-compose exec parakeet-asr pytest /app/shared/core/test_gpu_manager.py
 """
 
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +12,7 @@ import pytest
 # Skip entire module if torch not installed
 torch = pytest.importorskip("torch", reason="torch is only available in Docker containers")
 
-from shared.core.gpu_manager import (
+from shared.core.gpu_manager import (  # noqa: E402
     GPUMemoryManager,
     clear_gpu_cache,
     get_free_memory_gb,

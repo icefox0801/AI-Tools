@@ -2,13 +2,9 @@
 Unit tests for shared.config.backends module.
 """
 
-import os
-from unittest.mock import patch
-
 import pytest
 
-from .backends import (
-    BACKENDS,
+from shared.config.backends import (
     BACKENDS_DOCKER,
     BACKENDS_LOCAL,
     format_model_name,

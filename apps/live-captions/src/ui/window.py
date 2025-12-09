@@ -364,7 +364,7 @@ class CaptionWindow:
         if self._word_animation_enabled and self._words_to_animate:
             # Show previous text + animated portion of new words
             prev_words = self._previous_text.split() if self._previous_text else []
-            animated_new_words = self._words_to_animate[:self._current_word_index]
+            animated_new_words = self._words_to_animate[: self._current_word_index]
             all_words = prev_words + animated_new_words
             full_display_text = " ".join(all_words)
 
@@ -400,17 +400,17 @@ class CaptionWindow:
             return
 
         text = text.strip()
-        
+
         # Detect new words added to the text
         if self._word_animation_enabled and text != self._full_text:
             old_words = self._full_text.split() if self._full_text else []
             new_words = text.split()
-            
+
             # Find newly added words
             if len(new_words) > len(old_words):
                 # Words were added - animate them
-                added_words = new_words[len(old_words):]
-                
+                added_words = new_words[len(old_words) :]
+
                 # If already animating, enable turbo mode to catch up
                 if self._word_timer and self._words_to_animate:
                     self._turbo_mode = True
@@ -423,7 +423,7 @@ class CaptionWindow:
                     self._current_word_index = 0
                     self._reset_speed_tracking()
                     self._animate_words()
-                
+
                 # Update full text but don't display yet (animation will handle it)
                 self._full_text = text
                 return
@@ -461,7 +461,7 @@ class CaptionWindow:
             self.root.after_cancel(self._word_timer)
             self._word_timer = None
         self._words_to_animate = []
-        
+
         self._current_line1 = ""
         self._current_line2 = message
         self._full_text = message

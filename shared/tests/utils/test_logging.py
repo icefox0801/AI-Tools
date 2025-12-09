@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from .logging import DEFAULT_FORMAT, get_logger, set_log_level, setup_logging
+from shared.utils.logging import DEFAULT_FORMAT, get_logger, set_log_level, setup_logging
 
 
 class TestSetupLogging:

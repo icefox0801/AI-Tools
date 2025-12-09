@@ -11,4 +11,4 @@ sys.modules["gradio"] = gradio_mock
 sys.modules["gr"] = gradio_mock
 
 # Add the service directory to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))

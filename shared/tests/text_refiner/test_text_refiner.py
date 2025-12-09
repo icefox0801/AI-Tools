@@ -4,7 +4,7 @@ Unit tests for text_refiner module.
 
 import pytest
 
-from .utils import capitalize_text
+from shared.text_refiner.utils import capitalize_text
 
 
 class TestCapitalizeText:
@@ -45,15 +45,15 @@ class TestGetClient:
 
     def test_get_client_returns_instance(self):
         """Test get_client returns a TextRefinerClient instance."""
-        from . import get_client
-        from .client import TextRefinerClient
+        from shared.text_refiner import get_client
+        from shared.text_refiner.client import TextRefinerClient
 
         client = get_client()
         assert isinstance(client, TextRefinerClient)
 
     def test_get_client_singleton(self):
         """Test get_client returns same instance on repeated calls."""
-        from . import get_client
+        from shared.text_refiner import get_client
 
         client1 = get_client()
         client2 = get_client()

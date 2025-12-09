@@ -61,9 +61,6 @@ class TestASRClientConfig:
 
         client = ASRClient(chunk_ms=300, language="yue")
 
-        # The config that would be sent
-        expected_config = {"chunk_ms": 300, "language": "yue"}
-
         # Verify the config matches expected format
         assert client.chunk_ms == 300
         assert client.language == "yue"

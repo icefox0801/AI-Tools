@@ -4,7 +4,7 @@ Unit tests for shared.client.transcript module.
 
 import pytest
 
-from .transcript import (
+from shared.client.transcript import (
     TranscriptManager,
     get_segment_number,
     parse_segment_id,

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .utils import (
+from src.audio.utils import (
     CHUNK_DURATION_MS,
     TARGET_SAMPLE_RATE,
     calculate_chunk_size,
