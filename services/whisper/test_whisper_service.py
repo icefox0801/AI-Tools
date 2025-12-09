@@ -75,11 +75,13 @@ mock_shared_logging.setup_logging = MagicMock(return_value=MagicMock())
 # Create mock for shared.core
 mock_shared_core = MagicMock()
 mock_shared_core.clear_gpu_cache = MagicMock(side_effect=lambda: mock_torch.cuda.empty_cache())
-mock_shared_core.get_gpu_manager = MagicMock(return_value=MagicMock(
-    ensure_model_ready=MagicMock(return_value=True),
-    register_model=MagicMock(),
-    unregister_model=MagicMock(),
-))
+mock_shared_core.get_gpu_manager = MagicMock(
+    return_value=MagicMock(
+        ensure_model_ready=MagicMock(return_value=True),
+        register_model=MagicMock(),
+        unregister_model=MagicMock(),
+    )
+)
 
 # Create mock for shared.utils
 mock_shared_utils = MagicMock()
@@ -396,13 +398,11 @@ class TestModelUnload:
         data = response.json()
         assert data["status"] == "not_loaded"
 
+    # ==============================================================================
+    # Dual Model Tests
+    # ==============================================================================
 
-# ==============================================================================
-# Dual Model Tests
-# ==============================================================================
-
-
-# Dual-model support removed - service now uses single whisper-turbo model
+    # Dual-model support removed - service now uses single whisper-turbo model
 
     def test_transcribe_returns_model_used(self, client):
         """Transcribe endpoint returns which model was used."""
