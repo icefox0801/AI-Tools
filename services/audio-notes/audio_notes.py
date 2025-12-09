@@ -34,12 +34,18 @@ from fastapi import FastAPI
 from ui import create_ui
 from ui.styles import CUSTOM_CSS
 
+# ==============================================================================
+# Version
+# ==============================================================================
+
+__version__ = "1.1"
+
 
 def create_app(host: str = "127.0.0.1", port: int = 7860, share: bool = False):
     """Create FastAPI app with Gradio mounted."""
 
     # Create FastAPI app
-    app = FastAPI(title="Audio Notes API")
+    app = FastAPI(title="Audio Notes API", version=__version__)
 
     # Set up custom API routes FIRST (before Gradio takes over)
     setup_api_routes(app)

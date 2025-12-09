@@ -35,7 +35,7 @@ SetLogLevel(-1)
 
 MODEL_PATH = "/app/model"  # Standard Docker path
 SAMPLE_RATE = 16000
-API_VERSION = "1.0"
+__version__ = "1.0"
 
 
 # ==============================================================================
@@ -76,7 +76,7 @@ def get_model_name() -> str:
 app = FastAPI(
     title="Vosk ASR Service",
     description="Lightweight CPU-based streaming speech recognition",
-    version=API_VERSION,
+    version=__version__,
 )
 
 app.add_middleware(
@@ -99,7 +99,7 @@ async def health():
         "device": "cpu",
         "sample_rate": SAMPLE_RATE,
         "streaming": True,
-        "api_version": API_VERSION,
+        "version": __version__,
         "text_refiner": {
             "enabled": text_refiner.enabled,
             "available": text_refiner.available,

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ==============================================================================
 
-API_VERSION = "1.0"
+__version__ = "1.0"
 
 # Device configuration
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -355,7 +355,7 @@ async def process_text(
 app = FastAPI(
     title="Text Refiner Service",
     description="Punctuation restoration and ASR error correction",
-    version=API_VERSION,
+    version=__version__,
 )
 
 app.add_middleware(
@@ -377,6 +377,7 @@ async def health():
         "correction_model": CORRECTION_MODEL if models["correction"]["loaded"] else None,
         "correction_enabled": ENABLE_CORRECTION,
         "device": DEVICE,
+        "version": __version__,
     }
 
 
@@ -396,7 +397,7 @@ async def info():
 
     return {
         "service": "text-refiner",
-        "api_version": API_VERSION,
+        "api_version": __version__,
         "models": get_model_info(),
         "device": DEVICE,
         "gpu": gpu_info,
