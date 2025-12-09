@@ -308,6 +308,7 @@ class TestLiveCaptionsTrayStartStop:
         """Test stopping captions."""
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
+            patch("live_captions_tray.request_stop") as mock_request_stop,
             patch("threading.Thread"),
         ):
 
@@ -323,7 +324,8 @@ class TestLiveCaptionsTrayStartStop:
 
             app.stop_captions()
 
-            mock_process.terminate.assert_called_once()
+            mock_request_stop.assert_called_once()
+            mock_process.wait.assert_called_once_with(timeout=10)
             assert app.current_process is None
             assert app.current_backend is None
 
@@ -354,6 +356,7 @@ class TestLiveCaptionsTrayAudioSource:
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
             patch("live_captions_tray.check_backend_health") as mock_health,
+            patch("live_captions_tray.request_stop") as mock_request_stop,
             patch("subprocess.Popen") as mock_popen,
             patch("threading.Thread"),
             patch("threading.Timer"),
@@ -376,7 +379,7 @@ class TestLiveCaptionsTrayAudioSource:
             app.toggle_audio_source()
 
             # Should restart the process
-            mock_process.terminate.assert_called()
+            mock_request_stop.assert_called()
 
 
 class TestLiveCaptionsTrayTranscription:
@@ -426,17 +429,17 @@ class TestLiveCaptionsTrayRecording:
         """Test getting recording info when no recorder."""
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("live_captions_tray.get_recorder") as mock_get_recorder,
+            patch("live_captions_tray.read_recording_status") as mock_read_status,
             patch("threading.Thread"),
         ):
 
             mock_check.return_value = {}
-            mock_get_recorder.return_value = None
+            mock_read_status.return_value = (False, "00:00", 0.0, 0.0)
 
             from live_captions_tray import LiveCaptionsTray
 
             app = LiveCaptionsTray()
-            is_recording, duration_str, duration = app.get_recording_info()
+            is_recording, duration_str, duration, seconds_since_audio = app.get_recording_info()
 
             assert is_recording is False
             assert duration_str == "00:00"
@@ -446,22 +449,17 @@ class TestLiveCaptionsTrayRecording:
         """Test getting recording info with active recorder."""
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("live_captions_tray.get_recorder") as mock_get_recorder,
+            patch("live_captions_tray.read_recording_status") as mock_read_status,
             patch("threading.Thread"),
         ):
 
             mock_check.return_value = {}
-
-            mock_recorder = MagicMock()
-            mock_recorder.is_recording = True
-            mock_recorder.duration_str = "01:30"
-            mock_recorder.duration = 90.0
-            mock_get_recorder.return_value = mock_recorder
+            mock_read_status.return_value = (True, "01:30", 90.0, 5.0)
 
             from live_captions_tray import LiveCaptionsTray
 
             app = LiveCaptionsTray()
-            is_recording, duration_str, duration = app.get_recording_info()
+            is_recording, duration_str, duration, seconds_since_audio = app.get_recording_info()
 
             assert is_recording is True
             assert duration_str == "01:30"
@@ -471,21 +469,21 @@ class TestLiveCaptionsTrayRecording:
         """Test clearing recording."""
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("live_captions_tray.get_recorder") as mock_get_recorder,
             patch("threading.Thread"),
         ):
 
             mock_check.return_value = {}
 
-            mock_recorder = MagicMock()
-            mock_get_recorder.return_value = mock_recorder
-
             from live_captions_tray import LiveCaptionsTray
 
             app = LiveCaptionsTray()
+            mock_icon = MagicMock()
+            app.icon = mock_icon
+            
             app.clear_recording()
 
-            mock_recorder.clear.assert_called_once()
+            # Should show notification that clearing from tray is not supported
+            mock_icon.notify.assert_called_once()
 
 
 class TestLiveCaptionsTrayIcon:
@@ -535,12 +533,11 @@ class TestLiveCaptionsTrayQuit:
         """Test quit stops running process."""
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("live_captions_tray.get_recorder") as mock_get_recorder,
+            patch("live_captions_tray.request_stop") as mock_request_stop,
             patch("threading.Thread"),
         ):
 
             mock_check.return_value = {}
-            mock_get_recorder.return_value = None
 
             from live_captions_tray import LiveCaptionsTray
 
@@ -552,32 +549,31 @@ class TestLiveCaptionsTrayQuit:
             mock_icon = MagicMock()
             app.quit(mock_icon, None)
 
-            mock_process.terminate.assert_called()
+            mock_request_stop.assert_called()
             mock_icon.stop.assert_called()
 
     def test_quit_saves_recording(self, mock_dependencies):
-        """Test quit saves recording if active."""
+        """Test quit calls stop_captions."""
         with (
             patch("live_captions_tray.check_all_backends") as mock_check,
-            patch("live_captions_tray.get_recorder") as mock_get_recorder,
+            patch("live_captions_tray.request_stop") as mock_request_stop,
             patch("threading.Thread"),
         ):
 
             mock_check.return_value = {}
 
-            mock_recorder = MagicMock()
-            mock_recorder.is_recording = True
-            mock_recorder.duration = 5.0
-            mock_get_recorder.return_value = mock_recorder
-
             from live_captions_tray import LiveCaptionsTray
 
             app = LiveCaptionsTray()
 
+            mock_process = MagicMock()
+            app.current_process = mock_process
+
             mock_icon = MagicMock()
             app.quit(mock_icon, None)
 
-            mock_recorder.stop.assert_called_once()
+            # Quit should call stop_captions which calls request_stop
+            mock_request_stop.assert_called_once()
 
 
 class TestLanguageSupport:

@@ -310,4 +310,4 @@ class TestConstants:
 
     def test_auto_upload_interval(self):
         """Test auto upload interval."""
-        assert AUTO_UPLOAD_INTERVAL == 60
+        assert AUTO_UPLOAD_INTERVAL == 30

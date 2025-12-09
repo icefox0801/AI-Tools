@@ -100,6 +100,7 @@ async def health():
         "sample_rate": SAMPLE_RATE,
         "streaming": True,
         "version": __version__,
+        "api_version": "1.0",
         "text_refiner": {
             "enabled": text_refiner.enabled,
             "available": text_refiner.available,

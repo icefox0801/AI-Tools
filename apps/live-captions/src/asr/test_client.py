@@ -297,7 +297,7 @@ class TestASRClientRun:
         # Check config was sent
         calls = mock_ws.send.call_args_list
         config_sent = any(
-            json.loads(call[0][0]) == {"chunk_ms": 300}
+            json.loads(call[0][0]) == {"chunk_ms": 300, "language": "en"}
             for call in calls
             if isinstance(call[0][0], str)
         )

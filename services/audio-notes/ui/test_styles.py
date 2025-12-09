@@ -19,7 +19,7 @@ class TestCustomCSS:
 
     def test_css_hides_loaders(self):
         """Test that CSS includes rules for hiding loaders."""
-        assert "loader" in CUSTOM_CSS.lower()
+        assert "loading" in CUSTOM_CSS.lower()
 
     def test_css_preserves_checkbox_inputs(self):
         """Test that CSS doesn't hide checkbox/radio inputs."""

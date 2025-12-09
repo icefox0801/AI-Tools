@@ -86,6 +86,9 @@ mock_vosk.SetLogLevel = MagicMock()
 mock_shared_logging = MagicMock()
 mock_shared_logging.setup_logging = MagicMock(return_value=MagicMock())
 
+mock_shared_utils = MagicMock()
+mock_shared_utils.setup_logging = MagicMock(return_value=MagicMock())
+
 mock_text_refiner_client = MagicMock()
 mock_text_refiner_client.enabled = True
 mock_text_refiner_client.available = False
@@ -117,6 +120,7 @@ def mock_vosk_module():
             "vosk": mock_vosk,
             "shared": MagicMock(),
             "shared.logging": mock_shared_logging,
+            "shared.utils": mock_shared_utils,
             "shared.text_refiner": mock_shared_text_refiner,
         },
     ):
