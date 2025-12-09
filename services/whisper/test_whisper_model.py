@@ -24,16 +24,19 @@ def mock_dependencies():
     mock_gpu_mgr = MagicMock()
     mock_gpu_mgr.ensure_model_ready.return_value = True
     mock_gpu_mgr._get_available_memory.return_value = 10.0  # 10GB available
-    
-    with patch.dict(
-        "sys.modules",
-        {
-            "torch": torch_mock,
-            "huggingface_hub": MagicMock(),
-            "transformers": MagicMock(),
-            "shared.logging": MagicMock(),
-        },
-    ), patch("model.get_gpu_manager", return_value=mock_gpu_mgr):
+
+    with (
+        patch.dict(
+            "sys.modules",
+            {
+                "torch": torch_mock,
+                "huggingface_hub": MagicMock(),
+                "transformers": MagicMock(),
+                "shared.logging": MagicMock(),
+            },
+        ),
+        patch("model.get_gpu_manager", return_value=mock_gpu_mgr),
+    ):
         yield
 
 

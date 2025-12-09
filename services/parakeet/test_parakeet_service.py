@@ -116,22 +116,22 @@ def app(mock_env, mock_modules):
 
     # Remove cached modules if exist
     for mod_name in list(sys.modules.keys()):
-        if mod_name in ("model", "audio", "parakeet_service"):
+        if mod_name in ("parakeet_model", "audio", "parakeet_service"):
             del sys.modules[mod_name]
 
     # Import modules
-    import model
+    import parakeet_model
     import parakeet_service
 
     # Set up mocked model state
-    model._model_state.streaming_model = MagicMock()
-    model._model_state.streaming_preprocessor = MagicMock()
-    model._model_state.streaming_loaded = True
-    model._model_state.streaming_model_name = "nvidia/test-streaming"
-    model._model_state.offline_model = MagicMock()
-    model._model_state.offline_preprocessor = MagicMock()
-    model._model_state.offline_loaded = True
-    model._model_state.offline_model_name = "nvidia/test-offline"
+    parakeet_model._model_state.streaming_model = MagicMock()
+    parakeet_model._model_state.streaming_preprocessor = MagicMock()
+    parakeet_model._model_state.streaming_loaded = True
+    parakeet_model._model_state.streaming_model_name = "nvidia/test-streaming"
+    parakeet_model._model_state.offline_model = MagicMock()
+    parakeet_model._model_state.offline_preprocessor = MagicMock()
+    parakeet_model._model_state.offline_loaded = True
+    parakeet_model._model_state.offline_model_name = "nvidia/test-offline"
 
     yield parakeet_service.app
 
@@ -148,17 +148,17 @@ def service(mock_env, mock_modules):
     import sys
 
     for mod_name in list(sys.modules.keys()):
-        if mod_name in ("model", "audio", "parakeet_service"):
+        if mod_name in ("parakeet_model", "audio", "parakeet_service"):
             del sys.modules[mod_name]
 
-    import model
+    import parakeet_model
     import parakeet_service
 
     # Set up mocked model state
-    model._model_state.streaming_model = MagicMock()
-    model._model_state.streaming_preprocessor = MagicMock()
-    model._model_state.streaming_loaded = True
-    model._model_state.streaming_model_name = "nvidia/test-streaming"
+    parakeet_model._model_state.streaming_model = MagicMock()
+    parakeet_model._model_state.streaming_preprocessor = MagicMock()
+    parakeet_model._model_state.streaming_loaded = True
+    parakeet_model._model_state.streaming_model_name = "nvidia/test-streaming"
 
     yield parakeet_service
 

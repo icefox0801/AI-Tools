@@ -118,8 +118,6 @@ class TestCheckAllBackends:
             assert len(results) > 0
 
 
-
-
 class TestLiveCaptionsTrayInit:
     """Tests for LiveCaptionsTray initialization."""
 

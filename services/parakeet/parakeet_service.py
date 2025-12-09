@@ -27,7 +27,7 @@ import torch
 import uvicorn
 from audio import float_to_pcm, load_audio_file, pcm_to_float
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from model import (
+from parakeet_model import (
     DEVICE,
     OFFLINE_MODEL,
     STREAMING_MODEL,

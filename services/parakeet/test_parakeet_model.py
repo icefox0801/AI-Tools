@@ -86,17 +86,15 @@ def model_module(mock_env, mock_modules):
 
     # Remove cached module if exists
     for mod_name in list(sys.modules.keys()):
-        if "model" in mod_name and "parakeet" not in mod_name:
-            continue
-        if mod_name == "model":
+        if mod_name == "parakeet_model":
             del sys.modules[mod_name]
 
-    import model
+    import parakeet_model
 
     # Reset model state for each test
-    model._model_state = model.ModelState()
+    parakeet_model._model_state = parakeet_model.ModelState()
 
-    yield model
+    yield parakeet_model
 
 
 # ==============================================================================
