@@ -130,9 +130,9 @@ T ?=
 test-e2e:
 	@echo "=== E2E Tests ==="
 ifeq ($(T),)
-	$(PYTHON) -m pytest tests/e2e/ -v --tb=short
+	$(PYTHON) -m pytest integration/e2e/ -v --tb=short
 else
-	$(PYTHON) -m pytest tests/e2e/ -v --tb=short -k "$(T)"
+	$(PYTHON) -m pytest integration/e2e/ -v --tb=short -k "$(T)"
 endif
 	@echo "[OK] E2E tests passed"
 

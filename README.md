@@ -116,8 +116,8 @@ AI-Tools/
 ## Testing
 
 ```bash
-# Run all tests (321 tests)
-python -m pytest apps/ services/ tests/ -v
+# Run all tests (unit tests are co-located with their modules)
+python -m pytest apps/ services/ shared/ integration/ -v
 
 # Run with coverage
 python -m pytest --cov=apps --cov=services --cov=shared

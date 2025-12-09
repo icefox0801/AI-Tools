@@ -269,8 +269,8 @@ def get_gpu_memory_gb(service_config: dict[str, Any]) -> float:
 
 @pytest.fixture(scope="session")
 def test_audio_dir(project_root: str) -> str:
-    """Path to test audio files (tests/fixtures/audio)."""
-    return os.path.join(project_root, "tests", "fixtures", "audio")
+    """Path to test audio files (integration/fixtures/audio)."""
+    return os.path.join(project_root, "integration", "fixtures", "audio")
 
 
 @pytest.fixture(scope="session")

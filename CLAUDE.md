@@ -64,7 +64,7 @@ AI-Tools is a Docker-based AI toolkit for real-time speech-to-text, audio transc
 
 Run all tests:
 ```bash
-python -m pytest apps/ services/ tests/ -v
+python -m pytest apps/ services/ shared/ integration/ -v
 ```
 
 Run specific test suites:
@@ -79,7 +79,7 @@ python -m pytest services/audio-notes -v
 python -m pytest services/parakeet services/whisper services/vosk -v
 
 # E2E tests (require Docker services)
-python -m pytest tests/e2e -v -m e2e
+python -m pytest integration/e2e -v -m e2e
 ```
 
 ## WebSocket Protocol (v3.0)
@@ -183,9 +183,9 @@ AI-Tools/
 │   ├── config/              # Backend configuration
 │   ├── logging/             # Centralized logging
 │   └── text_refiner/        # Text refiner client
-└── tests/
-    ├── e2e/                 # End-to-end tests
-    └── fixtures/            # Test audio files
+└── integration/         # E2E integration tests only
+    ├── e2e/             # End-to-end tests
+    └── fixtures/        # Test audio files
 ```
 
 ## Code Quality
