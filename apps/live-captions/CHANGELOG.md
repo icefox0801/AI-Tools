@@ -2,6 +2,15 @@
 
 All notable changes to Live Captions will be documented in this file.
 
+## [1.4] - 2025-12-10
+
+### Changed
+- Simplified tray menu layout
+- Audio source icons (speaker/microphone)
+
+### Fixed
+- Tray Stop button now works correctly
+
 ## [1.3] - 2025-12-08
 
 ### Added
