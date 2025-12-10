@@ -5,11 +5,17 @@
 # Uses volume mounts for:
 #   - /root/.cache/huggingface  (HuggingFace models)
 #   - /root/.cache/nemo         (NeMo models)
+#
+# China mirrors enabled by default for faster downloads.
 
 # Use NVIDIA CUDA base image with CUDA 12.9 runtime
 FROM nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
+
+# Configure APT mirrors for China (Aliyun)
+RUN sed -i "s|archive.ubuntu.com|mirrors.aliyun.com|g" /etc/apt/sources.list && \
+    sed -i "s|security.ubuntu.com|mirrors.aliyun.com|g" /etc/apt/sources.list
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,8 +31,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure pip for China mirrors (Aliyun)
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set global.trusted-host mirrors.aliyun.com
+
 # Upgrade pip to avoid resolver bugs in system pip
 RUN pip install --upgrade pip setuptools wheel
+
+# Set HuggingFace mirror for China
+ENV HF_ENDPOINT=https://hf-mirror.com
 
 # Install PyTorch 2.9+ with CUDA 12.8 support (compatible with driver 576.88)
 # Cache mount stores downloads permanently in Docker's buildkit cache

@@ -792,6 +792,12 @@ class LiveCaptionsTray:
         def get_audio_source():
             return "🔊 Speakers" if self.use_system_audio else "🎤 Mic"
 
+        # Helper to get current backend name
+        def get_backend_name():
+            if self.is_running():
+                return BACKENDS.get(self.current_backend, {}).get("name", "None")
+            return DEFAULT_BACKEND.title()
+
         # Build menu
         menu = pystray.Menu(
             # Version and status section
@@ -809,12 +815,12 @@ class LiveCaptionsTray:
                 None,
                 enabled=False,
             ),
-            # Stats line showing audio source and mode when running
+            # Stats line showing audio source + model + mode
             pystray.MenuItem(
                 lambda text: (
-                    f"  {get_audio_source()} │ {get_mode_description()}"
+                    f"  {get_audio_source()} │ {get_backend_name()} │ {get_mode_description()}"
                     if self.is_running()
-                    else f"Mode: {get_mode_description()}"
+                    else f"  {get_audio_source()} │ {get_mode_description()}"
                 ),
                 None,
                 enabled=False,
@@ -823,9 +829,41 @@ class LiveCaptionsTray:
                 lambda text: f"Services: {get_available_count()}/{len(BACKENDS)} available",
                 None,
                 enabled=False,
+                visible=lambda item: self.enable_transcription,
             ),
             pystray.Menu.SEPARATOR,
-            # Backend selection submenu
+            # Audio source submenu - separate group
+            pystray.MenuItem(
+                "Audio Source",
+                pystray.Menu(
+                    pystray.MenuItem(
+                        "🔊 System Audio (Speakers)",
+                        lambda icon, item: setattr(self, "use_system_audio", True)
+                        or (
+                            self.start_captions(self.current_backend) if self.is_running() else None
+                        ),
+                        checked=is_system_audio,
+                        radio=True,
+                    ),
+                    pystray.MenuItem(
+                        "🎤 Microphone",
+                        lambda icon, item: setattr(self, "use_system_audio", False)
+                        or (
+                            self.start_captions(self.current_backend) if self.is_running() else None
+                        ),
+                        checked=is_microphone,
+                        radio=True,
+                    ),
+                ),
+            ),
+            pystray.Menu.SEPARATOR,
+            # Live transcription toggle - FIRST in this group
+            pystray.MenuItem(
+                "📝 Live Transcription",
+                lambda icon, item: self.toggle_transcription(),
+                checked=lambda item: self.enable_transcription,
+            ),
+            # Backend selection submenu - only visible when transcription enabled
             pystray.MenuItem(
                 "Start with...",
                 pystray.Menu(
@@ -855,32 +893,9 @@ class LiveCaptionsTray:
                         "🔄 Refresh Status", lambda icon, item: self.refresh_backend_status()
                     ),
                 ),
+                visible=lambda item: self.enable_transcription,
             ),
-            # Audio source submenu
-            pystray.MenuItem(
-                "Audio Source",
-                pystray.Menu(
-                    pystray.MenuItem(
-                        "🔊 System Audio (Speakers)",
-                        lambda icon, item: setattr(self, "use_system_audio", True)
-                        or (
-                            self.start_captions(self.current_backend) if self.is_running() else None
-                        ),
-                        checked=is_system_audio,
-                        radio=True,
-                    ),
-                    pystray.MenuItem(
-                        "🎤 Microphone",
-                        lambda icon, item: setattr(self, "use_system_audio", False)
-                        or (
-                            self.start_captions(self.current_backend) if self.is_running() else None
-                        ),
-                        checked=is_microphone,
-                        radio=True,
-                    ),
-                ),
-            ),
-            # Language submenu
+            # Language submenu - only visible when transcription enabled
             pystray.MenuItem(
                 lambda text: f"Language ({LANGUAGES.get(self.current_language, 'en')})",
                 pystray.Menu(
@@ -901,12 +916,7 @@ class LiveCaptionsTray:
                         radio=True,
                     ),
                 ),
-            ),
-            # Live transcription toggle
-            pystray.MenuItem(
-                "📝 Live Transcription",
-                lambda icon, item: self.toggle_transcription(),
-                checked=lambda item: self.enable_transcription,
+                visible=lambda item: self.enable_transcription,
             ),
             pystray.Menu.SEPARATOR,
             # Recording section
@@ -950,8 +960,11 @@ class LiveCaptionsTray:
                 ),
                 self.on_click,
                 visible=lambda item: not self.is_running(),
-                enabled=lambda item: self.is_backend_available(DEFAULT_BACKEND)
-                and self.can_start(),
+                enabled=lambda item: (
+                    self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
+                    if self.enable_transcription
+                    else self.can_start()
+                ),
             ),
             pystray.Menu.SEPARATOR,
             # Exit

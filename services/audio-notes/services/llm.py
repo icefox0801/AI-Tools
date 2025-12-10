@@ -89,33 +89,8 @@ def summarize_streaming(
         if prep_result["memory_freed_gb"] > 0:
             yield f"⏳ {prep_result['message']}\\n\\n"
 
-    # Calculate word count for adaptive prompt
-    word_count = len(transcript.split())
-
-    if not system_prompt:
-        # Adaptive prompt based on transcript length
-        if word_count < 50:
-            length_guidance = "Respond with 1 sentence only. Be extremely brief."
-        elif word_count < 150:
-            length_guidance = "Respond with 1-2 sentences. Keep it concise."
-        elif word_count < 400:
-            length_guidance = "Provide a short paragraph (3-4 sentences) covering main points."
-        elif word_count < 1000:
-            length_guidance = "Provide a brief summary paragraph followed by 3-5 bullet points of key takeaways."
-        else:
-            length_guidance = "Provide a summary paragraph followed by organized bullet points. Group related points under headers if needed."
-
-        system_prompt = f"""You are a concise summarizer. Summarize the transcript directly.
-
-Transcript length: ~{word_count} words.
-{length_guidance}
-
-Rules:
-- Only include information actually present in the transcript
-- No introductory phrases like "This transcript discusses..." or "The speaker talks about..."
-- Start directly with the content
-- Be factual and direct
-- Format in clean Markdown"""
+    # Use the provided system prompt or None (will use UI default)
+    # The UI's summarize.py provides the default prompt
 
     prompt = f"""Summarize this transcript:
 

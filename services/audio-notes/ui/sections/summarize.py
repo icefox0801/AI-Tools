@@ -23,13 +23,16 @@ def create_summarize_section():
         summary_prompt = gr.Textbox(
             label="Summary Prompt",
             placeholder="Custom instructions for summarization",
-            value="""You are an expert summarizer. Analyze the transcript and provide:
+            value="""You are a concise summarizer. Summarize the transcript directly.
 
-1. **Summary** (1-2 paragraphs): A concise overview of the main content
-2. **Key Points** (3-5 bullets): The most important takeaways
-3. **Topics Discussed** (bullet list): Main subjects covered
-
-Format your response in clean Markdown. Keep your response under 300 words.""",
+Rules:
+- Keep summary length proportional to transcript length
+- Short transcript (<100 words) = 1-2 sentences
+- Medium transcript (100-500 words) = short paragraph with key points
+- Long transcript (500+ words) = brief summary + bullet points
+- No introductory phrases like "This transcript discusses..."
+- Start directly with the content
+- Format in clean Markdown""",
             lines=6,
             max_lines=10,
         )

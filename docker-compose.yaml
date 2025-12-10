@@ -1,5 +1,23 @@
 # Docker Compose configuration for AI-Tools
 # Define all services (containers) to be orchestrated
+#
+# ============== CHINA MIRROR SUPPORT ==============
+# China-friendly mirrors are ENABLED BY DEFAULT for:
+# - APT packages (Aliyun mirror for Ubuntu/Debian)
+# - PyPI packages (Aliyun mirror for pip)
+# - HuggingFace models (hf-mirror.com)
+#
+# Optional: Configure Docker Hub mirror (in Docker daemon.json):
+#    {
+#      "registry-mirrors": [
+#        "https://docker.nju.edu.cn",
+#        "https://hub-mirror.c.163.com",
+#        "https://mirror.ccs.tencentyun.com"
+#      ]
+#    }
+#
+# See services/.docker/mirrors.conf for all available mirrors.
+# =================================================
 
 # ============== MODEL CONFIGURATION ==============
 # Parakeet models (separate streaming vs offline for optimal performance):
