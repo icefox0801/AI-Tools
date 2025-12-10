@@ -751,30 +751,11 @@ class LiveCaptionsTray:
         def is_microphone(item):
             return not self.use_system_audio
 
-        # Count available backends
-        def get_available_count():
-            return sum(1 for b in BACKENDS if self.is_backend_available(b))
-
         # Get version string with build time
         build_time = get_build_time()
         version_str = f"{APP_NAME} v{APP_VERSION}"
         if build_time:
             version_str = f"{version_str}.{build_time}"
-
-        # Helper to get current mode description
-        def get_mode_description():
-            if self.enable_transcription and self.enable_recording:
-                return "Transcribe + Record"
-            elif self.enable_transcription:
-                return "Transcribe only"
-            elif self.enable_recording:
-                return "Record only"
-            else:
-                return "Disabled"
-
-        # Helper to get audio source description
-        def get_audio_source():
-            return "🔊 Speakers" if self.use_system_audio else "🎤 Mic"
 
         # Helper to get current backend name
         def get_backend_name():
@@ -784,39 +765,34 @@ class LiveCaptionsTray:
 
         # Build menu
         menu = pystray.Menu(
-            # Version and status section
+            # Version section
             pystray.MenuItem(
                 version_str,
                 None,
                 enabled=False,
             ),
-            pystray.MenuItem(
-                lambda text: (
-                    f"● Running: {BACKENDS.get(self.current_backend, {}).get('name', 'None')}"
-                    if self.is_running()
-                    else "○ Stopped"
-                ),
-                None,
-                enabled=False,
-            ),
-            # Stats line showing audio source + model + mode
-            pystray.MenuItem(
-                lambda text: (
-                    f"  {get_audio_source()} │ {get_backend_name()} │ {get_mode_description()}"
-                    if self.is_running()
-                    else f"  {get_audio_source()} │ {get_mode_description()}"
-                ),
-                None,
-                enabled=False,
-            ),
-            pystray.MenuItem(
-                lambda text: f"Services: {get_available_count()}/{len(BACKENDS)} ({get_backend_name()})",
-                None,
-                enabled=False,
-                visible=lambda item: self.enable_transcription,
-            ),
             pystray.Menu.SEPARATOR,
-            # Audio source and quick start group
+            # Status and controls
+            pystray.MenuItem(
+                lambda text: "● Running" if self.is_running() else "○ Stopped",
+                None,
+                enabled=False,
+            ),
+            pystray.MenuItem(
+                "Stop",
+                self.on_click,
+                visible=lambda item: self.is_running(),
+            ),
+            pystray.MenuItem(
+                "Start",
+                self.on_click,
+                visible=lambda item: not self.is_running(),
+                enabled=lambda item: (
+                    self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
+                    if self.enable_transcription
+                    else self.can_start()
+                ),
+            ),
             pystray.MenuItem(
                 "Audio Source",
                 pystray.Menu(
@@ -840,31 +816,8 @@ class LiveCaptionsTray:
                     ),
                 ),
             ),
-            pystray.MenuItem(
-                "Stop",
-                self.on_click,
-                visible=lambda item: self.is_running(),
-            ),
-            pystray.MenuItem(
-                lambda text: (
-                    f"Quick Start ({DEFAULT_BACKEND.title()})"
-                    if self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
-                    else (
-                        f"Quick Start ({DEFAULT_BACKEND.title()}) - Unavailable"
-                        if self.is_backend_available(DEFAULT_BACKEND)
-                        else f"Quick Start ({DEFAULT_BACKEND.title()}) - Service Unavailable"
-                    )
-                ),
-                self.on_click,
-                visible=lambda item: not self.is_running(),
-                enabled=lambda item: (
-                    self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
-                    if self.enable_transcription
-                    else self.can_start()
-                ),
-            ),
             pystray.Menu.SEPARATOR,
-            # Live transcription toggle - FIRST in this group
+            # Live transcription toggle
             pystray.MenuItem(
                 "📝 Live Transcription",
                 lambda icon, item: self.toggle_transcription(),
@@ -872,7 +825,7 @@ class LiveCaptionsTray:
             ),
             # Backend selection submenu - only visible when transcription enabled
             pystray.MenuItem(
-                "Select Model",
+                lambda text: f"ASR Model ({get_backend_name()})",
                 pystray.Menu(
                     pystray.MenuItem(
                         get_backend_label("whisper"),
