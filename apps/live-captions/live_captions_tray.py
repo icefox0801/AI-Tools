@@ -807,7 +807,7 @@ class LiveCaptionsTray:
                 ),
             ),
             pystray.MenuItem(
-                lambda text: f"{get_audio_source_icon()} Audio Source",
+                lambda text: f"{get_audio_source_icon()} Audio Source (System Audio)",
                 pystray.Menu(
                     pystray.MenuItem(
                         "System Audio (Speakers)",
