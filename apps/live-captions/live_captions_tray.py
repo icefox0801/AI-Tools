@@ -503,26 +503,33 @@ class LiveCaptionsTray:
         Args:
             backend: ASR backend name ('whisper', 'parakeet', 'vosk')
         """
-        # Always re-check backend availability before starting (don't use cache)
-        is_available, status = check_backend_health(backend)
+        # Only check backend availability if live transcription is enabled
+        # Recording-only mode doesn't need the ASR service
+        if self.enable_transcription:
+            # Always re-check backend availability before starting (don't use cache)
+            is_available, status = check_backend_health(backend)
 
-        if not is_available:
-            logger.error(f"Cannot start: {backend} is not available ({status})")
-            # Update cached status
+            if not is_available:
+                logger.error(f"Cannot start: {backend} is not available ({status})")
+                # Update cached status
+                self.backend_status[backend] = (is_available, status)
+                # Show notification if possible
+                if self.icon:
+                    try:
+                        self.icon.notify(
+                            f"{backend.title()} is not available",
+                            f"Status: {status}\n\nPlease start the Docker service first.",
+                        )
+                    except Exception:
+                        pass  # Notification not supported
+                return
+        else:
+            # Recording-only mode - no ASR service needed
+            logger.info("Recording-only mode - skipping backend availability check")
+
+        # Update cached status (if transcription enabled, otherwise skip)
+        if self.enable_transcription:
             self.backend_status[backend] = (is_available, status)
-            # Show notification if possible
-            if self.icon:
-                try:
-                    self.icon.notify(
-                        f"{backend.title()} is not available",
-                        f"Status: {status}\n\nPlease start the Docker service first.",
-                    )
-                except Exception:
-                    pass  # Notification not supported
-            return
-
-        # Update cached status (it's available)
-        self.backend_status[backend] = (is_available, status)
 
         # Stop existing process if running
         self.stop_captions()
@@ -770,6 +777,21 @@ class LiveCaptionsTray:
         if build_time:
             version_str = f"{version_str}.{build_time}"
 
+        # Helper to get current mode description
+        def get_mode_description():
+            if self.enable_transcription and self.enable_recording:
+                return "Transcribe + Record"
+            elif self.enable_transcription:
+                return "Transcribe only"
+            elif self.enable_recording:
+                return "Record only"
+            else:
+                return "Disabled"
+
+        # Helper to get audio source description
+        def get_audio_source():
+            return "🔊 Speakers" if self.use_system_audio else "🎤 Mic"
+
         # Build menu
         menu = pystray.Menu(
             # Version and status section
@@ -783,6 +805,16 @@ class LiveCaptionsTray:
                     f"● Running: {BACKENDS.get(self.current_backend, {}).get('name', 'None')}"
                     if self.is_running()
                     else "○ Stopped"
+                ),
+                None,
+                enabled=False,
+            ),
+            # Stats line showing audio source and mode when running
+            pystray.MenuItem(
+                lambda text: (
+                    f"  {get_audio_source()} │ {get_mode_description()}"
+                    if self.is_running()
+                    else f"Mode: {get_mode_description()}"
                 ),
                 None,
                 enabled=False,
