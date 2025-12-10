@@ -724,22 +724,6 @@ class LiveCaptionsTray:
     def create_menu(self):
         """Create right-click context menu."""
 
-        def make_start_handler(backend):
-            """Create handler for starting specific backend."""
-
-            def handler(icon, item):
-                self.start_captions(backend)
-
-            return handler
-
-        def is_backend_checked(backend):
-            """Check if backend is currently running."""
-
-            def check(item):
-                return self.is_running() and self.current_backend == backend
-
-            return check
-
         def is_backend_enabled(backend):
             """Check if backend can be started (is available)."""
 
@@ -826,13 +810,13 @@ class LiveCaptionsTray:
                 enabled=False,
             ),
             pystray.MenuItem(
-                lambda text: f"Services: {get_available_count()}/{len(BACKENDS)} available",
+                lambda text: f"Services: {get_available_count()}/{len(BACKENDS)} ({get_backend_name()})",
                 None,
                 enabled=False,
                 visible=lambda item: self.enable_transcription,
             ),
             pystray.Menu.SEPARATOR,
-            # Audio source submenu - separate group
+            # Audio source and quick start group
             pystray.MenuItem(
                 "Audio Source",
                 pystray.Menu(
@@ -856,6 +840,29 @@ class LiveCaptionsTray:
                     ),
                 ),
             ),
+            pystray.MenuItem(
+                "Stop",
+                self.on_click,
+                visible=lambda item: self.is_running(),
+            ),
+            pystray.MenuItem(
+                lambda text: (
+                    f"Quick Start ({DEFAULT_BACKEND.title()})"
+                    if self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
+                    else (
+                        f"Quick Start ({DEFAULT_BACKEND.title()}) - Unavailable"
+                        if self.is_backend_available(DEFAULT_BACKEND)
+                        else f"Quick Start ({DEFAULT_BACKEND.title()}) - Service Unavailable"
+                    )
+                ),
+                self.on_click,
+                visible=lambda item: not self.is_running(),
+                enabled=lambda item: (
+                    self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
+                    if self.enable_transcription
+                    else self.can_start()
+                ),
+            ),
             pystray.Menu.SEPARATOR,
             # Live transcription toggle - FIRST in this group
             pystray.MenuItem(
@@ -865,26 +872,41 @@ class LiveCaptionsTray:
             ),
             # Backend selection submenu - only visible when transcription enabled
             pystray.MenuItem(
-                "Start with...",
+                "Select Model",
                 pystray.Menu(
                     pystray.MenuItem(
                         get_backend_label("whisper"),
-                        make_start_handler("whisper"),
-                        checked=is_backend_checked("whisper"),
+                        lambda icon, item: setattr(self, "current_backend", "whisper")
+                        or logger.info(f"Selected model: Whisper"),
+                        checked=lambda item: (
+                            self.current_backend == "whisper"
+                            if self.is_running()
+                            else DEFAULT_BACKEND == "whisper"
+                        ),
                         enabled=is_backend_enabled("whisper"),
                         radio=True,
                     ),
                     pystray.MenuItem(
                         get_backend_label("parakeet"),
-                        make_start_handler("parakeet"),
-                        checked=is_backend_checked("parakeet"),
+                        lambda icon, item: setattr(self, "current_backend", "parakeet")
+                        or logger.info(f"Selected model: Parakeet"),
+                        checked=lambda item: (
+                            self.current_backend == "parakeet"
+                            if self.is_running()
+                            else DEFAULT_BACKEND == "parakeet"
+                        ),
                         enabled=is_backend_enabled("parakeet"),
                         radio=True,
                     ),
                     pystray.MenuItem(
                         get_backend_label("vosk"),
-                        make_start_handler("vosk"),
-                        checked=is_backend_checked("vosk"),
+                        lambda icon, item: setattr(self, "current_backend", "vosk")
+                        or logger.info(f"Selected model: Vosk"),
+                        checked=lambda item: (
+                            self.current_backend == "vosk"
+                            if self.is_running()
+                            else DEFAULT_BACKEND == "vosk"
+                        ),
                         enabled=is_backend_enabled("vosk"),
                         radio=True,
                     ),
@@ -940,31 +962,6 @@ class LiveCaptionsTray:
                 lambda icon, item: self.clear_recording(),
                 enabled=lambda item: self.get_recording_info()[2] > 0,
                 visible=lambda item: self.enable_recording,
-            ),
-            pystray.Menu.SEPARATOR,
-            # Quick actions - use right-click menu (double-click handled separately)
-            pystray.MenuItem(
-                "Stop",
-                self.on_click,
-                visible=lambda item: self.is_running(),
-            ),
-            pystray.MenuItem(
-                lambda text: (
-                    f"Quick Start ({DEFAULT_BACKEND.title()})"
-                    if self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
-                    else (
-                        f"Quick Start ({DEFAULT_BACKEND.title()}) - Unavailable"
-                        if self.is_backend_available(DEFAULT_BACKEND)
-                        else f"Quick Start ({DEFAULT_BACKEND.title()}) - Service Unavailable"
-                    )
-                ),
-                self.on_click,
-                visible=lambda item: not self.is_running(),
-                enabled=lambda item: (
-                    self.is_backend_available(DEFAULT_BACKEND) and self.can_start()
-                    if self.enable_transcription
-                    else self.can_start()
-                ),
             ),
             pystray.Menu.SEPARATOR,
             # Exit
