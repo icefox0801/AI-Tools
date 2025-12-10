@@ -263,31 +263,56 @@ class LiveCaptions:
 
     def close(self):
         """Close the application."""
-        # Prevent double-close
-        if not self.running and not self.recorder:
+        # Prevent double-close - only skip if already stopped AND no active recorder
+        if not self.running and not (self.recorder and self.recorder.is_recording):
             return
 
+        logger.info("Closing Live Captions...")
         self.running = False
 
         if self.asr_client:
-            self.asr_client.stop()
+            try:
+                self.asr_client.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping ASR client: {e}")
 
         self._stop_audio_capture()
 
         # Save recording on close
         if self.recorder and self.recorder.is_recording:
             logger.info("Saving recording before shutdown...")
-            saved_path = self.recorder.stop()
-            if saved_path:
-                logger.info(f"Recording saved: {saved_path}")
+            try:
+                saved_path = self.recorder.stop()
+                if saved_path:
+                    logger.info(f"Recording saved: {saved_path}")
+            except Exception as e:
+                logger.error(f"Error saving recording: {e}")
 
         if self.window:
-            self.window.close()
+            try:
+                self.window.close()
+            except Exception as e:
+                logger.warning(f"Error closing window: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle termination signals gracefully."""
         logger.info(f"Received signal {signum}, shutting down gracefully...")
         self.running = False
+
+    def _check_stop_request(self):
+        """Periodically check for stop request from tray app (for window mode)."""
+        if not self.window:
+            return  # Only for window mode
+
+        # Check if stop was requested via IPC file
+        if check_stop_requested():
+            logger.info("Stop request received from tray app, closing window...")
+            self.close()
+            return
+
+        # Check again in 100ms
+        if self.running:
+            self.window.after(100, self._check_stop_request)
 
     def run(self):
         """Run the application."""
@@ -299,9 +324,6 @@ class LiveCaptions:
         # Headless (recording-only) mode - start audio capture but no window
         if self.headless_mode:
             logger.info("Running in headless mode (recording only, no window)")
-
-            # Clear any stale stop request from previous run
-            clear_stop_request()
 
             # Set up signal handlers for graceful shutdown
             signal.signal(signal.SIGTERM, self._signal_handler)
@@ -331,6 +353,9 @@ class LiveCaptions:
         # Start ASR thread
         asr_thread = threading.Thread(target=self._run_async, daemon=True)
         asr_thread.start()
+
+        # Start checking for stop request from tray app
+        self._check_stop_request()
 
         # Run UI main loop
         self.window.mainloop()
@@ -363,7 +388,7 @@ class LiveCaptions:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Live Captions v1.2")
+    parser = argparse.ArgumentParser(description="Live Captions v1.4")
     parser.add_argument("--host", default="localhost", help="ASR service host")
     parser.add_argument("--port", type=int, help="ASR service port")
     parser.add_argument(

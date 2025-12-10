@@ -149,7 +149,7 @@ def check_all_backends() -> dict[str, tuple[bool, str]]:
 # ==============================================================================
 
 APP_NAME = "Live Captions"
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 DEFAULT_BACKEND = "whisper"
 
 
@@ -534,6 +534,11 @@ class LiveCaptionsTray:
         # Stop existing process if running
         self.stop_captions()
 
+        # Clear any stale stop request file before starting new process
+        from src.audio.recorder import clear_stop_request
+
+        clear_stop_request()
+
         self.current_backend = backend
 
         # Check language compatibility
@@ -769,6 +774,7 @@ class LiveCaptionsTray:
                 self.current_backend = backend
                 logger.info(f"Selected model: {BACKENDS.get(backend, {}).get('name', backend)}")
                 self.update_icon()
+
             return handler
 
         # Helper to get audio source icon
