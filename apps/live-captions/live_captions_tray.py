@@ -763,28 +763,35 @@ class LiveCaptionsTray:
                 return BACKENDS.get(self.current_backend, {}).get("name", "None")
             return DEFAULT_BACKEND.title()
 
+        # Helper to set backend (fixes model selection)
+        def set_backend(backend):
+            def handler(icon, item):
+                self.current_backend = backend
+                logger.info(f"Selected model: {BACKENDS.get(backend, {}).get('name', backend)}")
+                self.update_icon()
+            return handler
+
+        # Helper to get audio source icon
+        def get_audio_source_icon():
+            return "🔊" if self.use_system_audio else "🎤"
+
         # Build menu
         menu = pystray.Menu(
-            # Version section
+            # Version and status section (same group)
             pystray.MenuItem(
-                version_str,
+                lambda text: f"{version_str} - {'● Running' if self.is_running() else '○ Stopped'}",
                 None,
                 enabled=False,
             ),
             pystray.Menu.SEPARATOR,
-            # Status and controls
+            # Start/Stop controls
             pystray.MenuItem(
-                lambda text: "● Running" if self.is_running() else "○ Stopped",
-                None,
-                enabled=False,
-            ),
-            pystray.MenuItem(
-                "Stop",
-                self.on_click,
+                "⏸ Stop",
+                lambda icon, item: self.stop_captions(),
                 visible=lambda item: self.is_running(),
             ),
             pystray.MenuItem(
-                "Start",
+                "▶ Start",
                 self.on_click,
                 visible=lambda item: not self.is_running(),
                 enabled=lambda item: (
@@ -794,10 +801,10 @@ class LiveCaptionsTray:
                 ),
             ),
             pystray.MenuItem(
-                "Audio Source",
+                lambda text: f"{get_audio_source_icon()} Audio Source",
                 pystray.Menu(
                     pystray.MenuItem(
-                        "🔊 System Audio (Speakers)",
+                        "System Audio (Speakers)",
                         lambda icon, item: setattr(self, "use_system_audio", True)
                         or (
                             self.start_captions(self.current_backend) if self.is_running() else None
@@ -806,7 +813,7 @@ class LiveCaptionsTray:
                         radio=True,
                     ),
                     pystray.MenuItem(
-                        "🎤 Microphone",
+                        "Microphone",
                         lambda icon, item: setattr(self, "use_system_audio", False)
                         or (
                             self.start_captions(self.current_backend) if self.is_running() else None
@@ -829,8 +836,7 @@ class LiveCaptionsTray:
                 pystray.Menu(
                     pystray.MenuItem(
                         get_backend_label("whisper"),
-                        lambda icon, item: setattr(self, "current_backend", "whisper")
-                        or logger.info(f"Selected model: Whisper"),
+                        set_backend("whisper"),
                         checked=lambda item: (
                             self.current_backend == "whisper"
                             if self.is_running()
@@ -841,8 +847,7 @@ class LiveCaptionsTray:
                     ),
                     pystray.MenuItem(
                         get_backend_label("parakeet"),
-                        lambda icon, item: setattr(self, "current_backend", "parakeet")
-                        or logger.info(f"Selected model: Parakeet"),
+                        set_backend("parakeet"),
                         checked=lambda item: (
                             self.current_backend == "parakeet"
                             if self.is_running()
@@ -853,8 +858,7 @@ class LiveCaptionsTray:
                     ),
                     pystray.MenuItem(
                         get_backend_label("vosk"),
-                        lambda icon, item: setattr(self, "current_backend", "vosk")
-                        or logger.info(f"Selected model: Vosk"),
+                        set_backend("vosk"),
                         checked=lambda item: (
                             self.current_backend == "vosk"
                             if self.is_running()
@@ -902,16 +906,16 @@ class LiveCaptionsTray:
             ),
             pystray.MenuItem(
                 lambda text: (
-                    f"📼 Recording: {self.get_recording_info()[1]}"
+                    f"Recording: {self.get_recording_info()[1]}"
                     if self.get_recording_info()[0]
-                    else "📼 No recording"
+                    else "No recording"
                 ),
                 None,
                 enabled=False,
                 visible=lambda item: self.enable_recording,
             ),
             pystray.MenuItem(
-                "🗑️ Clear Recording",
+                "Clear Recording",
                 lambda icon, item: self.clear_recording(),
                 enabled=lambda item: self.get_recording_info()[2] > 0,
                 visible=lambda item: self.enable_recording,
