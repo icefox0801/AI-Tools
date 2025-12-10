@@ -15,8 +15,6 @@
 #        "https://mirror.ccs.tencentyun.com"
 #      ]
 #    }
-#
-# See services/.docker/mirrors.conf for all available mirrors.
 # =================================================
 
 # ============== MODEL CONFIGURATION ==============
@@ -106,6 +104,11 @@ services:
       dockerfile: Dockerfile
       additional_contexts:
         shared: ./shared                         # Shared Python modules
+      args:
+        APT_MIRROR: ${APT_MIRROR}
+        PYPI_MIRROR: ${PYPI_MIRROR}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST}
+        HF_ENDPOINT: ${HF_ENDPOINT}
     image: vosk-asr:latest
     container_name: vosk-asr
     depends_on:
@@ -118,7 +121,6 @@ services:
     environment:
       - CUDA_VISIBLE_DEVICES=0                      # Use GPU 0 for punctuation model
       - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
-      - ENABLE_TEXT_REFINER=${ENABLE_TEXT_REFINER:-true}
     deploy:
       resources:
         reservations:
@@ -143,6 +145,12 @@ services:
       dockerfile: Dockerfile
       additional_contexts:
         shared: ./shared                         # Shared Python modules
+      args:
+        APT_MIRROR: ${APT_MIRROR}
+        PYPI_MIRROR: ${PYPI_MIRROR}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST}
+        HF_ENDPOINT: ${HF_ENDPOINT}
+        PYTORCH_CUDA_MIRROR: ${PYTORCH_CUDA_MIRROR}
     image: parakeet-asr:latest
     container_name: parakeet-asr
     depends_on:
@@ -162,7 +170,6 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
       - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
-      - ENABLE_TEXT_REFINER=${ENABLE_TEXT_REFINER:-true}
     deploy:
       resources:
         reservations:
@@ -188,6 +195,12 @@ services:
       dockerfile: Dockerfile
       additional_contexts:
         shared: ./shared                         # Shared Python modules
+      args:
+        APT_MIRROR: ${APT_MIRROR}
+        PYPI_MIRROR: ${PYPI_MIRROR}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST}
+        HF_ENDPOINT: ${HF_ENDPOINT}
+        PYTORCH_CUDA_MIRROR: ${PYTORCH_CUDA_MIRROR}
     image: whisper-asr:latest
     container_name: whisper-asr
     ports:
@@ -223,6 +236,12 @@ services:
       dockerfile: Dockerfile
       additional_contexts:
         shared: ./shared                         # Shared Python modules
+      args:
+        APT_MIRROR: ${APT_MIRROR}
+        PYPI_MIRROR: ${PYPI_MIRROR}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST}
+        HF_ENDPOINT: ${HF_ENDPOINT}
+        PYTORCH_CUDA_MIRROR: ${PYTORCH_CUDA_MIRROR}
     image: text-refiner:latest
     container_name: text-refiner
     ports:
@@ -230,7 +249,6 @@ services:
     volumes:
       - text-refiner-hf-cache:/root/.cache/huggingface  # Cache HuggingFace models (T5, etc.)
     environment:
-      - ENABLE_CORRECTION=${ENABLE_CORRECTION:-true}
       - CUDA_VISIBLE_DEVICES=0
     deploy:
       resources:

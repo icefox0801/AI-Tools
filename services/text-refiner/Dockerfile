@@ -5,11 +5,18 @@
 
 FROM nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
 
+# Build arguments for mirror configuration (passed from docker-compose.yaml)
+ARG APT_MIRROR
+ARG PYPI_MIRROR
+ARG PYPI_TRUSTED_HOST
+ARG HF_ENDPOINT
+ARG PYTORCH_CUDA_MIRROR
+
 WORKDIR /app
 
-# Configure APT mirrors for China (Aliyun)
-RUN sed -i "s|archive.ubuntu.com|mirrors.aliyun.com|g" /etc/apt/sources.list && \
-    sed -i "s|security.ubuntu.com|mirrors.aliyun.com|g" /etc/apt/sources.list
+# Configure APT mirrors for China (use build arg)
+RUN sed -i "s|archive.ubuntu.com|${APT_MIRROR}|g" /etc/apt/sources.list && \
+    sed -i "s|security.ubuntu.com|${APT_MIRROR}|g" /etc/apt/sources.list
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -21,19 +28,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure pip for China mirrors (Aliyun)
-RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
-    pip config set global.trusted-host mirrors.aliyun.com
+# Configure pip for China mirrors (use build args)
+RUN pip config set global.index-url ${PYPI_MIRROR} && \
+    pip config set global.trusted-host ${PYPI_TRUSTED_HOST}
 
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Set HuggingFace mirror for China
-ENV HF_ENDPOINT=https://hf-mirror.com
+# Set HuggingFace mirror for China (use build arg)
+ENV HF_ENDPOINT=${HF_ENDPOINT}
 
 # Install PyTorch with CUDA support
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR}
 
 # Copy requirements
 COPY requirements.docker.txt .
