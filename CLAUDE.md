@@ -303,6 +303,86 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 - Use imperative mood ("Add" not "Added")
 - Focus on what, not how
 
+### Batch Commit Pattern
+
+When committing related changes, divide into logical batches based on:
+
+1. **By Type**: Group by commit type (fix, feat, docs, chore)
+2. **By Concern**: Separate functional changes from documentation
+3. **By Scope**: Keep changes to same component together
+
+**Batch Order** (most specific → most general):
+1. Core fixes/features (code changes)
+2. Documentation updates (CHANGELOG, README)
+3. Tooling/meta changes (CLAUDE.md, build scripts)
+
+**Example Workflow** (version bump):
+```bash
+# Batch 1: Core functionality fix
+git add apps/live-captions/live_captions.py apps/live-captions/live_captions_tray.py
+git commit -m "fix(live-captions): Fix stop button IPC race condition"
+
+# Batch 2: User documentation
+git add apps/live-captions/CHANGELOG.md
+git commit -m "docs(live-captions): Update changelog for v1.4"
+
+# Batch 3: Development documentation
+git add CLAUDE.md
+git commit -m "docs: Update version bump guidelines"
+```
+
+**Anti-patterns to avoid**:
+- ❌ Single commit with mixed concerns (fix + docs + tooling)
+- ❌ Too many small commits (one per file)
+- ✅ Logical batches that tell a story
+
+## Version Bump Guidelines
+
+Follow semantic versioning: **MAJOR.MINOR** (e.g., 1.0, 1.1, 2.0)
+
+**When to bump**:
+- **MAJOR (X.0)**: Breaking changes, major UI overhaul, or complete rewrites
+- **MINOR (X.Y)**: New features, enhancements, or notable fixes
+
+**Files to update**:
+1. **Version strings** in source code:
+   - `apps/live-captions/live_captions_tray.py`: `APP_VERSION = "X.Y"`
+   - `apps/live-captions/live_captions.py`: `description="Live Captions vX.Y"`
+   - `services/audio-notes/audio_notes.py`: Similar pattern
+
+2. **CHANGELOG.md**: Add new version section following changelog guidelines
+
+3. **Run checks before commit**:
+   ```bash
+   # Run all tests
+   python -m pytest apps/live-captions -v
+   
+   # Check for errors
+   python -m ruff check apps/live-captions
+   ```
+
+4. **Commit pattern**:
+   ```bash
+   git add .
+   git commit -m "chore(live-captions): Bump version to vX.Y"
+   ```
+
+**Example workflow**:
+```bash
+# 1. Update version strings
+# live_captions_tray.py: APP_VERSION = "2.0"
+# live_captions.py: description="Live Captions v2.0"
+
+# 2. Update CHANGELOG.md with user-facing changes
+
+# 3. Run tests
+python -m pytest apps/live-captions -v
+
+# 4. Commit
+git add apps/live-captions/
+git commit -m "chore(live-captions): Bump version to v2.0"
+```
+
 ## Parakeet Model Configuration
 
 Parakeet models are configured in docker-compose.yaml:
