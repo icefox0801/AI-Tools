@@ -98,7 +98,7 @@ format:
 ## test: Run unit tests
 test:
 	@echo "[3/3] Pytest (tests)..."
-	@$(PYTHON) -m pytest apps/ shared/ --tb=short -q
+	@$(PYTHON) -m pytest apps/ shared/ services/ --tb=short -q
 	@echo "[OK] Tests passed"
 
 ## test-all: Run all tests including service tests (requires fastapi)
