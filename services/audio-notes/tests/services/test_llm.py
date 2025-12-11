@@ -162,13 +162,13 @@ class TestSummarizeStreaming:
             prep_response.status_code = 200
             prep_response.json.return_value = {"status": "not_loaded"}
 
-            # Mock streaming response
+            # Mock streaming response - using correct Ollama format
             stream_response = MagicMock()
             stream_response.status_code = 200
             stream_response.iter_lines.return_value = [
-                b'{"message": {"content": "Hello"}}',
-                b'{"message": {"content": " World"}}',
-                b'{"done": true}',
+                b'{"response": "Hello"}',
+                b'{"response": " World"}',
+                b'{"response": "!", "done": true}',
             ]
             stream_response.__enter__ = MagicMock(return_value=stream_response)
             stream_response.__exit__ = MagicMock(return_value=False)
@@ -181,6 +181,8 @@ class TestSummarizeStreaming:
 
             # Should have yielded something
             assert len(chunks) >= 1
+            # Final chunk should contain accumulated text
+            assert "Hello World!" in chunks[-1]
 
     def test_uses_custom_model(self, mock_config):
         """Test that custom model is used when specified."""
