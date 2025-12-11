@@ -510,9 +510,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
 
             try:
                 final_chunk = ""
-                chunk_num = 0
                 for chunk in generate_summary(transcript, prompt, model):
-                    chunk_num += 1
                     final_chunk = chunk
                     # Update button text based on content
                     if "Thinking" in chunk:
