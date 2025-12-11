@@ -9,6 +9,52 @@ from config import OLLAMA_MODEL, OLLAMA_URL, PARAKEET_URL, WHISPER_URL
 logger = logging.getLogger(__name__)
 
 
+def get_summary_prompt_for_length(word_count: int) -> str:
+    """Get the appropriate summary prompt based on transcript length.
+
+    Args:
+        word_count: Number of words in the transcript
+
+    Returns:
+        Appropriate system prompt for the transcript length
+    """
+    if word_count < 150:
+        return """You are an expert summarizer. This is a SHORT transcript.
+
+Instructions:
+- Provide 1-2 concise sentences capturing the main point
+- Focus on the core message or conclusion
+- Start directly with content (no "This transcript...")
+- Use active voice, present tense
+- Preserve any technical terms, names, or numbers accurately"""
+
+    elif word_count < 500:
+        return """You are an expert summarizer. This is a MEDIUM-length transcript.
+
+Instructions:
+- Write a focused paragraph (3-5 sentences)
+- Structure: Context → Key points → Conclusion
+- Include the main topic, key points, and any conclusions
+- Start directly with content (no "This transcript...")
+- Use active voice, present tense
+- Preserve technical terms, names, and numbers accurately
+- Use markdown formatting for clarity"""
+
+    else:
+        return """You are an expert summarizer. This is a LONG transcript.
+
+Instructions:
+- Start with a 2-3 sentence executive summary
+- Follow with bullet points of main topics (3-7 bullets maximum)
+- Each bullet should contain one clear idea with supporting detail
+- End with conclusion or action items if present
+- Start directly with content (no "This transcript...")
+- Use active voice, present tense
+- Preserve technical terms, names, and numbers accurately
+- Use markdown formatting (bold for emphasis, bullets for lists)
+- Prioritize clarity - ensure the summary is understandable"""
+
+
 def prepare_gpu_for_llm(required_memory_gb: float = 8.0) -> dict:
     """
     Prepare GPU memory for LLM by unloading ASR models if needed.
@@ -76,7 +122,7 @@ def summarize_streaming(
 
     Args:
         transcript: The text to summarize
-        system_prompt: Optional custom system prompt
+        system_prompt: Optional custom system prompt (if None, auto-selects based on length)
         model: Optional model name override
         prepare_gpu: If True, unload ASR models first to free GPU memory
     """
@@ -89,8 +135,11 @@ def summarize_streaming(
         if prep_result["memory_freed_gb"] > 0:
             yield f"⏳ {prep_result['message']}\\n\\n"
 
-    # Use the provided system prompt or None (will use UI default)
-    # The UI's summarize.py provides the default prompt
+    # Auto-select prompt based on transcript length if not provided
+    if system_prompt is None or not system_prompt.strip():
+        word_count = len(transcript.split())
+        system_prompt = get_summary_prompt_for_length(word_count)
+        logger.info(f"Auto-selected prompt for {word_count} words")
 
     prompt = f"""Summarize this transcript:
 

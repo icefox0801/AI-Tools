@@ -21,20 +21,13 @@ def create_summarize_section():
         )
 
         summary_prompt = gr.Textbox(
-            label="Summary Prompt",
-            placeholder="Custom instructions for summarization",
-            value="""You are a concise summarizer. Summarize the transcript directly.
-
-Rules:
-- Keep summary length proportional to transcript length
-- Short transcript (<100 words) = 1-2 sentences
-- Medium transcript (100-500 words) = short paragraph with key points
-- Long transcript (500+ words) = brief summary + bullet points
-- No introductory phrases like "This transcript discusses..."
-- Start directly with the content
-- Format in clean Markdown""",
+            label="Summary Prompt (Auto-selected based on transcript length)",
+            placeholder="Prompt will be automatically populated after transcription based on length...",
+            value="",
             lines=6,
-            max_lines=10,
+            max_lines=12,
+            interactive=False,
+            info="Edit this prompt to customize the summarization if needed",
         )
 
         summarize_btn = gr.Button("✨ Summarize", variant="secondary", size="lg", interactive=False)
