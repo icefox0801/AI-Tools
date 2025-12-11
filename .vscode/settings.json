@@ -46,6 +46,12 @@
         "editor.wordWrap": "on",
         "editor.wordWrapColumn": 120
     },
+    
+    // Disable unnecessary extensions
+    "extensions.ignoreRecommendations": true,
+    "platformio-ide.disableToolbar": true,
+    "platformio-ide.activateOnlyOnPlatformIOProject": true,
+    
     "actionButtons": {
         "defaultColor": "#4ade80",
         "reloadButton": null,
@@ -78,6 +84,20 @@
                 "useVsCodeApi": true,
                 "command": "workbench.action.tasks.runTask",
                 "args": ["Live Captions (Parakeet + Debug)"]
+            },
+            {
+                "name": "✅ Check",
+                "color": "#10b981",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask",
+                "args": ["Check: Ruff, Black & Tests"]
+            },
+            {
+                "name": "🧪 E2E",
+                "color": "#8b5cf6",
+                "useVsCodeApi": true,
+                "command": "workbench.action.tasks.runTask",
+                "args": ["E2E: Run All Tests"]
             },
             {
                 "name": "📦 Rebuild",

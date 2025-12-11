@@ -617,6 +617,23 @@
 				"clear": true
 			}
 		},
+		// ===== E2E Tests =====
+		{
+			"label": "E2E: Run All Tests",
+			"type": "shell",
+			"command": "make",
+			"args": [
+				"test-e2e"
+			],
+			"problemMatcher": [],
+			"group": "test",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"focus": true,
+				"clear": true
+			}
+		},
 		// ===== Docker: Force Restart =====
 		{
 			"label": "Docker: Force Kill & Restart",
