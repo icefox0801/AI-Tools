@@ -37,9 +37,16 @@ def resample_audio(audio_data: bytes, from_rate: int, to_rate: int) -> bytes:
         up = to_rate // g
         down = from_rate // g
         resampled = signal.resample_poly(audio_np, up, down)
-    except ImportError:
+    except (ImportError, TypeError, Exception) as e:
         # Fallback: linear interpolation
-        logger.debug("scipy not available, using linear interpolation for resampling")
+        # TypeError can occur with scipy/torch compatibility issues
+        # Catch all exceptions to handle scipy internal errors
+        if not isinstance(e, (ImportError, TypeError)):
+            logger.warning(f"scipy resampling failed with {type(e).__name__}: {e}, using fallback")
+        else:
+            logger.debug(
+                "scipy not available or incompatible, using linear interpolation for resampling"
+            )
         ratio = to_rate / from_rate
         new_length = int(len(audio_np) * ratio)
         indices = np.linspace(0, len(audio_np) - 1, new_length)
