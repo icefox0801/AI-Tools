@@ -149,7 +149,7 @@ def check_all_backends() -> dict[str, tuple[bool, str]]:
 # ==============================================================================
 
 APP_NAME = "Live Captions"
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 DEFAULT_BACKEND = "whisper"
 
 # Windows Startup Registry Key
