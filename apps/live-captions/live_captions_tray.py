@@ -152,6 +152,10 @@ APP_NAME = "Live Captions"
 APP_VERSION = "1.4"
 DEFAULT_BACKEND = "whisper"
 
+# Windows Startup Registry Key
+STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+STARTUP_REG_NAME = "LiveCaptions"
+
 
 def get_build_time() -> str:
     """Get build timestamp from .build_time file."""
@@ -212,6 +216,68 @@ BACKEND_LANGUAGES = {
     "parakeet": ["en"],  # Parakeet is English-only
     "vosk": ["en"],  # Vosk model is English-only
 }
+
+
+# ==============================================================================
+# Windows Startup Management
+# ==============================================================================
+
+
+def is_auto_start_enabled() -> bool:
+    """Check if auto-start is enabled in Windows registry."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_REG_KEY, 0, winreg.KEY_READ) as key:
+            try:
+                winreg.QueryValueEx(key, STARTUP_REG_NAME)
+                return True
+            except FileNotFoundError:
+                return False
+    except Exception as e:
+        logger.error(f"Error checking auto-start: {e}")
+        return False
+
+
+def set_auto_start(enabled: bool) -> bool:
+    """Enable or disable auto-start in Windows registry.
+
+    Args:
+        enabled: True to enable auto-start, False to disable
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_REG_KEY, 0, winreg.KEY_WRITE) as key:
+            if enabled:
+                # Add to startup - use the executable path
+                if IS_FROZEN:
+                    exe_path = sys.executable
+                else:
+                    # In development, point to the built exe if it exists
+                    exe_path = str(SCRIPT_DIR / "dist" / "Live Captions.exe")
+                    if not Path(exe_path).exists():
+                        logger.error("Built executable not found. Build first.")
+                        return False
+
+                winreg.SetValueEx(key, STARTUP_REG_NAME, 0, winreg.REG_SZ, exe_path)
+                logger.info(f"Auto-start enabled: {exe_path}")
+            else:
+                # Remove from startup
+                try:
+                    winreg.DeleteValue(key, STARTUP_REG_NAME)
+                    logger.info("Auto-start disabled")
+                except FileNotFoundError:
+                    # Already not in startup
+                    pass
+
+        return True
+    except Exception as e:
+        logger.error(f"Error setting auto-start: {e}")
+        return False
 
 
 # ==============================================================================
@@ -927,6 +993,13 @@ class LiveCaptionsTray:
                 visible=lambda item: self.enable_recording,
             ),
             pystray.Menu.SEPARATOR,
+            # Settings
+            pystray.MenuItem(
+                "⚙️ Auto-Start at Login",
+                lambda icon, item: self.toggle_auto_start(),
+                checked=lambda item: is_auto_start_enabled(),
+            ),
+            pystray.Menu.SEPARATOR,
             # Exit
             pystray.MenuItem("Exit", self.quit),
         )
@@ -941,6 +1014,32 @@ class LiveCaptionsTray:
         # Restart if running to apply change
         if self.is_running():
             self.start_captions(self.current_backend)
+
+    def toggle_auto_start(self):
+        """Toggle auto-start at Windows login."""
+        current = is_auto_start_enabled()
+        if set_auto_start(not current):
+            new_state = not current
+            status = "enabled" if new_state else "disabled"
+            logger.info(f"Auto-start at login {status}")
+            if self.icon:
+                try:
+                    self.icon.notify(
+                        "Auto-Start at Login",
+                        f"Auto-start has been {status}",
+                    )
+                except Exception:
+                    pass
+        else:
+            logger.error("Failed to toggle auto-start")
+            if self.icon:
+                try:
+                    self.icon.notify(
+                        "Error",
+                        "Failed to change auto-start setting. Check logs.",
+                    )
+                except Exception:
+                    pass
 
     def quit(self, icon, item):
         """Exit the application."""

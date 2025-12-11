@@ -58,10 +58,16 @@ if exist "dist\Live Captions.exe" (
     echo.
     echo Output: dist\Live Captions.exe
     echo.
+    
+    REM Update Windows Startup registry if auto-start was previously enabled
+    echo Updating Windows Startup registry...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'; $regName = 'LiveCaptions'; try { $existing = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue; if ($existing) { $exePath = '%cd%\dist\Live Captions.exe'; Set-ItemProperty -Path $regPath -Name $regName -Value $exePath; Write-Host 'Auto-start registry updated with new executable path' } else { Write-Host 'Auto-start not previously enabled, skipping registry update' } } catch { Write-Warning \"Failed to update registry: $_\" }"
+    echo.
     echo Usage:
     echo   - Double-click to run
     echo   - Double-click tray icon to start/stop captions
     echo   - Right-click tray icon for options
+    echo   - Use tray menu to enable/disable auto-start at login
     echo.
     dir "dist\Live Captions.exe"
 ) else (
