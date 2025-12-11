@@ -38,7 +38,7 @@ from ui.styles import CUSTOM_CSS
 # Version
 # ==============================================================================
 
-__version__ = "1.1"
+__version__ = "1.2"
 
 
 def create_app(host: str = "127.0.0.1", port: int = 7860, share: bool = False):

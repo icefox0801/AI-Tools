@@ -2,6 +2,12 @@
 
 All notable changes to the Audio Notes service will be documented in this file.
 
+## [1.2] - 2025-12-11
+
+### Added
+- Load Transcript button to reload existing transcriptions from files
+- Smart summary prompts that adapt to transcript length
+
 ## [1.1] - 2025-12-05
 
 ### Added

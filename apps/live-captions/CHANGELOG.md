@@ -2,6 +2,11 @@
 
 All notable changes to Live Captions will be documented in this file.
 
+## [1.5] - 2025-12-11
+
+### Added
+- Auto-start at login feature (toggle in system tray menu)
+
 ## [1.4] - 2025-12-10
 
 ### Changed
