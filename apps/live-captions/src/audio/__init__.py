@@ -21,26 +21,21 @@ from .utils import (
 
 __all__ = [
     "CHUNK_DURATION_MS",
-    # Constants
     "TARGET_SAMPLE_RATE",
-    # Capture classes
     "AudioCapture",
-    # Recorder
     "AudioRecorder",
     "MicrophoneCapture",
     "SystemAudioCapture",
     "calculate_chunk_size",
+    "check_stop_requested",
+    "clear_stop_request",
     "get_default_loopback_info",
     "get_default_microphone_info",
     "get_recorder",
-    # Device functions
     "list_devices",
     "read_recording_status",
     "request_stop",
-    # Utility functions
     "resample_audio",
     "set_recorder",
     "stereo_to_mono",
-    "check_stop_requested",
-    "clear_stop_request",
 ]

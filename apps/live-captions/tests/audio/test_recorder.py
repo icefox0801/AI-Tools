@@ -180,7 +180,7 @@ class TestRecordingStatusIPC:
         with open(status_file, "w") as f:
             json.dump(status, f)
 
-        is_recording, duration_str, duration, since_audio = read_recording_status()
+        is_recording, _duration_str, duration, _since_audio = read_recording_status()
 
         assert is_recording is True
         # Duration is calculated from start_time, so just check it's reasonable
@@ -193,7 +193,7 @@ class TestRecordingStatusIPC:
         with open(status_file, "w") as f:
             json.dump(status, f)
 
-        is_recording, duration_str, duration, since_audio = read_recording_status()
+        is_recording, duration_str, _duration, _since_audio = read_recording_status()
 
         assert is_recording is False
         assert duration_str == "00:00"

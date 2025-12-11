@@ -71,7 +71,7 @@ class TestReadRecordingStatus:
 
     def test_no_file_returns_not_recording(self):
         """Returns not recording when status file doesn't exist."""
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, duration_str, duration, _seconds_since_audio = read_recording_status()
         assert is_recording is False
         assert duration_str == "00:00"
         assert duration == 0.0
@@ -88,7 +88,7 @@ class TestReadRecordingStatus:
         with open(self.status_file, "w") as f:
             json.dump(status, f)
 
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, _duration_str, duration, _seconds_since_audio = read_recording_status()
         assert is_recording is True
         # Duration is calculated from start_time, so it should be close to 0
         assert duration >= 0
@@ -108,7 +108,7 @@ class TestReadRecordingStatus:
         old_time = time.time() - 10  # 10 seconds ago
         os.utime(self.status_file, (old_time, old_time))
 
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, duration_str, duration, _seconds_since_audio = read_recording_status()
         assert is_recording is False
         assert duration_str == "00:00"
         assert duration == 0.0
@@ -119,7 +119,7 @@ class TestReadRecordingStatus:
         with open(self.status_file, "w") as f:
             json.dump(status, f)
 
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, _duration_str, _duration, _seconds_since_audio = read_recording_status()
         assert is_recording is False
 
     def test_calculates_duration_from_start_time(self):
@@ -133,7 +133,7 @@ class TestReadRecordingStatus:
         with open(self.status_file, "w") as f:
             json.dump(status, f)
 
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, _duration_str, duration, _seconds_since_audio = read_recording_status()
         assert is_recording is True
         # Duration should be very small since we just wrote the file
         assert duration < 1.0
@@ -143,7 +143,7 @@ class TestReadRecordingStatus:
         with open(self.status_file, "w") as f:
             f.write("not valid json {")
 
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, duration_str, duration, _seconds_since_audio = read_recording_status()
         assert is_recording is False
         assert duration_str == "00:00"
         assert duration == 0.0
@@ -154,7 +154,7 @@ class TestReadRecordingStatus:
         with open(self.status_file, "w") as f:
             json.dump(status, f)
 
-        is_recording, duration_str, duration, seconds_since_audio = read_recording_status()
+        is_recording, duration_str, _duration, _seconds_since_audio = read_recording_status()
         assert is_recording is True
         # Should fall back to stored values
         assert duration_str == "00:00"

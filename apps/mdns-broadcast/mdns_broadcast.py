@@ -59,7 +59,7 @@ def create_service_info(name: str, port: int, description: str, ip: str) -> Serv
 class MDNSBroadcaster:
     """Manages mDNS service registration and broadcasting"""
 
-    def __init__(self, services: list[dict[str, Any]], host_ip: str = None):
+    def __init__(self, services: list[dict[str, Any]], host_ip: str | None = None):
         self.host_ip = host_ip or get_local_ip()
         self.zeroconf = Zeroconf()
         self.service_infos: list[ServiceInfo] = []

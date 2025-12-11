@@ -439,7 +439,7 @@ class TestLiveCaptionsTrayRecording:
             from live_captions_tray import LiveCaptionsTray
 
             app = LiveCaptionsTray()
-            is_recording, duration_str, duration, seconds_since_audio = app.get_recording_info()
+            is_recording, duration_str, duration, _seconds_since_audio = app.get_recording_info()
 
             assert is_recording is False
             assert duration_str == "00:00"
@@ -459,7 +459,7 @@ class TestLiveCaptionsTrayRecording:
             from live_captions_tray import LiveCaptionsTray
 
             app = LiveCaptionsTray()
-            is_recording, duration_str, duration, seconds_since_audio = app.get_recording_info()
+            is_recording, duration_str, duration, _seconds_since_audio = app.get_recording_info()
 
             assert is_recording is True
             assert duration_str == "01:30"

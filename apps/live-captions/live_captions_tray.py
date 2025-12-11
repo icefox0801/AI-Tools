@@ -340,7 +340,7 @@ class LiveCaptionsTray:
                     self._no_audio_prompted = False
 
                 # Check recording status (now includes seconds_since_last_audio)
-                is_recording, duration_str, duration_seconds, seconds_since_audio = (
+                is_recording, duration_str, _duration_seconds, seconds_since_audio = (
                     self.get_recording_info()
                 )
 
