@@ -10,8 +10,7 @@ from typing import Any
 
 import pytest
 import websockets
-
-from conftest import assert_gpu_available, assert_model_loaded, get_gpu_status, get_gpu_memory_gb
+from conftest import assert_gpu_available, assert_model_loaded, get_gpu_memory_gb, get_gpu_status
 
 # Mark all tests in this module as e2e with 30s timeout
 pytestmark = [

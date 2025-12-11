@@ -26,7 +26,6 @@ from .core import (
     get_gpu_manager,
     get_gpu_memory_info,
 )
-from .utils import get_logger, setup_logging
 
 # Text refiner
 from .text_refiner import (
@@ -35,6 +34,7 @@ from .text_refiner import (
     get_client,
     refine_text,
 )
+from .utils import get_logger, setup_logging
 
 __all__ = [
     "BACKEND",

@@ -46,7 +46,6 @@ from src.audio import (
     MicrophoneCapture,
     SystemAudioCapture,
     check_stop_requested,
-    clear_stop_request,
     list_devices,
     set_recorder,
 )
