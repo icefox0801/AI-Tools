@@ -599,6 +599,26 @@
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "none"
+		},
+		// ===== Docker: Force Restart =====
+		{
+			"label": "Docker: Force Kill & Restart",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/scripts/restart-docker.ps1"
+			],
+			"problemMatcher": [],
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"focus": true
+			}
 		}
 	]
 }
