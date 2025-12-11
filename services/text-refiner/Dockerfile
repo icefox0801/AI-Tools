@@ -39,8 +39,9 @@ RUN pip install --upgrade pip setuptools wheel
 ENV HF_ENDPOINT=${HF_ENDPOINT}
 
 # Install PyTorch with CUDA support
+# Use Tsinghua for PyTorch wheels + Aliyun for NVIDIA CUDA dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR}
+    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR} --extra-index-url ${PYPI_MIRROR}
 
 # Copy requirements
 COPY requirements.docker.txt .
