@@ -115,7 +115,7 @@ def summarize_streaming(
     transcript: str,
     system_prompt: str | None = None,
     model: str | None = None,
-    prepare_gpu: bool = True,
+    prepare_gpu: bool = False,  # Disabled - causes UI freeze due to blocking HTTP calls
 ):
     """
     Summarize transcript using Ollama with streaming output.
@@ -130,7 +130,7 @@ def summarize_streaming(
 
     # Prepare GPU memory by unloading ASR models
     if prepare_gpu:
-        logger.info("Preparing GPU memory for LLM summarization...")
+        logger.info("[LLM] Preparing GPU memory for LLM summarization...")
         prep_result = prepare_gpu_for_llm(required_memory_gb=8.0)
         if prep_result["memory_freed_gb"] > 0:
             yield f"⏳ {prep_result['message']}\\n\\n"
@@ -139,7 +139,6 @@ def summarize_streaming(
     if system_prompt is None or not system_prompt.strip():
         word_count = len(transcript.split())
         system_prompt = get_summary_prompt_for_length(word_count)
-        logger.info(f"Auto-selected prompt for {word_count} words")
 
     prompt = f"""Summarize this transcript:
 
@@ -160,22 +159,54 @@ def summarize_streaming(
 
         if resp.status_code == 200:
             accumulated = ""
+            chunk_count = 0
+            last_yield_len = 0
+            thinking_shown = False
+            import time
+
+            last_yield_time = time.time()
+
             for line in resp.iter_lines():
                 if line:
                     try:
                         data = json.loads(line)
                         chunk = data.get("response", "")
                         accumulated += chunk
-                        yield accumulated
+                        chunk_count += 1
+
+                        # Show thinking indicator during empty chunk phase (qwen3 thinking)
+                        if not thinking_shown and len(accumulated) == 0 and chunk_count > 5:
+                            yield "🤔 Thinking..."
+                            thinking_shown = True
+                            last_yield_time = time.time()
+
+                        # Only yield when:
+                        # 1. Content has actually changed AND
+                        # 2. At least 50ms has passed (rate limiting to prevent UI flood)
+                        current_time = time.time()
+                        content_changed = len(accumulated) > last_yield_len
+                        time_passed = (current_time - last_yield_time) >= 0.05
+
+                        if content_changed and time_passed:
+                            yield accumulated
+                            last_yield_len = len(accumulated)
+                            last_yield_time = current_time
 
                         if data.get("done", False):
+                            # Always yield final result
+                            if len(accumulated) > last_yield_len:
+                                yield accumulated
                             break
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"[LLM] JSON decode error: {e}")
                         continue
         else:
-            yield f"Error from Ollama: {resp.status_code}"
+            error_msg = f"Error from Ollama: {resp.status_code} - {resp.text[:200]}"
+            logger.error(error_msg)
+            yield error_msg
 
     except Exception as e:
+        logger.error(f"Summarization exception: {e}", exc_info=True)
         yield f"Error: {e}"
 
 
