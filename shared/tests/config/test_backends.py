@@ -131,7 +131,7 @@ class TestListBackends:
     def test_list_backends_returns_descriptions(self):
         """Test list_backends returns descriptions."""
         result = list_backends()
-        for backend, description in result.items():
+        for _backend, description in result.items():
             assert isinstance(description, str)
             assert len(description) > 0
 

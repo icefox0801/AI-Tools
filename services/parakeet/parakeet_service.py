@@ -33,13 +33,12 @@ from parakeet_model import (
     STREAMING_MODEL,
     get_model,
     get_model_state,
-    load_model,
     setup_cuda,
     unload_models,
 )
 
-from shared.utils import setup_logging
 from shared.text_refiner import capitalize_text, check_text_refiner, get_client, refine_text
+from shared.utils import setup_logging
 
 # ==============================================================================
 # Version

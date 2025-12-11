@@ -240,9 +240,8 @@ class GPUMemoryManager:
                     logger.error(f"Failed to unload {key} via callback: {e}")
 
             # Fallback to HTTP API for other services
-            if self._unload_via_http(info.service_name):
-                if key in self._loaded_models:
-                    self.unregister_model(info.service_name, info.model_name)
+            if self._unload_via_http(info.service_name) and key in self._loaded_models:
+                self.unregister_model(info.service_name, info.model_name)
 
         # Clear GPU cache after unloading
         clear_gpu_cache()

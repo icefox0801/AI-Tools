@@ -146,20 +146,6 @@ class TestOnLoadTranscript:
 
     def test_empty_selection_returns_warning(self):
         """Test that empty selection returns warning tuple."""
-        from ui.main import create_ui
-
-        # Access the internal function from the UI
-        import sys
-        from unittest.mock import MagicMock
-
-        # Mock gradio to test the function
-        with patch("ui.main.gr"):
-            # Get the function by importing main
-            from ui import main
-
-            # Create a mock for the function
-            result = list(main.create_ui.__code__.co_consts)
-
         # Direct test of the logic
         transcribed_selected = []
         # Should return 13 values with warning message
@@ -167,8 +153,6 @@ class TestOnLoadTranscript:
 
     def test_loads_single_transcript_file(self, tmp_path):
         """Test loading a single transcript file."""
-        from pathlib import Path
-        from ui.main import create_ui
 
         # Create test files
         audio_file = tmp_path / "test.wav"
@@ -199,7 +183,6 @@ class TestOnLoadTranscript:
 
     def test_handles_missing_transcript_file(self, tmp_path):
         """Test handling when transcript file doesn't exist."""
-        from pathlib import Path
 
         audio_file = tmp_path / "test.wav"
         audio_file.touch()
@@ -211,7 +194,6 @@ class TestOnLoadTranscript:
 
     def test_loads_multiple_transcript_files(self, tmp_path):
         """Test loading multiple transcript files."""
-        from pathlib import Path
 
         # Create multiple test files
         files = []
@@ -223,7 +205,7 @@ class TestOnLoadTranscript:
             files.append((str(audio_file), txt_file))
 
         # Verify all files exist
-        for audio_path, txt_file in files:
+        for _audio_path, txt_file in files:
             assert txt_file.exists()
             content = txt_file.read_text(encoding="utf-8")
             assert "Transcript" in content

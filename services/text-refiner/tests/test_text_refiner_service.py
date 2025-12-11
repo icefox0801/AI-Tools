@@ -29,7 +29,7 @@ sys.modules["punctuators"] = mock_punctuators
 mock_transformers = MagicMock()
 sys.modules["transformers"] = mock_transformers
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
 # ==============================================================================
 # Mock Models

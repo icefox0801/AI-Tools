@@ -5,8 +5,8 @@ CUSTOM_CSS = """
 /* Hide only progress bar elements with specific test ids */
 [data-testid="progress-bar"],
 [data-testid="progress-text"],
-[data-testid="eta-bar"] { 
-    display: none !important; 
+[data-testid="eta-bar"] {
+    display: none !important;
 }
 
 /* Hide Gradio loading/pending borders that appear during LLM requests */
@@ -75,7 +75,7 @@ function() {
                 }
             }
         });
-        
+
         // Fix for audio player first-play issue
         // When audio source changes, ensure the audio element is properly loaded
         const observer = new MutationObserver((mutations) => {
@@ -102,7 +102,7 @@ function() {
                 }
             });
         });
-        
+
         // Observe the entire document for audio changes
         observer.observe(document.body, {
             childList: true,

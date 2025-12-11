@@ -246,8 +246,6 @@ def _warmup_model(model, mode: str = "streaming"):
         logger.info("Skipping warmup for offline model (CUDA graphs disabled)")
         return
 
-    use_fp16 = True  # Streaming uses FP16
-
     logger.info(f"Warming up {mode} model...")
     try:
         dummy_audio = torch.randn(1, 16000).to(DEVICE).half()
