@@ -484,21 +484,80 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
             )
 
         def on_summarize(transcript, prompt, model):
-            """Handle summarization with streaming."""
+            """Handle summarization with streaming and UI updates."""
+            # First yield: Lock UI and switch to summary tab
+            yield (
+                "⏳ Connecting to LLM...",  # summary_output
+                "",  # summary_state
+                gr.update(interactive=False),  # batch_transcribe_btn
+                gr.update(interactive=False),  # summarize_btn
+                gr.update(interactive=False),  # reset_btn
+                gr.update(selected=1),  # result_tabs (switch to summary tab)
+                gr.update(interactive=True),  # summary_tab
+                gr.update(interactive=False),  # chat_tab
+                gr.update(open=True),  # summarize_accordion
+            )
+
             if not transcript:
-                yield "⚠️ No transcript available. Please transcribe first."
+                error_msg = "⚠️ No transcript available. Please transcribe first."
+                # Re-enable buttons on error
+                yield (
+                    error_msg,  # summary_output
+                    error_msg,  # summary_state
+                    gr.update(interactive=True),  # batch_transcribe_btn
+                    gr.update(interactive=True),  # summarize_btn
+                    gr.update(interactive=True),  # reset_btn
+                    gr.update(),  # result_tabs
+                    gr.update(),  # summary_tab
+                    gr.update(interactive=True),  # chat_tab
+                    gr.update(open=False),  # summarize_accordion
+                )
                 return
 
             try:
-                first_chunk = True
+                final_chunk = ""
                 for chunk in generate_summary(transcript, prompt, model):
-                    if first_chunk:
-                        first_chunk = False
-                    # Compact status indicator
-                    yield f"⏳ Summarizing...\n\n{chunk}"
+                    final_chunk = chunk
+                    # During streaming: only update display, keep buttons disabled
+                    yield (
+                        chunk,  # summary_output
+                        chunk,  # summary_state
+                        gr.update(interactive=False),  # batch_transcribe_btn
+                        gr.update(interactive=False),  # summarize_btn
+                        gr.update(interactive=False),  # reset_btn
+                        gr.update(),  # result_tabs
+                        gr.update(),  # summary_tab
+                        gr.update(interactive=False),  # chat_tab (disabled during generation)
+                        gr.update(open=True),  # summarize_accordion (keep open)
+                    )
+
+                # Final yield: re-enable all buttons
+                yield (
+                    final_chunk,  # summary_output
+                    final_chunk,  # summary_state
+                    gr.update(interactive=True),  # batch_transcribe_btn
+                    gr.update(interactive=True),  # summarize_btn
+                    gr.update(interactive=True),  # reset_btn
+                    gr.update(),  # result_tabs
+                    gr.update(),  # summary_tab
+                    gr.update(interactive=True),  # chat_tab
+                    gr.update(open=False),  # summarize_accordion
+                )
             except Exception as e:
-                logger.error(f"Summarization error: {e}")
-                yield f"❌ Error during summarization: {e!s}"
+                logger.error(f"Summarization error: {e}", exc_info=True)
+                error_msg = f"❌ Error during summarization: {e!s}"
+                # Re-enable buttons on error
+                yield (
+                    error_msg,  # summary_output
+                    error_msg,  # summary_state
+                    gr.update(interactive=True),  # batch_transcribe_btn
+                    gr.update(interactive=True),  # summarize_btn
+                    gr.update(interactive=True),  # reset_btn
+                    gr.update(),  # result_tabs
+                    gr.update(),  # summary_tab
+                    gr.update(interactive=True),  # chat_tab
+                    gr.update(open=False),  # summarize_accordion
+                )
 
         def on_file_upload(file):
             """Handle file upload."""
@@ -842,55 +901,18 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
             ],
         )
 
-        # Summarize button
-        def start_summarize():
-            return (
-                gr.update(interactive=False),
-                gr.update(interactive=False),
-                gr.update(interactive=False),
-                gr.update(selected=1),
-                gr.update(interactive=True),
-                "⏳ Connecting to LLM...",
-            )
-
-        def finish_summarize(summary_text):
-            # Remove the "Summarizing..." prefix if present
-            clean_summary = summary_text
-            if summary_text and summary_text.startswith("⏳ Summarizing..."):
-                clean_summary = summary_text.replace("⏳ Summarizing...\n\n", "")
-            return (
-                clean_summary,  # summary_output - show clean version
-                clean_summary,  # summary_state - store clean version
-                gr.update(interactive=True),
-                gr.update(interactive=True),
-                gr.update(interactive=True),
-                gr.update(interactive=True),
-                gr.update(open=False),
-            )
-
+        # Summarize button - single function handles everything
         summarize_btn.click(
-            start_summarize,
-            outputs=[
-                batch_transcribe_btn,
-                summarize_btn,
-                reset_btn,
-                result_tabs,
-                summary_tab,
-                summary_output,
-            ],
-        ).then(
             on_summarize,
             inputs=[transcript_state, summary_prompt, llm_model_dropdown],
-            outputs=[summary_output],
-        ).then(
-            finish_summarize,
-            inputs=[summary_output],
             outputs=[
                 summary_output,
                 summary_state,
                 batch_transcribe_btn,
                 summarize_btn,
                 reset_btn,
+                result_tabs,
+                summary_tab,
                 chat_tab,
                 summarize_accordion,
             ],
