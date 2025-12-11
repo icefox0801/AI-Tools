@@ -17,9 +17,13 @@ def create_transcription_section():
             interactive=True,
         )
 
-        batch_transcribe_btn = gr.Button(
-            "📝 Transcribe", variant="primary", size="lg", interactive=False
-        )
+        with gr.Row():
+            batch_transcribe_btn = gr.Button(
+                "📝 Transcribe", variant="primary", size="lg", interactive=False
+            )
+            load_transcript_btn = gr.Button(
+                "📄 Load Transcript", variant="secondary", size="lg", interactive=False
+            )
 
         batch_status = gr.Markdown("*Select recordings and click Transcribe.*")
 
@@ -27,5 +31,6 @@ def create_transcription_section():
         "transcription_accordion": transcription_accordion,
         "backend_radio": backend_radio,
         "batch_transcribe_btn": batch_transcribe_btn,
+        "load_transcript_btn": load_transcript_btn,
         "batch_status": batch_status,
     }
