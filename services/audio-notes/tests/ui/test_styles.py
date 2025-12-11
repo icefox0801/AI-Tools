@@ -13,8 +13,8 @@ class TestCustomCSS:
         assert len(CUSTOM_CSS) > 0
 
     def test_css_hides_progress_bars(self):
-        """Test that CSS includes rules for hiding progress bars."""
-        assert "progress" in CUSTOM_CSS.lower()
+        """Test that CSS includes rules for hiding loaders/spinners."""
+        assert "loading" in CUSTOM_CSS.lower()
         assert "display: none" in CUSTOM_CSS
 
     def test_css_hides_loaders(self):

@@ -9,7 +9,7 @@ def create_summary_tab():
     Returns:
         Dict of UI components for summary tab
     """
-    with gr.TabItem("📋 Summary", id=1, interactive=False) as summary_tab:
+    with gr.TabItem("📋 Summary", id=1, interactive=True) as summary_tab:
         summary_output = gr.Markdown(label="Summary")
 
     return {

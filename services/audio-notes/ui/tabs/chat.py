@@ -12,7 +12,7 @@ def create_chat_tab():
     Returns:
         Dict of UI components for chat tab
     """
-    with gr.TabItem("💬 Chat", id=2, interactive=False) as chat_tab:
+    with gr.TabItem("💬 Chat", id=2, interactive=True) as chat_tab:
         chat_title = gr.Markdown(
             value="*Start a conversation to generate a title...*", elem_id="chat-title"
         )

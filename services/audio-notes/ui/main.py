@@ -210,8 +210,6 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 summary_prompt = summarize["summary_prompt"]
                 summarize_btn = summarize["summarize_btn"]
 
-                gr.Markdown("---")
-
                 # Upload section
                 upload = create_upload_section()
                 file_input = upload["file_input"]
@@ -490,11 +488,9 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 "⏳ Connecting to LLM...",  # summary_output
                 "",  # summary_state
                 gr.update(interactive=False),  # batch_transcribe_btn
-                gr.update(interactive=False),  # summarize_btn
+                gr.update(interactive=False, value="⏳ Connecting..."),  # summarize_btn
                 gr.update(interactive=False),  # reset_btn
                 gr.update(selected=1),  # result_tabs (switch to summary tab)
-                gr.update(interactive=True),  # summary_tab
-                gr.update(interactive=False),  # chat_tab
                 gr.update(open=True),  # summarize_accordion
             )
 
@@ -505,29 +501,33 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                     error_msg,  # summary_output
                     error_msg,  # summary_state
                     gr.update(interactive=True),  # batch_transcribe_btn
-                    gr.update(interactive=True),  # summarize_btn
+                    gr.update(interactive=True, value="✨ Summarize"),  # summarize_btn
                     gr.update(interactive=True),  # reset_btn
                     gr.update(),  # result_tabs
-                    gr.update(),  # summary_tab
-                    gr.update(interactive=True),  # chat_tab
                     gr.update(open=False),  # summarize_accordion
                 )
                 return
 
             try:
                 final_chunk = ""
+                chunk_num = 0
                 for chunk in generate_summary(transcript, prompt, model):
+                    chunk_num += 1
                     final_chunk = chunk
+                    # Update button text based on content
+                    if "Thinking" in chunk:
+                        button_text = "🤔 Thinking..."
+                    else:
+                        button_text = "✨ Generating..."
+
                     # During streaming: only update display, keep buttons disabled
                     yield (
                         chunk,  # summary_output
                         chunk,  # summary_state
                         gr.update(interactive=False),  # batch_transcribe_btn
-                        gr.update(interactive=False),  # summarize_btn
+                        gr.update(interactive=False, value=button_text),  # summarize_btn
                         gr.update(interactive=False),  # reset_btn
                         gr.update(),  # result_tabs
-                        gr.update(),  # summary_tab
-                        gr.update(interactive=False),  # chat_tab (disabled during generation)
                         gr.update(open=True),  # summarize_accordion (keep open)
                     )
 
@@ -536,11 +536,9 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                     final_chunk,  # summary_output
                     final_chunk,  # summary_state
                     gr.update(interactive=True),  # batch_transcribe_btn
-                    gr.update(interactive=True),  # summarize_btn
+                    gr.update(interactive=True, value="✨ Summarize"),  # summarize_btn
                     gr.update(interactive=True),  # reset_btn
                     gr.update(),  # result_tabs
-                    gr.update(),  # summary_tab
-                    gr.update(interactive=True),  # chat_tab
                     gr.update(open=False),  # summarize_accordion
                 )
             except Exception as e:
@@ -551,11 +549,9 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                     error_msg,  # summary_output
                     error_msg,  # summary_state
                     gr.update(interactive=True),  # batch_transcribe_btn
-                    gr.update(interactive=True),  # summarize_btn
+                    gr.update(interactive=True, value="✨ Summarize"),  # summarize_btn
                     gr.update(interactive=True),  # reset_btn
                     gr.update(),  # result_tabs
-                    gr.update(),  # summary_tab
-                    gr.update(interactive=True),  # chat_tab
                     gr.update(open=False),  # summarize_accordion
                 )
 
@@ -912,8 +908,6 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 summarize_btn,
                 reset_btn,
                 result_tabs,
-                summary_tab,
-                chat_tab,
                 summarize_accordion,
             ],
         )

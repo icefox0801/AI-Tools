@@ -2,14 +2,25 @@
 
 # Minimal CSS - the theme handles radio/checkbox hover colors
 CUSTOM_CSS = """
-/* Hide only progress bar elements with specific test ids */
-[data-testid="progress-bar"],
-[data-testid="progress-text"],
-[data-testid="eta-bar"] {
+/* Hide Gradio's loading spinner in textboxes and other components */
+.loading {
     display: none !important;
 }
 
-/* Hide Gradio loading/pending borders that appear during LLM requests */
+/* Hide the orange loading icon that appears in textboxes */
+span[aria-label="Loading..."],
+.loader {
+    display: none !important;
+}
+
+/* Hide loading indicators in various Gradio components */
+.wrap .loader,
+.textarea-wrapper .loader,
+.input-wrapper .loader {
+    display: none !important;
+}
+
+/* Hide Gradio loading/pending borders that appear during requests */
 .pending,
 .generating,
 [data-testid="block"][class*="pending"],
