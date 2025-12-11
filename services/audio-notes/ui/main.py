@@ -25,6 +25,7 @@ from services import (
     transcribe_audio,
     unload_asr_model,
 )
+from services.llm import get_summary_prompt_for_length
 from ui.sections import (
     create_recordings_section,
     create_status_section,
@@ -199,6 +200,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 transcription = create_transcription_section()
                 backend_radio = transcription["backend_radio"]
                 batch_transcribe_btn = transcription["batch_transcribe_btn"]
+                load_transcript_btn = transcription["load_transcript_btn"]
                 batch_status = transcription["batch_status"]
 
                 # Summarize section
@@ -328,6 +330,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                     gr.update(),
                     gr.update(),
                     gr.update(),
+                    gr.update(),  # summary_prompt
                 )
                 return
 
@@ -353,6 +356,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                     gr.update(),  # checkboxes
                     gr.update(),
                     gr.update(),  # accordions
+                    gr.update(),  # summary_prompt
                 )
 
             logger.info(
@@ -378,6 +382,10 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 for r in transcribed_recordings
             ]
 
+            # Calculate word count and get appropriate prompt
+            word_count = len(final_transcript.split())
+            auto_prompt = get_summary_prompt_for_length(word_count)
+
             yield (
                 final_status,
                 final_transcript,
@@ -390,6 +398,89 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 gr.update(choices=transcribed_choices, value=[], interactive=True),
                 gr.update(visible=len(new_choices) > 0),
                 gr.update(visible=len(transcribed_choices) > 0),
+                gr.update(value=auto_prompt, interactive=True),  # summary_prompt
+            )
+
+        def on_load_transcript(transcribed_selected):
+            """Load existing transcript from selected transcribed recordings."""
+            if not transcribed_selected:
+                return (
+                    "⚠️ No transcribed recordings selected. Check transcribed recordings to load their transcripts.",
+                    "",
+                    "",
+                    gr.update(open=True),
+                    gr.update(interactive=True),
+                    gr.update(interactive=True),
+                    gr.update(interactive=True),
+                    gr.update(interactive=True),
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),
+                    gr.update(),  # summary_prompt
+                )
+
+            results = []
+            all_transcripts = []
+
+            for file_path in transcribed_selected:
+                file_name = Path(file_path).name
+                txt_path = Path(file_path).with_suffix(".txt")
+
+                try:
+                    if not txt_path.exists():
+                        results.append(f"❌ {file_name}: Transcript file not found")
+                        continue
+
+                    transcript = txt_path.read_text(encoding="utf-8")
+                    results.append(f"✅ {file_name} ➜ Loaded ({len(transcript)} chars)")
+                    all_transcripts.append(f"## 🎙️ {file_name}\n\n{transcript}")
+                    logger.info(f"Loaded transcript: {txt_path}")
+
+                except Exception as e:
+                    results.append(f"❌ {file_name}: {e}")
+                    logger.error(f"Error loading transcript for {file_name}: {e}")
+
+            combined_transcript = "\n\n---\n\n".join(all_transcripts) if all_transcripts else ""
+
+            # Refresh recordings list
+            recordings = list_recordings()
+            new_recordings = [r for r in recordings if not r["has_transcript"]]
+            transcribed_recordings = [r for r in recordings if r["has_transcript"]]
+            new_choices = [
+                (
+                    f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)",
+                    r["path"],
+                )
+                for r in new_recordings
+            ]
+            transcribed_choices = [
+                (
+                    f"🔊 {r['name']} ({r['duration_str']}, {r['size_mb']:.1f}MB)",
+                    r["path"],
+                )
+                for r in transcribed_recordings
+            ]
+
+            # Calculate word count and get appropriate prompt
+            word_count = len(combined_transcript.split())
+            auto_prompt = get_summary_prompt_for_length(word_count)
+
+            status = "\n\n".join(results)
+            return (
+                status,
+                combined_transcript,
+                combined_transcript,
+                gr.update(open=False),
+                gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(choices=new_choices, value=[], interactive=True),
+                gr.update(choices=transcribed_choices, value=[], interactive=True),
+                gr.update(visible=len(new_choices) > 0),
+                gr.update(visible=len(transcribed_choices) > 0),
+                gr.update(value=auto_prompt, interactive=True),  # summary_prompt
             )
 
         def on_summarize(transcript, prompt, model):
@@ -529,10 +620,14 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
             """
 
         def update_transcribe_button_state(new_selected, transcribed_selected):
-            """Enable/disable transcribe button based on selection."""
+            """Enable/disable transcribe and load transcript buttons based on selection."""
             has_new = len(new_selected) > 0 if new_selected else False
             has_transcribed = len(transcribed_selected) > 0 if transcribed_selected else False
-            return gr.update(interactive=has_new or has_transcribed)
+            # Transcribe button: enabled if any selection
+            # Load Transcript button: enabled only if transcribed recordings selected
+            return gr.update(interactive=has_new or has_transcribed), gr.update(
+                interactive=has_transcribed
+            )
 
         def on_delete_selected(new_selected, transcribed_selected):
             """Delete selected recordings and refresh list."""
@@ -662,7 +757,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
         new_recordings_checkboxes.change(
             update_transcribe_button_state,
             inputs=[new_recordings_checkboxes, transcribed_checkboxes],
-            outputs=[batch_transcribe_btn],
+            outputs=[batch_transcribe_btn, load_transcript_btn],
         )
 
         new_recordings_checkboxes.change(
@@ -674,7 +769,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
         transcribed_checkboxes.change(
             update_transcribe_button_state,
             inputs=[new_recordings_checkboxes, transcribed_checkboxes],
-            outputs=[batch_transcribe_btn],
+            outputs=[batch_transcribe_btn, load_transcript_btn],
         )
 
         transcribed_checkboxes.change(
@@ -707,6 +802,43 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 transcribed_checkboxes,
                 new_recordings_accordion,
                 transcribed_accordion,
+                summary_prompt,
+            ],
+        )
+
+        # Load Transcript button
+        load_transcript_btn.click(
+            lambda: (
+                gr.update(interactive=False),
+                gr.update(interactive=False),
+                gr.update(interactive=False),
+                gr.update(interactive=False),
+                gr.update(value="⏳ Loading transcripts..."),
+            ),
+            outputs=[
+                batch_transcribe_btn,
+                load_transcript_btn,
+                summarize_btn,
+                reset_btn,
+                batch_status,
+            ],
+        ).then(
+            on_load_transcript,
+            inputs=[transcribed_checkboxes],
+            outputs=[
+                batch_status,
+                transcript_output,
+                transcript_state,
+                recordings_accordion,
+                batch_transcribe_btn,
+                load_transcript_btn,
+                summarize_btn,
+                reset_btn,
+                new_recordings_checkboxes,
+                transcribed_checkboxes,
+                new_recordings_accordion,
+                transcribed_accordion,
+                summary_prompt,
             ],
         )
 
@@ -812,6 +944,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 gr.update(interactive=False),
                 gr.update(interactive=False),
                 gr.update(interactive=False),
+                gr.update(interactive=False),
                 gr.update(open=True),
                 gr.update(visible=len(new_choices) > 0),
                 gr.update(visible=len(transcribed_choices) > 0),
@@ -835,6 +968,7 @@ def create_ui(initial_audio: str | None = None, auto_transcribe: bool = False):
                 result_tabs,
                 summarize_btn,
                 batch_transcribe_btn,
+                load_transcript_btn,
                 summary_tab,
                 chat_tab,
                 recordings_accordion,
