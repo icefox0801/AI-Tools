@@ -1,11 +1,12 @@
 # NeMo Parakeet ASR dependencies
 nemo_toolkit[asr]>=2.0.0
+pyarrow<15.0.0  # Pin to compatible version for NeMo
+numpy<2.0.0  # Pin to 1.x for PyArrow compatibility
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 soundfile>=0.12.1
 librosa>=0.10.1
-numpy>=1.24.0
 pydantic>=2.0.0
 httpx>=0.25.0
 
