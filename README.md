@@ -24,6 +24,23 @@ open http://localhost:7860
 
 ---
 
+## 💻 Hardware Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| **CPU** | 4 cores | 8+ cores |
+| **RAM** | 8 GB | 16+ GB |
+| **GPU** | - | NVIDIA RTX 3060+ (8GB VRAM) |
+| **Storage** | 20 GB | 50+ GB (for models) |
+
+**GPU Notes:**
+- **Vosk**: CPU only, works on any system
+- **Parakeet/Whisper**: Requires NVIDIA GPU with CUDA support
+- VRAM usage: ~4-6GB per ASR model loaded
+- Multiple GPU models can run simultaneously with 12GB+ VRAM
+
+---
+
 ## 🎬 Complete Workflow: From Audio to Insights
 
 This is the typical workflow showing how Live Captions and Audio Notes work together.
