@@ -49,8 +49,6 @@
     
     // Disable unnecessary extensions
     "extensions.ignoreRecommendations": true,
-    "platformio-ide.disableToolbar": true,
-    "platformio-ide.activateOnlyOnPlatformIOProject": true,
     
     "actionButtons": {
         "defaultColor": "#4ade80",
