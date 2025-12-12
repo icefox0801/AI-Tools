@@ -24,7 +24,9 @@ open http://localhost:7860
 
 ---
 
-## 💻 Hardware Requirements
+## 💻 Hardware & Platform Requirements
+
+**Platform**: Windows 10/11 (required for Live Captions desktop app)
 
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
