@@ -4,6 +4,8 @@ Docker-based AI toolkit for real-time speech-to-text, audio transcription, and L
 
 <img width="291" height="242" alt="image" src="https://github.com/user-attachments/assets/45f07f39-fe52-47bc-abb7-d103326087e2" />
 
+<img width="1962" height="1124" alt="image" src="https://github.com/user-attachments/assets/c5cf379d-c510-45cc-a73e-254e30cb6f1b" />
+
 <img width="3080" height="268" alt="image" src="https://github.com/user-attachments/assets/7c3d5e5e-6827-42e1-a6c6-86f944837721" />
 
 <img width="2848" height="982" alt="image" src="https://github.com/user-attachments/assets/47fbc1b1-70c2-45fd-885c-ca000714c1d7" />
@@ -139,6 +141,7 @@ Or use command line:
 ```bash
 python live_captions.py --backend whisper --system-audio
 ```
+
 
 
 
