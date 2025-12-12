@@ -166,9 +166,18 @@ def _transcribe_chunk(
 def _extract_word_timestamps(results, audio_array: np.ndarray, sample_rate: int) -> list[dict]:
     """Extract word timestamps from NeMo transcription results."""
     if not results:
+        logger.warning("No results from transcription")
         return []
 
+    # NeMo with return_hypotheses=True returns [[hypothesis]] (list of lists)
+    # Get the first hypothesis from the first batch
     hypothesis = results[0]
+    if isinstance(hypothesis, list) and len(hypothesis) > 0:
+        hypothesis = hypothesis[0]
+
+    if not hypothesis:
+        logger.warning("Empty hypothesis from transcription")
+        return []
 
     if hasattr(hypothesis, "timestamp") and hypothesis.timestamp:
         word_timestamps = hypothesis.timestamp.get("word", [])
