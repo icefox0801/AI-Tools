@@ -1,396 +1,195 @@
-# CLAUDE.md - AI Assistant Context for AI-Tools
+# CLAUDE.md - AI Assistant Context
 
-## Project Overview
+This file provides context for AI assistants working on the AI-Tools codebase.
 
-AI-Tools is a Docker-based AI toolkit for real-time speech-to-text, audio transcription, and LLM-powered summarization. It includes ASR services, a web UI for audio analysis, and a desktop live captions app.
+## Project Summary
 
-**Version**: 1.0.0  
-**Python**: 3.11+  
-**Test Coverage**: 321 unit tests across 21 test files
+AI-Tools is a Docker-based toolkit for speech-to-text and audio analysis:
+- **Live Captions**: Desktop app for real-time transcription
+- **Audio Notes**: Web UI for transcription, summarization, and chat
+- **ASR Services**: Vosk (CPU), Parakeet (GPU), Whisper (GPU)
+- **Text Refiner**: Punctuation and correction service
+- **Ollama**: Local LLM for summarization and chat
 
 ## Architecture
 
 ```
-+---------------------+     WebSocket      +---------------------+
-|   Client Apps       | -----------------> |   ASR Services      |
-|                     |    Audio Stream    |                     |
-|  - Audio Notes      | <----------------- |  - Vosk (CPU:8001)  |
-|    (Web UI :7860)   |    {id, text}      |  - Parakeet (:8002) |
-|  - Live Captions    |                    |  - Whisper (:8003)  |
-|    (Desktop)        |                    |                     |
-+---------------------+                    |  Text Refiner:8010  |
-        |                                  +---------------------+
-        |
-        +----------------> Ollama LLM (:11434)
-              Chat &       (Qwen, Llama, etc.)
-              Summarize
+┌─────────────────┐     WebSocket      ┌─────────────────┐
+│  Client Apps    │ ◄───────────────► │   ASR Services  │
+│                 │   Audio Stream     │                 │
+│ • Audio Notes   │   {id, text}       │ • Vosk (:8001)  │
+│   (:7860)       │                    │ • Parakeet(:8002│
+│ • Live Captions │                    │ • Whisper(:8003)│
+└────────┬────────┘                    │ • Refiner(:8010)│
+         │                             └─────────────────┘
+         │ Chat/Summarize
+         ▼
+   ┌─────────────┐
+   │ Ollama LLM  │
+   │  (:11434)   │
+   └─────────────┘
 ```
 
-## Key Components
+## Directory Structure
 
-### Web Applications (Docker)
-- **Audio Notes** (`services/audio-notes/`) - Gradio web UI, port 7860
-  - Upload/record audio files for transcription
-  - ASR backend selection (Whisper or Parakeet)
-  - AI summarization with local LLM (Ollama)
-  - Chat about transcript content with context
-  - Batch transcription support
-
-### ASR Services (Docker)
-- **Vosk** (`services/vosk/`) - CPU-based, lightweight, port 8001
-- **Parakeet** (`services/parakeet/`) - GPU-based (NVIDIA NeMo TDT), port 8002
-  - Uses TDT (Token-and-Duration Transducer) model - better for streaming
-  - 300ms sliding window overlap for word boundary handling
-  - FP16 inference enabled for performance
-- **Whisper** (`services/whisper/`) - GPU-based (OpenAI Whisper Large V3 Turbo), port 8003
-- **Text Refiner** (`services/text-refiner/`) - Punctuation & ASR correction, port 8010
-
-### Client Applications
-- **Live Captions** (`apps/live-captions/`) - Desktop overlay with system tray
-  - Real-time transparent overlay window
-  - WASAPI loopback for system audio capture
-  - Microphone input support
-  - Recording with auto-upload to Audio Notes
-  - System tray app with backend selection
-
-### Shared Library (`shared/`)
-- `shared/client/websocket_client.py` - WebSocket client for ASR streaming
-- `shared/client/transcript.py` - TranscriptManager with ID-based replace/append
-- `shared/config/backends.py` - Backend configuration (vosk, parakeet, or whisper)
-- `shared/text_refiner/` - Text refiner client module for punctuation & correction
-- `shared/logging/` - Centralized logging configuration
+```
+AI-Tools/
+├── apps/live-captions/          # Desktop app (Python + PyQt)
+│   ├── live_captions.py         # Main caption window
+│   ├── live_captions_tray.py    # System tray launcher
+│   ├── src/audio/               # Audio capture (WASAPI)
+│   ├── src/asr/                 # ASR client
+│   ├── src/ui/                  # UI components
+│   └── tests/                   # Unit tests
+├── services/
+│   ├── audio-notes/             # Web UI (Gradio + FastAPI)
+│   │   ├── audio_notes.py       # Entry point
+│   │   ├── ui/                  # Gradio components
+│   │   ├── services/            # Business logic
+│   │   └── api/                 # REST endpoints
+│   ├── parakeet/                # NeMo Parakeet ASR
+│   ├── whisper/                 # OpenAI Whisper ASR
+│   ├── vosk/                    # Vosk ASR
+│   └── text-refiner/            # Punctuation service
+├── shared/
+│   ├── client/                  # WebSocket client library
+│   ├── config/                  # Backend configuration
+│   └── text_refiner/            # Text refiner client
+└── integration/e2e/             # End-to-end tests
+```
 
 ## Testing
 
-### Critical Testing Pattern
+### Test Organization
 
-**⚠️ UNIT TESTS ARE NEVER IN `integration/`!**
-
-This project enforces strict test organization:
-
-**Test Structure:**
+**Unit tests are co-located with their code:**
 ```
-integration/              # E2E TESTS ONLY!
-├── e2e/                 # End-to-end integration tests
-└── fixtures/            # Test data (audio files, etc.)
-
-apps/*/tests/            # Unit tests co-located with apps
-services/*/test_*.py     # Unit tests co-located with services
-shared/tests/            # Unit tests for shared modules
+apps/live-captions/tests/        # Live Captions unit tests
+services/audio-notes/tests/      # Audio Notes unit tests
+services/parakeet/test_*.py      # Parakeet unit tests
+shared/client/tests/             # Shared library tests
+integration/e2e/                 # E2E tests ONLY
 ```
 
-**Rules:**
-- ✅ Co-locate unit tests with the code they test
-- ✅ Use `integration/e2e/` ONLY for end-to-end tests
-- ❌ NEVER create `integration/unit/`
-- ❌ NEVER put unit tests in `integration/`
+**Never put unit tests in `integration/`!**
 
 ### Running Tests
 
-Run all tests:
 ```bash
+# All tests
 python -m pytest apps/ services/ shared/ integration/ -v
-```
 
-Run only unit tests (no Docker required):
-```bash
+# Unit tests only (no Docker)
 python -m pytest apps/ services/ shared/ -v
-```
 
-Run specific test suites:
-```bash
-# Live Captions (154 tests)
+# Specific component
 python -m pytest apps/live-captions -v
-
-# Audio Notes (70 tests)
 python -m pytest services/audio-notes -v
 
-# ASR Services
-python -m pytest services/parakeet services/whisper services/vosk -v
-
-# E2E tests (require Docker services)
+# E2E tests (requires Docker)
 python -m pytest integration/e2e -v -m e2e
+
+# With coverage
+python -m pytest --cov=apps --cov=services --cov=shared
 ```
 
-Run with coverage:
-```bash
-python -m pytest apps/ services/ shared/ integration/ --cov=apps --cov=services --cov=shared
-```
+## WebSocket Protocol
 
-## WebSocket Protocol (v3.0)
-
-Server sends JSON messages:
+ASR services send JSON messages:
 ```json
 {"id": "s0", "text": "hello world"}
 ```
 
-- **id**: Segment identifier (e.g., "s0", "s1", "s2")
-- **text**: Current transcription for that segment
-
 Client logic (TranscriptManager):
-- If `id` exists → **REPLACE** text for that segment
-- If `id` is new → **APPEND** new segment
+- If `id` exists → REPLACE text
+- If `id` is new → APPEND segment
 
-## Running Commands
+## Common Commands
 
 ```bash
-# Start Audio Notes with dependencies
+# Start services
 docker compose up -d audio-notes ollama
+docker compose up -d whisper-asr parakeet-asr vosk-asr
 
-# Start ASR services (choose one)
-docker compose up -d vosk-asr      # CPU
-docker compose up -d parakeet-asr  # GPU
-docker compose up -d whisper-asr   # GPU (multilingual)
-
-# Access Audio Notes
-open http://localhost:7860
-
-# Run Live Captions with debug logging (use .venv python)
+# Run Live Captions
 cd apps/live-captions
-.venv/Scripts/python.exe live_captions.py --debug
+python live_captions.py --backend whisper --system-audio --debug
+
+# Check code quality
+ruff check apps/ services/ shared/
+black apps/ services/ shared/
+
+# Build Live Captions executable
+cd apps/live-captions
+python -m PyInstaller live_captions.spec
 ```
 
-## Configuration
+## Git Commit Format
 
-Backend selection in `shared/config/backends.py`:
-```python
-BACKEND = "vosk"      # CPU, lightweight
-BACKEND = "parakeet"  # GPU, high accuracy
-BACKEND = "whisper"   # GPU, multilingual
+Use Conventional Commits:
+```
+<type>(<scope>): <description>
+
+Types: feat, fix, refactor, chore, docs, test
+Scope: live-captions, audio-notes, parakeet, whisper, vosk
 ```
 
-Or via command line: `--backend vosk|parakeet|whisper`
-
-## Debug Logging
-
-Enable with `--debug` flag:
-```bash
-python live_captions.py --debug
+Examples:
+```
+feat(live-captions): Add language selector
+fix(audio-notes): Fix upload timeout
+chore(parakeet): Bump model version
 ```
 
-Shows:
-- `[APPEND] s0 = 'hello'` - New segment added
-- `[REPLACE] s0 = 'hello world'` - Existing segment updated
+## Version Bump Checklist
 
-## Common Issues
+1. Update version in source files:
+   - `apps/live-captions/live_captions_tray.py`: `APP_VERSION`
+   - `apps/live-captions/live_captions.py`: description
 
-1. **Wrong Python interpreter on Windows**: Inkscape's Python 3.12 may be in PATH. Use explicit path to Windows Python.
+2. Update CHANGELOG.md (user-facing changes only)
 
-2. **Module not found**: Install dependencies in the correct Python environment:
-   ```bash
-   pip install websockets pyaudio
-   ```
+3. Run tests: `python -m pytest apps/live-captions -v`
 
-3. **ASR service not running**: Check Docker containers:
-   ```bash
-   docker ps | grep vosk
-   ```
-
-## File Structure
-
-```
-AI-Tools/
-├── pyproject.toml           # Project config, ruff, pytest settings
-├── docker-compose.yaml      # Service orchestration
-├── apps/
-│   └── live-captions/       # Desktop caption overlay (v1.0)
-│       ├── live_captions.py       # Main caption window
-│       ├── live_captions_tray.py  # System tray launcher
-│       ├── src/
-│       │   ├── audio/             # Audio capture (WASAPI, microphone)
-│       │   ├── asr/               # ASR client
-│       │   └── ui/                # Caption window UI
-│       ├── scripts/               # Build and run scripts
-│       └── test_*.py              # Unit tests (154 tests)
-├── services/
-│   ├── audio-notes/         # Gradio Web UI (v1.0)
-│   │   ├── audio_notes.py         # FastAPI entry point
-│   │   ├── ui/                    # Gradio UI components
-│   │   ├── services/              # LLM, recordings, ASR services
-│   │   ├── api/                   # REST API endpoints
-│   │   └── test_*.py              # Unit tests (70 tests)
-│   ├── vosk/                # CPU ASR service
-│   ├── parakeet/            # GPU ASR service (NVIDIA NeMo TDT)
-│   ├── whisper/             # GPU ASR service (OpenAI Whisper)
-│   └── text-refiner/        # Punctuation & correction service
-├── shared/
-│   ├── client/              # WebSocket client, transcript manager
-│   ├── config/              # Backend configuration
-│   ├── logging/             # Centralized logging
-│   └── text_refiner/        # Text refiner client
-└── integration/         # E2E integration tests only
-    ├── e2e/             # End-to-end tests
-    └── fixtures/        # Test audio files
-```
-
-## Code Quality
-
-Lint with ruff:
-```bash
-ruff check .        # Check all files
-ruff check --fix .  # Auto-fix issues
-```
-
-Key lint rules enabled: E, W, F, I, B, C4, UP, SIM, RUF
+4. Commit: `chore(live-captions): Bump version to vX.Y`
 
 ## Changelog Guidelines
 
-Each app/service has a `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/).
+Only include **user-visible changes**:
 
-**Version Format**: MAJOR.MINOR (e.g., 1.0, 1.1, 2.0)
+✅ Include:
+- New UI features
+- Behavior changes
+- User-facing bug fixes
 
-**Entry Guidelines**:
-- Only include changes **users will notice**
-- Keep entries **concise** (1 line per item, under 10 words)
-- Write from user perspective, not developer perspective
-- Omit internal fixes and implementation details
-
-**Notable (include)**:
-- New UI elements user can see
-- Changed behavior user will notice
-- Features user can interact with
-
-**Not notable (omit)**:
-- Background reliability improvements
-- Performance optimizations user won't perceive
-- Internal bug fixes (flickering, timing, etc.)
-- Auto-save frequency changes
-
-**Sections** (only include if applicable):
-- `Added` - New features
-- `Changed` - Changes to existing features  
-- `Fixed` - Bug fixes
-- `Removed` - Removed features
-
-**Good examples**:
-- ✅ "Version display in tray menu"
-- ✅ "Double-click to start/stop"
-- ✅ "Language selector in tray menu"
-- ✅ "No-audio detection prompt"
-
-**Bad examples (omit entirely)**:
-- ❌ "Recording saves reliably on stop" (background fix)
-- ❌ "More frequent auto-save" (user doesn't notice)
-- ❌ "Tray icon flickering" (minor internal fix)
-- ❌ "Add unit tests for X" (internal)
-- ❌ "Increased shutdown timeout" (implementation)
-
-## Git Commit Guidelines
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) format:
-
-```
-<type>(<scope>): <description>
-```
-
-**Types**:
-- `feat` - New feature
-- `fix` - Bug fix
-- `refactor` - Code change (no feature/fix)
-- `chore` - Maintenance (deps, build, etc.)
-- `docs` - Documentation only
-- `test` - Adding/updating tests
-
-**Scope**: Component name (e.g., `live-captions`, `audio-notes`, `parakeet`)
-
-**Examples**:
-- `feat(live-captions): Add animated tray icon`
-- `fix(audio-notes): Fix upload timeout`
-- `chore(live-captions): Bump version to v1.1`
-
-**Guidelines**:
-- Keep description under 50 characters
-- Use imperative mood ("Add" not "Added")
-- Focus on what, not how
-
-### Batch Commit Pattern
-
-When committing related changes, divide into logical batches based on:
-
-1. **By Type**: Group by commit type (fix, feat, docs, chore)
-2. **By Concern**: Separate functional changes from documentation
-3. **By Scope**: Keep changes to same component together
-
-**Batch Order** (most specific → most general):
-1. Core fixes/features (code changes)
-2. Documentation updates (CHANGELOG, README)
-3. Tooling/meta changes (CLAUDE.md, build scripts)
-
-**Example Workflow** (version bump):
-```bash
-# Batch 1: Core functionality fix
-git add apps/live-captions/live_captions.py apps/live-captions/live_captions_tray.py
-git commit -m "fix(live-captions): Fix stop button IPC race condition"
-
-# Batch 2: User documentation
-git add apps/live-captions/CHANGELOG.md
-git commit -m "docs(live-captions): Update changelog for v1.4"
-
-# Batch 3: Development documentation
-git add CLAUDE.md
-git commit -m "docs: Update version bump guidelines"
-```
-
-**Anti-patterns to avoid**:
-- ❌ Single commit with mixed concerns (fix + docs + tooling)
-- ❌ Too many small commits (one per file)
-- ✅ Logical batches that tell a story
-
-## Version Bump Guidelines
-
-Follow semantic versioning: **MAJOR.MINOR** (e.g., 1.0, 1.1, 2.0)
-
-**When to bump**:
-- **MAJOR (X.0)**: Breaking changes, major UI overhaul, or complete rewrites
-- **MINOR (X.Y)**: New features, enhancements, or notable fixes
-
-**Files to update**:
-1. **Version strings** in source code:
-   - `apps/live-captions/live_captions_tray.py`: `APP_VERSION = "X.Y"`
-   - `apps/live-captions/live_captions.py`: `description="Live Captions vX.Y"`
-   - `services/audio-notes/audio_notes.py`: Similar pattern
-
-2. **CHANGELOG.md**: Add new version section following changelog guidelines
-
-3. **Run checks before commit**:
-   ```bash
-   # Run all tests
-   python -m pytest apps/live-captions -v
-   
-   # Check for errors
-   python -m ruff check apps/live-captions
-   ```
-
-4. **Commit pattern**:
-   ```bash
-   git add .
-   git commit -m "chore(live-captions): Bump version to vX.Y"
-   ```
-
-**Example workflow**:
-```bash
-# 1. Update version strings
-# live_captions_tray.py: APP_VERSION = "2.0"
-# live_captions.py: description="Live Captions v2.0"
-
-# 2. Update CHANGELOG.md with user-facing changes
-
-# 3. Run tests
-python -m pytest apps/live-captions -v
-
-# 4. Commit
-git add apps/live-captions/
-git commit -m "chore(live-captions): Bump version to v2.0"
-```
+❌ Exclude:
+- Internal refactoring
+- Performance tweaks
+- Test changes
+- Background reliability fixes
 
 ## Parakeet Model Configuration
 
-Parakeet models are configured in docker-compose.yaml:
 ```yaml
+# docker-compose.yaml
 environment:
-  - PARAKEET_STREAMING_MODEL=nvidia/parakeet-tdt-1.1b  # TDT - better for streaming
-  - PARAKEET_OFFLINE_MODEL=nvidia/parakeet-rnnt-1.1b   # RNNT - better accuracy
+  - PARAKEET_STREAMING_MODEL=nvidia/parakeet-tdt-1.1b
+  - PARAKEET_OFFLINE_MODEL=nvidia/parakeet-rnnt-1.1b
 ```
 
-TDT (Token-and-Duration Transducer) is preferred for streaming because it handles
-chunk boundaries better than RNNT.
+TDT is preferred for streaming (better chunk boundary handling).
+
+## Known Issues
+
+1. **Wrong Python on Windows**: Inkscape's Python may be in PATH. Use explicit `.venv` path.
+
+2. **Module not found**: Install in correct environment:
+   ```bash
+   .venv/Scripts/pip install websockets pyaudio
+   ```
+
+3. **ASR not responding**: Check Docker:
+   ```bash
+   docker ps | grep asr
+   docker logs parakeet-asr
+   ```
