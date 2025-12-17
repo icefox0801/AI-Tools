@@ -401,13 +401,6 @@ class CaptionWindow:
 
         text = text.strip()
 
-        # Truncate old text to prevent unbounded growth
-        # Keep last 200 words to prevent display drift over long sessions
-        MAX_WORDS = 200
-        words = text.split()
-        if len(words) > MAX_WORDS:
-            text = " ".join(words[-MAX_WORDS:])
-
         # Detect new words added to the text
         if self._word_animation_enabled and text != self._full_text:
             old_words = self._full_text.split() if self._full_text else []

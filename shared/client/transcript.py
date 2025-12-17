@@ -139,7 +139,11 @@ class TranscriptManager:
 
         # Enforce max segments (remove oldest)
         while len(self._segments) > self._max_segments:
-            self._segments.popitem(last=False)
+            # Only keep the latest 1/4 segments
+            num_to_remove = len(self._segments) - int(self._max_segments // 4)
+            for _ in range(num_to_remove):
+                removed_id, _ = self._segments.popitem(last=False)
+                logger.debug(f"[TRIM] Removed oldest segment {removed_id} to enforce max_segments")
 
         # Fire callback
         if self.on_change:
@@ -150,23 +154,14 @@ class TranscriptManager:
 
         return is_replace
 
-    def get_text(self, max_words: int | None = 300) -> str:
+    def get_text(self) -> str:
         """
         Get full transcript text.
-
-        Args:
-            max_words: Maximum words to return (keeps last N words). None for all.
 
         Returns:
             Concatenated transcript from all segments (space-separated)
         """
         full_text = " ".join(text for text in self._segments.values() if text)
-
-        # Truncate to max words if specified
-        if max_words is not None:
-            words = full_text.split()
-            if len(words) > max_words:
-                full_text = " ".join(words[-max_words:])
 
         return full_text
 

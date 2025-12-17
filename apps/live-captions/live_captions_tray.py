@@ -295,7 +295,7 @@ class LiveCaptionsTray:
 
     def __init__(self):
         self.current_process = None
-        self.current_backend = DEFAULT_BACKEND  # Initialize with default backend
+        self.current_backend = None  # Will be set when starting captions
         self.current_language = "en"  # Default language
         self.use_system_audio = True  # Default to system audio
         self.enable_recording = True  # Default to recording enabled
@@ -792,7 +792,7 @@ class LiveCaptionsTray:
                     except Exception:
                         pass
                 return
-            self.start_captions(self.current_backend)
+            self.start_captions(self.current_backend or DEFAULT_BACKEND)
 
     def create_menu(self):
         """Create right-click context menu."""
@@ -884,7 +884,9 @@ class LiveCaptionsTray:
                         "System Audio (Speakers)",
                         lambda icon, item: setattr(self, "use_system_audio", True)
                         or (
-                            self.start_captions(self.current_backend) if self.is_running() else None
+                            self.start_captions(self.current_backend or DEFAULT_BACKEND)
+                            if self.is_running()
+                            else None
                         ),
                         checked=is_system_audio,
                         radio=True,
@@ -893,7 +895,9 @@ class LiveCaptionsTray:
                         "Microphone",
                         lambda icon, item: setattr(self, "use_system_audio", False)
                         or (
-                            self.start_captions(self.current_backend) if self.is_running() else None
+                            self.start_captions(self.current_backend or DEFAULT_BACKEND)
+                            if self.is_running()
+                            else None
                         ),
                         checked=is_microphone,
                         radio=True,
@@ -1013,7 +1017,7 @@ class LiveCaptionsTray:
 
         # Restart if running to apply change
         if self.is_running():
-            self.start_captions(self.current_backend)
+            self.start_captions(self.current_backend or DEFAULT_BACKEND)
 
     def toggle_auto_start(self):
         """Toggle auto-start at Windows login."""
