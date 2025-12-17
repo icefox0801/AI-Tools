@@ -149,7 +149,7 @@ def check_all_backends() -> dict[str, tuple[bool, str]]:
 # ==============================================================================
 
 APP_NAME = "Live Captions"
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 DEFAULT_BACKEND = "whisper"
 
 # Windows Startup Registry Key
@@ -295,7 +295,7 @@ class LiveCaptionsTray:
 
     def __init__(self):
         self.current_process = None
-        self.current_backend = None
+        self.current_backend = DEFAULT_BACKEND  # Initialize with default backend
         self.current_language = "en"  # Default language
         self.use_system_audio = True  # Default to system audio
         self.enable_recording = True  # Default to recording enabled
@@ -792,7 +792,7 @@ class LiveCaptionsTray:
                     except Exception:
                         pass
                 return
-            self.start_captions(DEFAULT_BACKEND)
+            self.start_captions(self.current_backend)
 
     def create_menu(self):
         """Create right-click context menu."""
@@ -841,6 +841,9 @@ class LiveCaptionsTray:
             def handler(icon, item):
                 self.current_backend = backend
                 logger.info(f"Selected model: {BACKENDS.get(backend, {}).get('name', backend)}")
+                # Restart if currently running
+                if self.is_running():
+                    self.start_captions(backend)
                 self.update_icon()
 
             return handler
@@ -911,33 +914,28 @@ class LiveCaptionsTray:
                     pystray.MenuItem(
                         get_backend_label("whisper"),
                         set_backend("whisper"),
-                        checked=lambda item: (
-                            self.current_backend == "whisper"
-                            if self.is_running()
-                            else DEFAULT_BACKEND == "whisper"
-                        ),
+                        checked=lambda item: self.current_backend == "whisper",
                         enabled=is_backend_enabled("whisper"),
                         radio=True,
                     ),
                     pystray.MenuItem(
                         get_backend_label("parakeet"),
                         set_backend("parakeet"),
-                        checked=lambda item: (
-                            self.current_backend == "parakeet"
-                            if self.is_running()
-                            else DEFAULT_BACKEND == "parakeet"
-                        ),
+                        checked=lambda item: self.current_backend == "parakeet",
                         enabled=is_backend_enabled("parakeet"),
+                        radio=True,
+                    ),
+                    pystray.MenuItem(
+                        get_backend_label("fastconformer"),
+                        set_backend("fastconformer"),
+                        checked=lambda item: self.current_backend == "fastconformer",
+                        enabled=is_backend_enabled("fastconformer"),
                         radio=True,
                     ),
                     pystray.MenuItem(
                         get_backend_label("vosk"),
                         set_backend("vosk"),
-                        checked=lambda item: (
-                            self.current_backend == "vosk"
-                            if self.is_running()
-                            else DEFAULT_BACKEND == "vosk"
-                        ),
+                        checked=lambda item: self.current_backend == "vosk",
                         enabled=is_backend_enabled("vosk"),
                         radio=True,
                     ),
