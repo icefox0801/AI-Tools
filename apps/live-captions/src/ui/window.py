@@ -394,12 +394,19 @@ class CaptionWindow:
         Update displayed caption text with bottom-to-top growth and word animation.
 
         Args:
-            text: Full text to display (grows continuously, no truncation)
+            text: Full text to display
         """
         if not text or not text.strip():
             return
 
         text = text.strip()
+
+        # Truncate old text to prevent unbounded growth
+        # Keep last 200 words to prevent display drift over long sessions
+        MAX_WORDS = 200
+        words = text.split()
+        if len(words) > MAX_WORDS:
+            text = " ".join(words[-MAX_WORDS:])
 
         # Detect new words added to the text
         if self._word_animation_enabled and text != self._full_text:
