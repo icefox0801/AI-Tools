@@ -150,14 +150,25 @@ class TranscriptManager:
 
         return is_replace
 
-    def get_text(self) -> str:
+    def get_text(self, max_words: int | None = 300) -> str:
         """
         Get full transcript text.
+
+        Args:
+            max_words: Maximum words to return (keeps last N words). None for all.
 
         Returns:
             Concatenated transcript from all segments (space-separated)
         """
-        return " ".join(text for text in self._segments.values() if text)
+        full_text = " ".join(text for text in self._segments.values() if text)
+
+        # Truncate to max words if specified
+        if max_words is not None:
+            words = full_text.split()
+            if len(words) > max_words:
+                full_text = " ".join(words[-max_words:])
+
+        return full_text
 
     def get_segments(self) -> list[tuple]:
         """
