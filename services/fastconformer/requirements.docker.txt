@@ -1,0 +1,23 @@
+# FastConformer ASR Service - GPU Streaming ASR
+# NeMo-based streaming conformer model (114M params)
+
+# NeMo toolkit with ASR support
+nemo_toolkit[asr]==2.3.0
+
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# WebSocket support
+websockets==14.1
+
+# Audio processing
+soundfile==0.13.0
+
+# HTTP client (for health checks)
+requests==2.32.3
+
+# PyTorch and dependencies (installed separately in Dockerfile for CUDA)
+# torch==2.6.0
+# torchaudio==2.6.0
