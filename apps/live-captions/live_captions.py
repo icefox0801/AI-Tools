@@ -392,7 +392,7 @@ def main():
     parser.add_argument("--port", type=int, help="ASR service port")
     parser.add_argument(
         "--backend",
-        choices=["vosk", "parakeet", "whisper"],
+        choices=["vosk", "parakeet", "whisper", "fastconformer"],
         default=BACKEND,
         help=f"ASR backend (default: {BACKEND})",
     )
