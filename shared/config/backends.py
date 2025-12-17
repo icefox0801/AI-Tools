@@ -53,6 +53,15 @@ BACKENDS_LOCAL: dict[str, dict[str, Any]] = {
         "mode": "500ms chunks",
         "description": "OpenAI Whisper Large V3 Turbo - fast, multilingual ASR",
     },
+    "fastconformer": {
+        "name": "FastConformer",  # Will be updated from service
+        "device": "GPU",
+        "host": "localhost",
+        "port": 8004,
+        "chunk_ms": 500,
+        "mode": "streaming",
+        "description": "NVIDIA FastConformer Hybrid - optimized for low-latency streaming",
+    },
 }
 
 # Docker internal settings (service names)
@@ -92,6 +101,15 @@ BACKENDS_DOCKER: dict[str, dict[str, Any]] = {
         "chunk_ms": 500,
         "mode": "500ms chunks",
         "description": "OpenAI Whisper Large V3 Turbo - fast, multilingual ASR",
+    },
+    "fastconformer": {
+        "name": "FastConformer",  # Will be updated from service
+        "device": "GPU",
+        "host": "fastconformer-asr",  # Docker service name
+        "port": 8000,  # Docker internal port
+        "chunk_ms": 500,
+        "mode": "streaming",
+        "description": "NVIDIA FastConformer Hybrid - optimized for low-latency streaming",
     },
 }
 
