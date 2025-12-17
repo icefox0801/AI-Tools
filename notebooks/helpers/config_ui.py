@@ -235,7 +235,14 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
         """Handle Add Variant button click."""
         backend = backend_dropdown.value
         custom_name = name_input.value.strip()
-        variant_name = custom_name or f"{backend.title()} Default"
+        
+        # Generate unique variant name if custom name not provided
+        if not custom_name:
+            # Count existing variants of this backend
+            backend_count = sum(1 for v in variants if v['backend'] == backend)
+            variant_name = f"{backend.title()}-{backend_count}"
+        else:
+            variant_name = custom_name
 
         # Get config from widgets (user-configured values)
         config = {}
