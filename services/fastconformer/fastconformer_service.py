@@ -337,7 +337,7 @@ async def websocket_stream(websocket: WebSocket):
                 import json
 
                 try:
-                    config = json.loads(data["text"])
+                    _ = json.loads(data["text"])
                     # Acknowledge config
                     await websocket.send_json(
                         {"config": "acknowledged", "chunk_ms": int(CHUNK_DURATION_SEC * 1000)}
