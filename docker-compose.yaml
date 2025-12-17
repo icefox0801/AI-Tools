@@ -210,6 +210,13 @@ services:
       - WHISPER_MODEL=openai/whisper-large-v3-turbo
       - HF_HUB_OFFLINE=1                           # Force offline mode to prevent network requests
       - CUDA_VISIBLE_DEVICES=0
+      # Performance settings (configured in .env)
+      - WHISPER_VAD_FILTER=${WHISPER_VAD_FILTER}
+      - WHISPER_VAD_THRESHOLD=${WHISPER_VAD_THRESHOLD}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE}
+      - WHISPER_CHUNK_DURATION_SEC=${WHISPER_CHUNK_DURATION_SEC}
+      - WHISPER_MIN_AUDIO_SEC=${WHISPER_MIN_AUDIO_SEC}
     deploy:
       resources:
         reservations:
