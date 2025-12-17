@@ -57,6 +57,9 @@ Thumbs.db
 # Audio recordings (local data, not tracked)
 .recordings/
 
+# Benchmark results (timestamped outputs)
+.results/
+
 # Ruff cache
 .ruff_cache/
 
