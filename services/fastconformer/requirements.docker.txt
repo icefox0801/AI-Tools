@@ -1,5 +1,6 @@
 # FastConformer ASR Service - GPU Streaming ASR
 # NeMo-based streaming conformer model (114M params)
+# Requires PyTorch 2.9.1+ for RTX 5070 Ti / Blackwell support
 
 # NeMo toolkit with ASR support
 nemo_toolkit[asr]==2.3.0
@@ -19,5 +20,5 @@ soundfile==0.13.0
 requests==2.32.3
 
 # PyTorch and dependencies (installed separately in Dockerfile for CUDA)
-# torch==2.6.0
-# torchaudio==2.6.0
+# torch==2.9.1 (CUDA 12.8 - required for Blackwell RTX 5070 Ti support)
+# torchaudio==2.9.1

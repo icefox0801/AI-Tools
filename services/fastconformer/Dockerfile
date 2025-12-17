@@ -1,6 +1,7 @@
 # NVIDIA FastConformer Hybrid ASR Service
 # GPU-accelerated streaming speech recognition optimized for low latency
 # Supports RTX 5070 Ti (Blackwell CC 12.0) via PyTorch 2.9+ with CUDA 12.8
+# Requires PyTorch 2.9.1+ for Blackwell architecture support (sm_120)
 #
 # Uses volume mounts for:
 #   - /root/.cache/huggingface  (HuggingFace models)
@@ -44,10 +45,11 @@ RUN pip config set global.index-url ${PYPI_MIRROR} && \
 # Upgrade pip to avoid resolver bugs in system pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Install PyTorch 2.6.0 with CUDA 12.8 support (compatible with driver 576.88)
+# Install PyTorch 2.9.1 with CUDA 12.8 support (compatible with Blackwell sm_120)
+# PyTorch 2.9+ is required for RTX 5070 Ti and other Blackwell GPUs
 # Cache mount stores downloads permanently in Docker's buildkit cache
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch==2.6.0 torchaudio==2.6.0 --index-url ${PYTORCH_CUDA_MIRROR} --extra-index-url ${PYPI_MIRROR}
+    pip install torch==2.9.1 torchaudio==2.9.1 --index-url ${PYTORCH_CUDA_MIRROR} --extra-index-url ${PYPI_MIRROR}
 
 # Install NeMo and dependencies
 # First install num2words from PyPI (not in Aliyun mirror)
