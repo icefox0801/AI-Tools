@@ -86,7 +86,7 @@ def check_backend_health(backend: str, timeout: float = 2.0) -> tuple[bool, str]
     """Check if a backend service is healthy.
 
     Args:
-        backend: Backend name ('whisper', 'parakeet', 'vosk')
+        backend: Backend name ('whisper', 'parakeet', 'fastconformer', 'vosk')
         timeout: Connection timeout in seconds
 
     Returns:
@@ -201,6 +201,7 @@ ICON_PATH = SCRIPT_DIR / "icon.ico"
 BACKEND_LABELS = {
     "whisper": "🎙️ Whisper (GPU, Multilingual)",
     "parakeet": "🎙️ Parakeet (GPU, English)",
+    "fastconformer": "🎙️ FastConformer (GPU, Low-Latency)",
     "vosk": "🎙️ Vosk (CPU, Lightweight)",
 }
 
@@ -214,6 +215,7 @@ LANGUAGES = {
 BACKEND_LANGUAGES = {
     "whisper": ["en", "yue"],  # Whisper supports multilingual
     "parakeet": ["en"],  # Parakeet is English-only
+    "fastconformer": ["en"],  # FastConformer is English-only
     "vosk": ["en"],  # Vosk model is English-only
 }
 

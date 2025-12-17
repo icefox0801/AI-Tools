@@ -208,9 +208,9 @@ class TestFastConformerASR:
         # Now verify model is loaded
         assert_model_loaded(fastconformer_service, "streaming")
 
-        # Verify GPU memory is being used
+        # Verify GPU memory is being used (FastConformer is only 0.23GB)
         mem_gb = get_gpu_memory_gb(fastconformer_service)
-        assert mem_gb > 1.5, f"Expected >1.5GB GPU memory for FastConformer model, got: {mem_gb}GB"
+        assert mem_gb > 0.2, f"Expected >0.2GB GPU memory for FastConformer model, got: {mem_gb}GB"
 
     @pytest.mark.asyncio
     async def test_websocket_silence_handling(self, fastconformer_service: dict[str, Any]) -> None:
@@ -348,12 +348,9 @@ class TestFastConformerASR:
             # Just verify connection stays alive for a few seconds without data
             await asyncio.sleep(5.0)
 
-            # Connection should still be open
-            assert not ws.closed, "WebSocket connection closed unexpectedly"
-
-            # Send a small chunk to verify still functional
-            await ws.send(b"\x00\x00" * 1000)
-            await asyncio.sleep(0.5)
-
-            # Still open
-            assert not ws.closed, "WebSocket closed after sending data"
+            # Try to send a small chunk to verify still functional (no closed attr in newer websockets)
+            try:
+                await ws.send(b"\x00\x00" * 1000)
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                pytest.fail(f"WebSocket closed unexpectedly: {e}")

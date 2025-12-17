@@ -2,6 +2,23 @@
 
 All notable changes to the FastConformer ASR Service will be documented in this file.
 
+## [1.1] - 2025-12-17
+
+### Added
+- Intelligent streaming with automatic API detection
+- Batched transcription fallback (accumulates ~1 second chunks)
+- Live Captions tray menu integration
+
+### Changed
+- Streaming now checks for native `transcribe_step()` API
+- Falls back to batched `transcribe()` when native streaming unavailable
+- Improved warmup using standard `transcribe()` method
+- Enhanced streaming state management with cache support
+
+### Performance
+- Better latency handling with 1-second batch accumulation
+- Optimized for FastConformer-Hybrid-Transducer-CTC-BPE (114M params)
+
 ## [1.0] - 2025-12-17
 
 ### Added

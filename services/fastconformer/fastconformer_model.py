@@ -154,9 +154,14 @@ def load_model():
                 f"GPU Memory: {mem_allocated:.2f}GB allocated, {mem_reserved:.2f}GB reserved"
             )
 
-            # Report to GPU manager
+            # Register with GPU manager
             gpu_mgr = get_gpu_manager()
-            gpu_mgr.report_memory(SERVICE_NAME, mem_allocated)
+            gpu_mgr.register_model(
+                service_name=SERVICE_NAME,
+                model_name=MODEL_NAME,
+                memory_gb=mem_allocated,
+                unload_callback=lambda: unload_model(),
+            )
 
         logger.info("Model loaded successfully")
 
@@ -177,6 +182,7 @@ def _warmup_model(model):
             dummy_audio = dummy_audio.half()
 
         with torch.no_grad():
+            # Use transcribe for warmup (works with all variants)
             _ = model.transcribe([dummy_audio], batch_size=1)
 
         logger.info("Model warmup complete")
@@ -216,9 +222,9 @@ def unload_model():
             mem_allocated = torch.cuda.memory_allocated() / 1024**3
             logger.info(f"GPU Memory after unload: {mem_allocated:.2f}GB")
 
-            # Report to GPU manager
+            # Unregister from GPU manager
             gpu_mgr = get_gpu_manager()
-            gpu_mgr.report_memory(SERVICE_NAME, 0.0)
+            gpu_mgr.unregister_model(SERVICE_NAME, MODEL_NAME)
 
         logger.info("Model unloaded successfully")
 
