@@ -28,19 +28,22 @@ def create_results_dataframe(benchmark_results: List[Dict]) -> pd.DataFrame:
     if not successful_results:
         return pd.DataFrame()
 
-    df = pd.DataFrame(
-        [
-            {
-                "Backend": r["backend"],
-                "Avg Latency (ms)": r["avg_latency_ms"],
-                "P95 Latency (ms)": r["p95_latency_ms"],
-                "Max Latency (ms)": r["max_latency_ms"],
-                "Final Transcript": r["final_transcript"],
-            }
-            for r in successful_results
-        ]
-    )
+    rows = []
+    for r in successful_results:
+        # Create a readable config description
+        config = r.get("config", {})
+        config_str = ", ".join([f"{k}={v}" for k, v in sorted(config.items())]) if config else "default"
+        
+        rows.append({
+            "Backend": r["backend"],
+            "Config": config_str,
+            "Avg Latency (ms)": r["avg_latency_ms"],
+            "P95 Latency (ms)": r["p95_latency_ms"],
+            "Max Latency (ms)": r["max_latency_ms"],
+            "Final Transcript": r["final_transcript"],
+        })
 
+    df = pd.DataFrame(rows)
     return df
 
 
@@ -70,12 +73,20 @@ def plot_latency_comparison(successful_results: List[Dict]):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    # Average Latency
-    backends = [r["backend"] for r in successful_results]
+    # Create labels with backend and config
+    labels = []
+    for r in successful_results:
+        config = r.get("config", {})
+        if config:
+            config_str = ", ".join([f"{k}={v}" for k, v in sorted(config.items())])
+            labels.append(f"{r['backend']}\n({config_str})")
+        else:
+            labels.append(r["backend"])
+    
     avg_latencies = [r["avg_latency_ms"] for r in successful_results]
 
     axes[0].bar(
-        backends, avg_latencies, color=["#3498db", "#e74c3c", "#2ecc71", "#f39c12"][: len(backends)]
+        labels, avg_latencies, color=["#3498db", "#e74c3c", "#2ecc71", "#f39c12"][: len(labels)]
     )
     axes[0].set_ylabel("Latency (ms)")
     axes[0].set_title("Average Latency by Backend")
@@ -83,7 +94,7 @@ def plot_latency_comparison(successful_results: List[Dict]):
 
     # Latency Distribution (Box Plot)
     latency_data = [r["latencies"] for r in successful_results]
-    axes[1].boxplot([np.array(l) * 1000 for l in latency_data], labels=backends)
+    axes[1].boxplot([np.array(l) * 1000 for l in latency_data], labels=labels)
     axes[1].set_ylabel("Latency (ms)")
     axes[1].set_title("Latency Distribution")
     axes[1].tick_params(axis="x", rotation=45)
@@ -108,7 +119,16 @@ def plot_latency_over_time(successful_results: List[Dict]):
     for result in successful_results:
         latencies_ms = np.array(result["latencies"]) * 1000
         chunks = range(1, len(latencies_ms) + 1)
-        plt.plot(chunks, latencies_ms, marker="o", label=result["backend"])
+        
+        # Create label with config
+        config = result.get("config", {})
+        if config:
+            config_str = ", ".join([f"{k}={v}" for k, v in sorted(config.items())])
+            label = f"{result['backend']} ({config_str})"
+        else:
+            label = result["backend"]
+        
+        plt.plot(chunks, latencies_ms, marker="o", label=label)
 
     plt.xlabel("Chunk Number")
     plt.ylabel("Latency (ms)")
