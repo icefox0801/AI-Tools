@@ -338,6 +338,21 @@
 			"group": "none"
 		},
 		{
+			"label": "Docker: Refresh FastConformer ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "fastconformer-asr", "&&", "docker", "compose", "up", "-d", "fastconformer-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"shell": {
+					"executable": "cmd.exe",
+					"args": ["/c"]
+				}
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
 			"label": "Docker: Refresh Text Refiner",
 			"type": "shell",
 			"command": "docker",
@@ -409,6 +424,17 @@
 			"group": "build"
 		},
 		{
+			"label": "Docker: Rebuild FastConformer ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "build", "fastconformer-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
 			"label": "Docker: Rebuild Text Refiner",
 			"type": "shell",
 			"command": "docker",
@@ -469,6 +495,17 @@
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "up", "-d", "vosk-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Up FastConformer ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "up", "-d", "fastconformer-asr"],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -554,6 +591,17 @@
 			"group": "none"
 		},
 		{
+			"label": "Docker: Restart FastConformer ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "restart", "fastconformer-asr"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
 			"label": "Docker: Restart Ollama",
 			"type": "shell",
 			"command": "docker",
@@ -593,6 +641,18 @@
 			"type": "shell",
 			"command": "docker",
 			"args": ["compose", "logs", "-f", "--tail", "100"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "Docker: Logs FastConformer ASR",
+			"type": "shell",
+			"command": "docker",
+			"args": ["compose", "logs", "-f", "--tail", "100", "fastconformer-asr"],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
