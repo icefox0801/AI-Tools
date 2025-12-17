@@ -80,8 +80,6 @@ services:
     volumes:
       # Persistent volume: Stores notebooks, data files, workspace, and models
       - pyspark-notebook-data:/home/jovyan/work
-      # Optional: Uncomment to sync local notebooks folder with Docker
-      # - ./notebooks:/home/jovyan/work/notebooks
     environment:
       - JUPYTER_ENABLE_LAB=yes                      # Enable JupyterLab interface (modern UI)
       - JUPYTER_TOKEN=ai-tools-dev-2025             # Fixed token for easy VS Code connection
@@ -350,6 +348,11 @@ volumes:
       o: bind
       device: ${PWD}/.recordings
   pyspark-notebook-data:      # Stores Jupyter notebooks, workspace files, and HuggingFace models (Qwen, etc.)
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/notebooks
   vosk-model-data:            # Stores Vosk speech recognition model (1.8GB, pre-downloaded via download_model.sh)
   vosk-hf-cache:              # Stores HuggingFace punctuation model cache for Vosk (~2GB)
   parakeet-model-data:        # Stores NeMo model cache for Parakeet (15GB, pre-downloaded via download_models.sh)
