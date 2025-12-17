@@ -109,11 +109,45 @@ Use the Chat tab to interact with your transcript:
 
 ---
 
+## 🤖 Model Architecture Details
+
+| Service | Model | Architecture | Parameters | VRAM | Features |
+|---------|-------|--------------|------------|------|----------|
+| **Whisper** | openai/whisper-large-v3-turbo | Transformer (Seq2Seq) | 809M | 1.5GB | Multilingual (99+ languages), native punctuation, timestamps |
+| **FastConformer** | nvidia/stt_en_fastconformer_hybrid_large_streaming_multi | FastConformer (Hybrid RNNT/CTC) | 114M | 2-3GB | Low-latency streaming, cache-aware, native punctuation, English-only |
+| **Parakeet (Streaming)** | nvidia/parakeet-tdt-1.1b | Conformer (TDT-CTC) | 1.1B | 2.0GB | Cache-aware encoder, incremental decoding, English-only |
+| **Parakeet (Offline)** | nvidia/parakeet-rnnt-1.1b | Conformer (RNN-T) | 1.1B | 4.1GB | Higher accuracy, better for final transcripts, English-only |
+| **Vosk** | vosk-model-en-us-0.22 | TDNN-LSTM | ~40M | CPU only | Lightweight, offline, real-time capable |
+| **VAD (Optional)** | silero_vad | LSTM | ~2M | ~50MB | Voice activity detection, skip silence |
+| **Text Refiner** | oliverguhr/spelling-correction-english-base | BERT | 110M | ~500MB | Punctuation & spelling correction |
+
+**Notes:**
+- **Transformer**: Encoder-decoder architecture (Whisper)
+- **FastConformer**: Optimized Conformer with cache-aware streaming (FastConformer)
+- **Conformer**: CNN + Transformer hybrid for better audio modeling (Parakeet)
+- **TDT-CTC**: Time-delay Transformer with CTC loss for streaming
+- **RNN-T**: Recurrent Neural Network Transducer for offline transcription
+- **Hybrid RNNT/CTC**: Multitask training with both decoders for better accuracy
+- **TDNN-LSTM**: Time-Delay Neural Network with LSTM (Vosk)
+
+**GPU Memory Usage:**
+- Single ASR model: 1.5-4GB VRAM (varies by model)
+- Running 2 models simultaneously: 3.5-6GB VRAM
+- All services + LLM: 10-14GB VRAM recommended
+
+**Recommended for Streaming:**
+- **FastConformer**: Best balance of latency and accuracy (WER 5.4%, 240ms avg latency)
+- **Parakeet TDT**: Good for cache-aware streaming (WER ~6%, higher latency)
+- **Whisper**: Best for multilingual, but higher latency
+
+---
+
 ## 🐳 Available Services
 
 | Service | Port | Description |
 |---------|------|-------------|
 | audio-notes | 7860 | Web UI for transcription & analysis |
+| fastconformer-asr | 8004 | NVIDIA FastConformer ASR (streaming-optimized) |
 | whisper-asr | 8003 | OpenAI Whisper ASR (multilingual) |
 | parakeet-asr | 8002 | NVIDIA Parakeet ASR (fast, English) |
 | vosk-asr | 8001 | Vosk ASR (CPU, lightweight) |
@@ -130,6 +164,7 @@ AI-Tools/
 ├── apps/live-captions/     # Desktop tray app for live captions
 ├── services/
 │   ├── audio-notes/        # Web UI (Gradio)
+│   ├── fastconformer/      # FastConformer ASR service (streaming-only)
 │   ├── whisper/            # Whisper ASR service
 │   ├── parakeet/           # Parakeet ASR service
 │   ├── vosk/               # Vosk ASR service
