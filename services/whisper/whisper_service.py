@@ -20,8 +20,10 @@ Protocol:
 import asyncio
 import io
 import json
+import os
 import time
 from contextlib import asynccontextmanager
+from functools import partial
 
 import numpy as np
 import soundfile as sf
@@ -50,15 +52,21 @@ logger = setup_logging(__name__)
 # Configuration
 # =============================================================================
 
-__version__ = "1.2"
+__version__ = "1.3"
 
 # VAD (Voice Activity Detection) - skip silence for faster processing
-USE_VAD = True
-VAD_THRESHOLD = 0.5  # Speech probability threshold (0.0-1.0)
+USE_VAD = os.environ["WHISPER_VAD_FILTER"].lower() == "true"
+VAD_THRESHOLD = float(os.environ["WHISPER_VAD_THRESHOLD"])
+
+# Beam search configuration
+BEAM_SIZE = int(os.environ["WHISPER_BEAM_SIZE"])
+
+# Default language
+DEFAULT_LANGUAGE = os.environ["WHISPER_LANGUAGE"]
 
 # Chunk settings for streaming (optimized for whisper-large-v3-turbo)
-CHUNK_DURATION_SEC = 1.5  # Process in 1.5s chunks
-MIN_AUDIO_SEC = 0.3  # Minimum audio to process
+DEFAULT_CHUNK_DURATION_SEC = float(os.environ["WHISPER_CHUNK_DURATION_SEC"])
+DEFAULT_MIN_AUDIO_SEC = float(os.environ["WHISPER_MIN_AUDIO_SEC"])
 
 
 # =============================================================================
@@ -205,8 +213,11 @@ async def info():
         "model": MODEL,
         "device": DEVICE,
         "vad_enabled": USE_VAD,
+        "vad_threshold": VAD_THRESHOLD,
+        "beam_size": BEAM_SIZE,
         "model_loaded": state.loaded,
-        "chunk_duration_sec": CHUNK_DURATION_SEC,
+        "chunk_duration_sec": DEFAULT_CHUNK_DURATION_SEC,
+        "min_audio_sec": DEFAULT_MIN_AUDIO_SEC,
     }
 
 
@@ -305,6 +316,7 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
             generate_kwargs={
                 "task": "transcribe",
                 "language": language,
+                "num_beams": BEAM_SIZE,
             },
             return_timestamps=True,
         )
@@ -337,6 +349,22 @@ def transcribe_audio_streaming(audio_array: np.ndarray, language: str = "en") ->
     Returns:
         Transcribed text
     """
+    return transcribe_audio_with_config(audio_array, language, BEAM_SIZE)
+
+
+def transcribe_audio_with_config(
+    audio_array: np.ndarray, language: str = "en", beam_size: int | None = None
+) -> str:
+    """Transcribe audio array with custom configuration.
+
+    Args:
+        audio_array: Audio samples (float32, normalized to [-1, 1])
+        language: Language code (e.g., 'en', 'yue' for Cantonese)
+        beam_size: Number of beams for beam search (None = use default)
+
+    Returns:
+        Transcribed text
+    """
     # Get pipeline (auto-loads if needed)
     whisper_pipe = get_pipeline()
 
@@ -344,7 +372,7 @@ def transcribe_audio_streaming(audio_array: np.ndarray, language: str = "en") ->
         logger.error("Failed to load streaming model for transcription")
         return ""
 
-    if len(audio_array) < SAMPLE_RATE * MIN_AUDIO_SEC:
+    if len(audio_array) < SAMPLE_RATE * DEFAULT_MIN_AUDIO_SEC:
         return ""
 
     # Ensure float32
@@ -355,12 +383,17 @@ def transcribe_audio_streaming(audio_array: np.ndarray, language: str = "en") ->
     if audio_array.max() > 1.0:
         audio_array = audio_array / 32768.0
 
+    # Use provided beam_size or default
+    if beam_size is None:
+        beam_size = BEAM_SIZE
+
     try:
         result = whisper_pipe(
             audio_array,
             generate_kwargs={
                 "task": "transcribe",
                 "language": language,
+                "num_beams": beam_size,
             },
             return_timestamps=False,
         )
@@ -386,16 +419,22 @@ async def stream_transcribe(websocket: WebSocket):
     await websocket.accept()
     logger.info(f"Stream connection established (model: {MODEL})")
 
-    # Settings
-    chunk_samples = int(SAMPLE_RATE * CHUNK_DURATION_SEC)
-    min_samples = int(SAMPLE_RATE * MIN_AUDIO_SEC)
+    # Settings (can be overridden by config message)
+    chunk_duration_sec = DEFAULT_CHUNK_DURATION_SEC
+    min_audio_sec = DEFAULT_MIN_AUDIO_SEC
+    language = DEFAULT_LANGUAGE
+    vad_filter = USE_VAD
+    vad_threshold = VAD_THRESHOLD
+    beam_size = BEAM_SIZE
+
+    chunk_samples = int(SAMPLE_RATE * chunk_duration_sec)
+    min_samples = int(SAMPLE_RATE * min_audio_sec)
 
     # State
     audio_buffer = bytearray()
     segment_counter = 0
     last_process_time = time.time()
     consecutive_silence = 0
-    language = "en"  # Default language, can be overridden by config
 
     try:
         while True:
@@ -406,10 +445,34 @@ async def stream_transcribe(websocket: WebSocket):
                 try:
                     msg = json.loads(data["text"])
                     logger.info(f"Config received: {msg}")
-                    # Update language from config if provided
-                    if "language" in msg:
-                        language = msg["language"]
+
+                    # Update settings from config
+                    if "LANGUAGE" in msg:
+                        language = msg["LANGUAGE"]
                         logger.info(f"Language set to: {language}")
+
+                    if "VAD_FILTER" in msg:
+                        vad_filter = msg["VAD_FILTER"]
+                        logger.info(f"VAD filter set to: {vad_filter}")
+
+                    if "VAD_THRESHOLD" in msg:
+                        vad_threshold = float(msg["VAD_THRESHOLD"])
+                        logger.info(f"VAD threshold set to: {vad_threshold}")
+
+                    if "BEAM_SIZE" in msg:
+                        beam_size = int(msg["BEAM_SIZE"])
+                        logger.info(f"Beam size set to: {beam_size}")
+
+                    if "CHUNK_DURATION_SEC" in msg:
+                        chunk_duration_sec = float(msg["CHUNK_DURATION_SEC"])
+                        chunk_samples = int(SAMPLE_RATE * chunk_duration_sec)
+                        logger.info(f"Chunk duration set to: {chunk_duration_sec}s")
+
+                    if "MIN_AUDIO_SEC" in msg:
+                        min_audio_sec = float(msg["MIN_AUDIO_SEC"])
+                        min_samples = int(SAMPLE_RATE * min_audio_sec)
+                        logger.info(f"Min audio duration set to: {min_audio_sec}s")
+
                     continue
                 except json.JSONDecodeError:
                     continue
@@ -448,7 +511,7 @@ async def stream_transcribe(websocket: WebSocket):
                 # Process when we have enough audio or time elapsed
                 should_process = buffer_samples >= chunk_samples or (
                     buffer_samples >= min_samples
-                    and current_time - last_process_time >= CHUNK_DURATION_SEC
+                    and current_time - last_process_time >= chunk_duration_sec
                 )
 
                 if should_process and buffer_samples >= min_samples:
@@ -460,14 +523,17 @@ async def stream_transcribe(websocket: WebSocket):
 
                     # VAD check - skip transcription if no speech detected
                     # Run in thread to avoid blocking event loop
-                    has_speech = await asyncio.to_thread(detect_speech, audio_array)
-                    if not has_speech:
-                        consecutive_silence += 1
-                        if consecutive_silence <= 2:  # Log first few silences
-                            logger.debug(f"No speech detected, skipping ({consecutive_silence})")
-                        audio_buffer.clear()
-                        last_process_time = current_time
-                        continue
+                    if vad_filter:
+                        has_speech = await asyncio.to_thread(detect_speech, audio_array)
+                        if not has_speech:
+                            consecutive_silence += 1
+                            if consecutive_silence <= 2:  # Log first few silences
+                                logger.debug(
+                                    f"No speech detected, skipping ({consecutive_silence})"
+                                )
+                            audio_buffer.clear()
+                            last_process_time = current_time
+                            continue
 
                     consecutive_silence = 0
                     logger.info(
@@ -476,9 +542,11 @@ async def stream_transcribe(websocket: WebSocket):
 
                     # Transcribe in thread to avoid blocking event loop
                     text = await asyncio.to_thread(
-                        transcribe_audio_streaming, audio_array, language
+                        partial(transcribe_audio_with_config, audio_array, language, beam_size)
                     )
-                    logger.info(f"Transcribed ({language}): '{text[:100] if text else '(empty)'}'")
+                    logger.info(
+                        f"Transcribed ({language}, beam={beam_size}): '{text[:100] if text else '(empty)'}'"
+                    )
 
                     if text:
                         # Send result (Whisper already outputs punctuated text)

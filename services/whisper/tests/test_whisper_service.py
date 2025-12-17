@@ -123,8 +123,14 @@ def app(mock_modules):
     if "whisper_service" in sys.modules:
         del sys.modules["whisper_service"]
 
-    # Set required env var for testing
+    # Set required env vars for testing
     os.environ["WHISPER_MODEL"] = "openai/whisper-test"
+    os.environ["WHISPER_VAD_FILTER"] = "true"
+    os.environ["WHISPER_VAD_THRESHOLD"] = "0.5"
+    os.environ["WHISPER_BEAM_SIZE"] = "5"
+    os.environ["WHISPER_LANGUAGE"] = "en"
+    os.environ["WHISPER_CHUNK_DURATION_SEC"] = "1.5"
+    os.environ["WHISPER_MIN_AUDIO_SEC"] = "0.3"
 
     # Import the service module
     import whisper_service
@@ -303,11 +309,11 @@ class TestConfiguration:
 
     def test_chunk_duration(self, service):
         """Default chunk duration is 1.5s."""
-        assert service.CHUNK_DURATION_SEC == 1.5
+        assert service.DEFAULT_CHUNK_DURATION_SEC == 1.5
 
     def test_min_audio_duration(self, service):
         """Default minimum audio is 0.3s."""
-        assert service.MIN_AUDIO_SEC == 0.3
+        assert service.DEFAULT_MIN_AUDIO_SEC == 0.3
 
     def test_vad_enabled_by_default(self, service):
         """VAD is enabled by default."""
