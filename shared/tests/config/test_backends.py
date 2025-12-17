@@ -18,12 +18,12 @@ class TestBackendConfigs:
 
     def test_backends_local_has_all_services(self):
         """Test BACKENDS_LOCAL contains all expected services."""
-        expected = {"transcription", "vosk", "parakeet", "whisper"}
+        expected = {"transcription", "vosk", "parakeet", "whisper", "fastconformer"}
         assert set(BACKENDS_LOCAL.keys()) == expected
 
     def test_backends_docker_has_all_services(self):
         """Test BACKENDS_DOCKER contains all expected services."""
-        expected = {"transcription", "vosk", "parakeet", "whisper"}
+        expected = {"transcription", "vosk", "parakeet", "whisper", "fastconformer"}
         assert set(BACKENDS_DOCKER.keys()) == expected
 
     def test_backend_config_has_required_fields(self):
@@ -125,7 +125,7 @@ class TestListBackends:
     def test_list_backends_returns_all(self):
         """Test list_backends returns all backends."""
         result = list_backends()
-        expected = {"transcription", "vosk", "parakeet", "whisper"}
+        expected = {"transcription", "vosk", "parakeet", "whisper", "fastconformer"}
         assert set(result.keys()) == expected
 
     def test_list_backends_returns_descriptions(self):

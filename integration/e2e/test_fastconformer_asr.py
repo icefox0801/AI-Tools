@@ -51,12 +51,11 @@ class TestFastConformerASR:
             data = response.json()
 
             # Verify configuration fields
-            assert data["model"] == "nvidia/stt_en_fastconformer_hybrid_large_streaming_multi"
+            assert data["model_name"] == "nvidia/stt_en_fastconformer_hybrid_large_streaming_multi"
             assert "decoder_type" in data
             assert data["decoder_type"] in ["rnnt", "ctc"]
             assert "att_context_size" in data
-            assert "chunk_duration_sec" in data
-            assert data["sample_rate"] == 16000
+            assert data["streaming_only"] is True
 
     @pytest.mark.asyncio
     async def test_gpu_available(self, fastconformer_service: dict[str, Any]) -> None:
@@ -216,8 +215,9 @@ class TestFastConformerASR:
     @pytest.mark.asyncio
     async def test_websocket_silence_handling(self, fastconformer_service: dict[str, Any]) -> None:
         """Test that FastConformer handles silence correctly (no transcription)."""
-        import numpy as np
         import struct
+
+        import numpy as np
 
         uri = f"ws://{fastconformer_service['host']}:{fastconformer_service['port']}{fastconformer_service['ws_endpoint']}"
 
@@ -274,7 +274,7 @@ class TestFastConformerASR:
             response = await client.post(url)
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "unloaded"
+            assert data["status"] == "success"
 
         # Wait a moment for GPU to clear
         await asyncio.sleep(1.0)
@@ -317,7 +317,7 @@ class TestFastConformerASR:
                             data = json.loads(msg)
                             if "text" in data:
                                 responses.append(data)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
                 return responses

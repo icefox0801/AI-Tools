@@ -19,7 +19,7 @@ import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -27,10 +27,10 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastconformer_model import (
+    ATT_CONTEXT_SIZE,
     DECODER_TYPE,
     DEVICE,
     MODEL_NAME,
-    ATT_CONTEXT_SIZE,
     get_model,
     get_model_state,
     setup_cuda,
@@ -296,7 +296,6 @@ async def websocket_stream(websocket: WebSocket):
     send_queue: asyncio.Queue = asyncio.Queue()
 
     chunk_bytes = int(CHUNK_DURATION_SEC * 16000 * 2)
-    min_chunk_bytes = int(MIN_CHUNK_SEC * 16000 * 2)
 
     output_counter = 0
     last_audio_time = time.time()
@@ -310,7 +309,7 @@ async def websocket_stream(websocket: WebSocket):
             try:
                 msg = await asyncio.wait_for(send_queue.get(), timeout=0.1)
                 await websocket.send_json(msg)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except Exception as e:
                 logger.debug(f"Sender error: {e}")

@@ -306,7 +306,7 @@ def test_decoder_type_configuration(decoder_type, mock_env, mock_modules, monkey
 
     import fastconformer_model
 
-    assert fastconformer_model.DECODER_TYPE == decoder_type
+    assert decoder_type == fastconformer_model.DECODER_TYPE
 
 
 # ==============================================================================
@@ -336,4 +336,4 @@ def test_latency_configuration(att_context_size, expected, mock_env, mock_module
 
     import fastconformer_model
 
-    assert fastconformer_model.ATT_CONTEXT_SIZE == expected
+    assert expected == fastconformer_model.ATT_CONTEXT_SIZE
