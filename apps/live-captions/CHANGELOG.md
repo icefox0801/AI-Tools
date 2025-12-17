@@ -2,6 +2,23 @@
 
 All notable changes to Live Captions will be documented in this file.
 
+## [1.6] - 2025-12-17
+
+### Added
+- FastConformer backend support (NVIDIA FastConformer Hybrid, 114M params)
+- Intelligent streaming with batched fallback for all backends
+- PySpark Docker container with JupyterLab for ASR benchmarking
+- ASR benchmark notebook for streaming performance analysis
+
+### Fixed
+- Backend selection menu now properly switches models
+- Transcript shifting issue after ~2 minutes (truncation to 300 words)
+- Menu checked state synchronization with current backend
+
+### Changed
+- Bind mount configuration for notebooks (local/Docker sync)
+- Improved backend detection and auto-restart logic
+
 ## [1.5] - 2025-12-11
 
 ### Added
