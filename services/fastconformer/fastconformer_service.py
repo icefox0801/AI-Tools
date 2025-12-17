@@ -338,7 +338,6 @@ async def websocket_stream(websocket: WebSocket):
 
                 try:
                     config = json.loads(data["text"])
-                    logger.info(f"Received config: {config}")
                     # Acknowledge config
                     await websocket.send_json(
                         {"config": "acknowledged", "chunk_ms": int(CHUNK_DURATION_SEC * 1000)}
@@ -373,7 +372,6 @@ async def websocket_stream(websocket: WebSocket):
                     output_counter += 1
                     msg = {"id": f"s{output_counter}", "text": text}
                     await send_queue.put(msg)
-                    logger.debug(f"Segment s{output_counter}: '{text}' ({state.word_count} words)")
                     last_sent_text = text
 
                 processing = False
@@ -385,13 +383,10 @@ async def websocket_stream(websocket: WebSocket):
                 and state.accumulated_text
                 and not processing
             ):
-                logger.debug(f"Silence detected ({silence_duration:.1f}s), finalizing segment")
-
                 # Send final segment
                 output_counter += 1
                 msg = {"id": f"s{output_counter}", "text": state.accumulated_text}
                 await send_queue.put(msg)
-                logger.info(f"Final segment s{output_counter}: '{state.accumulated_text}'")
 
                 # Reset state
                 state = StreamingState()
@@ -407,7 +402,6 @@ async def websocket_stream(websocket: WebSocket):
         sender_task.cancel()
         ping_task.cancel()
         executor.shutdown(wait=False)
-        logger.info("WebSocket session ended")
 
 
 # ==============================================================================

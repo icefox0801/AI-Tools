@@ -45,8 +45,6 @@ def setup_cuda():
     if _cuda_initialized or DEVICE != "cuda":
         return
 
-    logger.info("Initializing CUDA optimizations for FastConformer...")
-
     try:
         # Enable TF32 for faster Ampere/Blackwell GPU computation
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -55,7 +53,6 @@ def setup_cuda():
         # Use cudnn benchmark for optimal performance
         torch.backends.cudnn.benchmark = True
 
-        logger.info("CUDA optimizations enabled (TF32, cudnn benchmark)")
         _cuda_initialized = True
 
     except Exception as e:
