@@ -18,6 +18,7 @@ SERVICES = {
     "vosk-asr": {"port": 8001, "health": "/health", "ws": "/stream"},
     "parakeet-asr": {"port": 8002, "health": "/health", "ws": "/stream"},
     "whisper-asr": {"port": 8003, "health": "/health", "ws": "/stream"},
+    "fastconformer-asr": {"port": 8004, "health": "/health", "ws": "/stream"},
     "text-refiner": {"port": 8010, "health": "/health"},
 }
 
@@ -158,6 +159,32 @@ def whisper_service(
 ) -> Generator[dict[str, Any], None, None]:
     """Start Whisper ASR service for E2E tests."""
     service_name = "whisper-asr"
+
+    if not is_service_healthy(service_name):
+        subprocess.run(
+            ["docker", "compose", "up", "-d", service_name],
+            cwd=project_root,
+            capture_output=True,
+        )
+
+        if not wait_for_healthy(service_name):
+            pytest.fail(f"{service_name} did not become healthy within {STARTUP_TIMEOUT}s")
+
+    yield {
+        "name": service_name,
+        "host": "localhost",
+        "port": SERVICES[service_name]["port"],
+        "ws_endpoint": SERVICES[service_name]["ws"],
+        "health_endpoint": SERVICES[service_name]["health"],
+    }
+
+
+@pytest.fixture(scope="module")
+def fastconformer_service(
+    ensure_docker: None, project_root: str
+) -> Generator[dict[str, Any], None, None]:
+    """Start FastConformer ASR service for E2E tests."""
+    service_name = "fastconformer-asr"
 
     if not is_service_healthy(service_name):
         subprocess.run(
