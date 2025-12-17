@@ -2,6 +2,23 @@
 
 All notable changes to the Whisper ASR Service will be documented in this file.
 
+## [1.3] - 2025-12-17
+
+### Added
+- Configurable VAD filter and threshold via environment variables
+- Configurable beam size for transcription quality/speed tradeoff
+- Configurable chunk timing (duration and minimum audio length)
+- Dynamic WebSocket configuration protocol for runtime parameter changes
+- Environment-based configuration (WHISPER_VAD_FILTER, WHISPER_VAD_THRESHOLD, WHISPER_BEAM_SIZE, WHISPER_LANGUAGE, WHISPER_CHUNK_DURATION_SEC, WHISPER_MIN_AUDIO_SEC)
+
+### Changed
+- WebSocket /stream endpoint accepts configuration messages before audio streaming
+- All configuration parameters now sourced from environment variables
+
+### Fixed
+- Lambda variable binding in async threading (functools.partial)
+- Type hints compliance with PEP 484
+
 ## [1.2] - 2025-12-08
 
 ### Added
