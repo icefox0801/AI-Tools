@@ -107,18 +107,6 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
         readout_format=".1f",
     )
 
-    # Benchmark Settings
-    run_times_slider = widgets.IntSlider(
-        value=3,
-        min=1,
-        max=10,
-        step=1,
-        description="🔄 Run Times:",
-        style={"description_width": "100px"},
-        layout=widgets.Layout(width="280px"),
-        readout_format="d",
-    )
-
     # Audio Settings (moved from backend-specific to global)
     chunk_duration_slider = widgets.FloatSlider(
         value=1.0,
@@ -235,11 +223,11 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
         """Handle Add Variant button click."""
         backend = backend_dropdown.value
         custom_name = name_input.value.strip()
-        
+
         # Generate unique variant name if custom name not provided
         if not custom_name:
             # Count existing variants of this backend
-            backend_count = sum(1 for v in variants if v['backend'] == backend)
+            backend_count = sum(1 for v in variants if v["backend"] == backend)
             variant_name = f"{backend.title()}-{backend_count}"
         else:
             variant_name = custom_name
@@ -265,9 +253,6 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
         # Save audio generation settings
         test_config["word_count"] = word_count_slider.value
         test_config["speech_speed"] = speech_speed_slider.value
-
-        # Save benchmark settings
-        test_config["run_times"] = run_times_slider.value
 
         # Save audio settings (from left section)
         test_config["chunk_duration"] = round(chunk_duration_slider.value, 2)
@@ -311,20 +296,10 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
     )
     audio_generation_accordion.selected_index = 0  # Open by default
 
-    benchmark_settings_accordion = widgets.Accordion(
-        children=[
-            widgets.VBox([run_times_slider]),
-        ],
-        titles=("🧪 Benchmark Settings",),
-        layout=widgets.Layout(width="400px"),
-    )
-    benchmark_settings_accordion.selected_index = 0  # Open by default
-
     left_section = widgets.VBox(
         [
             audio_settings_accordion,
             audio_generation_accordion,
-            benchmark_settings_accordion,
         ],
         layout=widgets.Layout(width="400px", overflow="visible"),
     )
