@@ -84,29 +84,6 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
     )
     backend_config_widgets = {}
 
-    # Audio Generation Settings
-    word_count_slider = widgets.IntSlider(
-        value=500,
-        min=10,
-        max=1000,
-        step=10,
-        description="📝 Words:",
-        style={"description_width": "100px"},
-        layout=widgets.Layout(width="280px"),
-        readout_format="d",
-    )
-
-    speech_speed_slider = widgets.FloatSlider(
-        value=1.5,
-        min=0.5,
-        max=2.0,
-        step=0.1,
-        description="🗣️ Speed:",
-        style={"description_width": "100px"},
-        layout=widgets.Layout(width="280px"),
-        readout_format=".1f",
-    )
-
     # Audio Settings (moved from backend-specific to global)
     chunk_duration_slider = widgets.FloatSlider(
         value=1.0,
@@ -250,10 +227,6 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
 
         variants.append(variant)
 
-        # Save audio generation settings
-        test_config["word_count"] = word_count_slider.value
-        test_config["speech_speed"] = speech_speed_slider.value
-
         # Save audio settings (from left section)
         test_config["chunk_duration"] = round(chunk_duration_slider.value, 2)
         test_config["sample_rate"] = sample_rate_dropdown.value
@@ -287,19 +260,9 @@ def create_configuration_ui(variants, test_config, backend_urls, backend_options
     )
     audio_settings_accordion.selected_index = 0  # Open by default
 
-    audio_generation_accordion = widgets.Accordion(
-        children=[
-            widgets.VBox([word_count_slider, speech_speed_slider]),
-        ],
-        titles=("🎙️ Audio Generation",),
-        layout=widgets.Layout(width="400px"),
-    )
-    audio_generation_accordion.selected_index = 0  # Open by default
-
     left_section = widgets.VBox(
         [
             audio_settings_accordion,
-            audio_generation_accordion,
         ],
         layout=widgets.Layout(width="400px", overflow="visible"),
     )
