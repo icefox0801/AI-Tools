@@ -13,6 +13,41 @@ from jiwer import wer
 from typing import List, Dict
 
 
+def print_backend_configurations(backends: List[Dict]) -> None:
+    """
+    Print backend configurations in a readable format.
+
+    Args:
+        backends: List of backend configuration dicts
+    """
+    print("=" * 80)
+    print("CONFIGURED BACKENDS")
+    print("=" * 80)
+
+    for i, backend in enumerate(backends, 1):
+        name = backend.get("name", "Unknown")
+        url = backend.get("url", "Unknown")
+        config = backend.get("config", {})
+
+        # Create a short identifier
+        config_str = (
+            ", ".join([f"{k}={v}" for k, v in sorted(config.items())]) if config else "default"
+        )
+        short_name = f"{name} ({config_str})" if config else name
+
+        print(f"\n{i}. {name}")
+        print(f"   URL: {url}")
+        if config:
+            print(f"   Config:")
+            for key, value in sorted(config.items()):
+                print(f"      {key}: {value}")
+        else:
+            print(f"   Config: Default settings")
+        print(f"   Short ID: {short_name}")
+
+    print("\n" + "=" * 80 + "\n")
+
+
 def create_results_dataframe(benchmark_results: List[Dict]) -> pd.DataFrame:
     """
     Create a pandas DataFrame from benchmark results.

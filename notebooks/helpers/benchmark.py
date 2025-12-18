@@ -40,7 +40,10 @@ class StreamingASRClient:
         final_transcript = ""
 
         try:
-            async with websockets.connect(self.ws_url) as ws:
+            # Increase ping timeout for slower backends like VOSK
+            async with websockets.connect(
+                self.ws_url, ping_interval=20, ping_timeout=30, close_timeout=10
+            ) as ws:
                 print(f"[{self.backend_name}] WebSocket connected to {self.ws_url}")
 
                 # Send configuration if provided
