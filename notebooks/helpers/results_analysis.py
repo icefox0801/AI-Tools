@@ -13,6 +13,41 @@ from jiwer import wer
 from typing import List, Dict
 
 
+def create_short_label(backend: str, config: Dict) -> str:
+    """
+    Create a short label for plotting.
+
+    Args:
+        backend: Backend name
+        config: Configuration dict
+
+    Returns:
+        Short label string (e.g., "Whisper", "Parakeet-greedy", "FastConf-rnnt")
+    """
+    if not config:
+        return backend.capitalize()
+
+    # Extract key distinguishing parameters
+    key_params = []
+    important_keys = ["DECODING_STRATEGY", "DECODER_TYPE", "BEAM_SIZE"]
+
+    for key in important_keys:
+        if key in config and config[key]:
+            value = config[key]
+            # Shorten common values
+            if isinstance(value, str):
+                key_params.append(value[:6])  # First 6 chars
+            elif isinstance(value, (int, float)) and value != 1:
+                key_params.append(str(value))
+
+    # Create backend abbreviation
+    backend_abbr = backend.capitalize()[:7]  # Max 7 chars
+
+    if key_params:
+        return f"{backend_abbr}-{'-'.join(key_params)}"
+    return backend_abbr
+
+
 def print_backend_configurations(backends: List[Dict]) -> None:
     """
     Print backend configurations in a readable format.
@@ -30,10 +65,7 @@ def print_backend_configurations(backends: List[Dict]) -> None:
         config = backend.get("config", {})
 
         # Create a short identifier
-        config_str = (
-            ", ".join([f"{k}={v}" for k, v in sorted(config.items())]) if config else "default"
-        )
-        short_name = f"{name} ({config_str})" if config else name
+        short_label = create_short_label(name, config)
 
         print(f"\n{i}. {name}")
         print(f"   URL: {url}")
@@ -43,7 +75,7 @@ def print_backend_configurations(backends: List[Dict]) -> None:
                 print(f"      {key}: {value}")
         else:
             print(f"   Config: Default settings")
-        print(f"   Short ID: {short_name}")
+        print(f"   Chart Label: {short_label}")
 
     print("\n" + "=" * 80 + "\n")
 
@@ -112,16 +144,8 @@ def plot_latency_comparison(successful_results: List[Dict]):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    # Create labels with backend and config
-    labels = []
-    for r in successful_results:
-        config = r.get("config", {})
-        if config:
-            config_str = ", ".join([f"{k}={v}" for k, v in sorted(config.items())])
-            labels.append(f"{r['backend']}\n({config_str})")
-        else:
-            labels.append(r["backend"])
-
+    # Create short labels for plots
+    labels = [create_short_label(r["backend"], r.get("config", {})) for r in successful_results]
     avg_latencies = [r["avg_latency_ms"] for r in successful_results]
 
     axes[0].bar(
@@ -159,13 +183,8 @@ def plot_latency_over_time(successful_results: List[Dict]):
         latencies_ms = np.array(result["latencies"]) * 1000
         chunks = range(1, len(latencies_ms) + 1)
 
-        # Create label with config
-        config = result.get("config", {})
-        if config:
-            config_str = ", ".join([f"{k}={v}" for k, v in sorted(config.items())])
-            label = f"{result['backend']} ({config_str})"
-        else:
-            label = result["backend"]
+        # Create short label for plot
+        label = create_short_label(result["backend"], result.get("config", {}))
 
         plt.plot(chunks, latencies_ms, marker="o", label=label)
 
