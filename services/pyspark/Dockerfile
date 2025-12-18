@@ -20,6 +20,9 @@ COPY requirements.docker.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r /tmp/requirements.txt
 
+# Copy Jupyter configuration to increase websocket message size for large file uploads
+COPY jupyter_notebook_config.py /home/jovyan/.jupyter/jupyter_notebook_config.py
+
 # Set working directory
 WORKDIR /home/jovyan/work
 

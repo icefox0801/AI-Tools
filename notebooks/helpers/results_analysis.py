@@ -32,16 +32,20 @@ def create_results_dataframe(benchmark_results: List[Dict]) -> pd.DataFrame:
     for r in successful_results:
         # Create a readable config description
         config = r.get("config", {})
-        config_str = ", ".join([f"{k}={v}" for k, v in sorted(config.items())]) if config else "default"
-        
-        rows.append({
-            "Backend": r["backend"],
-            "Config": config_str,
-            "Avg Latency (ms)": r["avg_latency_ms"],
-            "P95 Latency (ms)": r["p95_latency_ms"],
-            "Max Latency (ms)": r["max_latency_ms"],
-            "Final Transcript": r["final_transcript"],
-        })
+        config_str = (
+            ", ".join([f"{k}={v}" for k, v in sorted(config.items())]) if config else "default"
+        )
+
+        rows.append(
+            {
+                "Backend": r["backend"],
+                "Config": config_str,
+                "Avg Latency (ms)": r["avg_latency_ms"],
+                "P95 Latency (ms)": r["p95_latency_ms"],
+                "Max Latency (ms)": r["max_latency_ms"],
+                "Final Transcript": r["final_transcript"],
+            }
+        )
 
     df = pd.DataFrame(rows)
     return df
@@ -82,7 +86,7 @@ def plot_latency_comparison(successful_results: List[Dict]):
             labels.append(f"{r['backend']}\n({config_str})")
         else:
             labels.append(r["backend"])
-    
+
     avg_latencies = [r["avg_latency_ms"] for r in successful_results]
 
     axes[0].bar(
@@ -119,7 +123,7 @@ def plot_latency_over_time(successful_results: List[Dict]):
     for result in successful_results:
         latencies_ms = np.array(result["latencies"]) * 1000
         chunks = range(1, len(latencies_ms) + 1)
-        
+
         # Create label with config
         config = result.get("config", {})
         if config:
@@ -127,7 +131,7 @@ def plot_latency_over_time(successful_results: List[Dict]):
             label = f"{result['backend']} ({config_str})"
         else:
             label = result["backend"]
-        
+
         plt.plot(chunks, latencies_ms, marker="o", label=label)
 
     plt.xlabel("Chunk Number")

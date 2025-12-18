@@ -4,7 +4,102 @@ import requests
 import numpy as np
 import random
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Dict, Callable, Tuple
+
+
+def create_audio_settings_ui(
+    default_word_count: int = 500, default_speed: float = 1.5
+) -> Tuple[object, Callable]:
+    """
+    Create interactive UI widgets for audio generation settings.
+
+    Args:
+        default_word_count: Default word count (default: 500)
+        default_speed: Default speech speed (default: 1.5)
+
+    Returns:
+        tuple: (settings_ui, get_audio_settings)
+            - settings_ui: VBox widget to display
+            - get_audio_settings: Function to get current settings dict
+    """
+    from ipywidgets import IntSlider, FloatSlider, VBox, HTML
+
+    # Create interactive widgets
+    word_count_widget = IntSlider(
+        value=default_word_count,
+        min=100,
+        max=2000,
+        step=50,
+        description="Word Count:",
+        style={"description_width": "120px"},
+    )
+
+    speech_speed_widget = FloatSlider(
+        value=default_speed,
+        min=0.5,
+        max=2.5,
+        step=0.1,
+        description="Speech Speed:",
+        style={"description_width": "120px"},
+    )
+
+    # Combine widgets
+    header = HTML("<h4>⚙️ Audio Generation Settings</h4>")
+    settings_ui = VBox([header, word_count_widget, speech_speed_widget])
+
+    # Getter function
+    def get_audio_settings():
+        """Get current audio generation settings."""
+        return {"word_count": word_count_widget.value, "speech_speed": speech_speed_widget.value}
+
+    return settings_ui, get_audio_settings
+
+
+def unload_gpu_models(backend_urls: Dict[str, str]) -> None:
+    """
+    Unload GPU models from all ASR backends to free memory.
+
+    Args:
+        backend_urls: Dictionary mapping backend names to their URLs
+    """
+    print("🔄 Unloading GPU models to free memory for Ollama...")
+    for backend_name, backend_url in backend_urls.items():
+        try:
+            response = requests.post(f"{backend_url}/unload", timeout=5)
+            if response.status_code == 200:
+                print(f"  ✓ {backend_name}: GPU models unloaded")
+            else:
+                print(f"  ⚠ {backend_name}: unload returned status {response.status_code}")
+        except Exception as e:
+            print(f"  ⚠ {backend_name}: {e}")
+
+
+def generate_and_prepare_audio(
+    word_count: int, speech_speed: float = 1.5, sample_rate: int = 16000
+) -> tuple:
+    """
+    Complete workflow: generate text and convert to speech.
+
+    Args:
+        word_count: Target number of words to generate
+        speech_speed: Speech speed multiplier (default: 1.5)
+        sample_rate: Target sample rate (default: 16000)
+
+    Returns:
+        tuple: (audio_data, text) ready for benchmarking
+    """
+    print("🎙️ Generating test audio...")
+    print(f"⚙️ Settings: {word_count} words, {speech_speed}x speed, {sample_rate}Hz")
+
+    # Generate text
+    text = generate_text_with_ollama(word_count=word_count)
+
+    # Convert to speech
+    audio_data = text_to_speech_gtts(text, sample_rate=sample_rate, speed=speech_speed)
+
+    print(f"✅ Audio generated! Duration: {len(audio_data)/sample_rate:.2f}s")
+
+    return audio_data, text
 
 
 def generate_text_with_ollama(

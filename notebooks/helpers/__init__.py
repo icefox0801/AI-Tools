@@ -1,17 +1,18 @@
 """Helper modules for Jupyter notebooks."""
 
-from .asr_config import (
-    create_config_widget,
-    render_variants,
-    add_variant,
-    get_active_backends,
-    get_test_config,
-)
-
+# Import only from existing modules
 from .audio_generation import (
     generate_text_with_ollama,
     generate_fallback_text,
     text_to_speech_gtts,
+)
+
+from .audio_upload import (
+    display_upload_ui,
+    process_uploaded_file,
+    resample_audio,
+    transcribe_with_whisper,
+    upload_and_process_audio,
 )
 
 from .benchmark import (
@@ -34,16 +35,16 @@ from .config_ui import (
 )
 
 __all__ = [
-    # Configuration
-    "create_config_widget",
-    "render_variants",
-    "add_variant",
-    "get_active_backends",
-    "get_test_config",
     # Audio generation
     "generate_text_with_ollama",
     "generate_fallback_text",
     "text_to_speech_gtts",
+    # Audio upload
+    "display_upload_ui",
+    "process_uploaded_file",
+    "resample_audio",
+    "transcribe_with_whisper",
+    "upload_and_process_audio",
     # Benchmarking
     "StreamingASRClient",
     "benchmark_backend",
@@ -55,10 +56,6 @@ __all__ = [
     "plot_latency_over_time",
     "calculate_wer_metrics",
     "export_results_json",
-    # Gradio UIs
+    # Configuration UI
     "create_configuration_ui",
-    "create_audio_generation_ui",
-    "get_active_backends_gradio",
-    "get_test_config_gradio",
-    "get_test_audio_gradio",
 ]
