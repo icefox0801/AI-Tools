@@ -23,7 +23,7 @@ SERVICE_NAME = "whisper-asr"
 # Configuration
 # ==============================================================================
 
-MODEL = os.environ.get("WHISPER_MODEL", "openai/whisper-large-v3-turbo")
+MODEL = os.environ["WHISPER_MODEL"]
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 SAMPLE_RATE = 16000

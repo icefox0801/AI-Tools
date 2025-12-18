@@ -236,7 +236,7 @@ class TestInfoEndpoint:
         """Info endpoint includes API version."""
         response = client.get("/info")
         data = response.json()
-        assert data["version"] == "1.2"
+        assert data["version"] == "1.3"
 
     def test_info_returns_model(self, client):
         """Info endpoint includes model name."""
@@ -305,7 +305,7 @@ class TestConfiguration:
 
     def test_version(self, service):
         """Version is set correctly."""
-        assert service.__version__ == "1.2"
+        assert service.__version__ == "1.3"
 
     def test_chunk_duration(self, service):
         """Default chunk duration is 1.5s."""

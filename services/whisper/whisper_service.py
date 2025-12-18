@@ -31,7 +31,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from model import (
+from whisper_model import (
     DEVICE,
     MODEL,
     SAMPLE_RATE,
@@ -424,7 +424,6 @@ async def stream_transcribe(websocket: WebSocket):
     min_audio_sec = DEFAULT_MIN_AUDIO_SEC
     language = DEFAULT_LANGUAGE
     vad_filter = USE_VAD
-    vad_threshold = VAD_THRESHOLD
     beam_size = BEAM_SIZE
 
     chunk_samples = int(SAMPLE_RATE * chunk_duration_sec)

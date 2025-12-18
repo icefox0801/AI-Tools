@@ -35,7 +35,8 @@ def mock_dependencies():
                 "shared.logging": MagicMock(),
             },
         ),
-        patch("model.get_gpu_manager", return_value=mock_gpu_mgr),
+        patch.dict(os.environ, {"WHISPER_MODEL": "openai/whisper-large-v3-turbo"}),
+        patch("whisper_model.get_gpu_manager", return_value=mock_gpu_mgr),
     ):
         yield
 
@@ -44,31 +45,31 @@ class TestConfiguration:
     """Test configuration values."""
 
     def test_default_model(self):
-        """Test default model is turbo."""
-        with patch.dict(os.environ, {}, clear=True):
+        """Test model requires WHISPER_MODEL environment variable."""
+        with patch.dict(os.environ, {"WHISPER_MODEL": "openai/whisper-large-v3-turbo"}):
             import importlib
 
-            import model
+            import whisper_model
 
-            importlib.reload(model)
-            assert model.MODEL == "openai/whisper-large-v3-turbo"
+            importlib.reload(whisper_model)
+            assert whisper_model.MODEL == "openai/whisper-large-v3-turbo"
 
     def test_custom_model(self):
         """Test custom model from environment."""
         with patch.dict(os.environ, {"WHISPER_MODEL": "custom/model"}):
             import importlib
 
-            import model
+            import whisper_model
 
-            importlib.reload(model)
-            assert model.MODEL == "custom/model"
+            importlib.reload(whisper_model)
+            assert whisper_model.MODEL == "custom/model"
 
     def test_device_cpu_when_no_cuda(self):
         """Test device defaults to CPU when CUDA unavailable."""
         torch_mock.cuda.is_available.return_value = False
         import importlib
 
-        import model
+        import whisper_model as model
 
         importlib.reload(model)
         assert model.DEVICE == "cpu"
@@ -78,7 +79,7 @@ class TestConfiguration:
         torch_mock.cuda.is_available.return_value = True
         import importlib
 
-        import model
+        import whisper_model as model
 
         importlib.reload(model)
         assert model.DEVICE == "cuda"
@@ -89,7 +90,7 @@ class TestModelState:
 
     def test_model_state_initialization(self):
         """Test ModelState initializes with correct defaults."""
-        import model
+        import whisper_model as model
 
         state = model.ModelState()
         assert state.pipe is None
@@ -99,7 +100,7 @@ class TestModelState:
 
     def test_get_model_state(self):
         """Test get_model_state returns global state."""
-        import model
+        import whisper_model as model
 
         state1 = model.get_model_state()
         state2 = model.get_model_state()
@@ -109,11 +110,11 @@ class TestModelState:
 class TestModelLoading:
     """Test model loading functions."""
 
-    @patch("model.AutoModelForSpeechSeq2Seq")
-    @patch("model.AutoProcessor")
+    @patch("whisper_model.AutoModelForSpeechSeq2Seq")
+    @patch("whisper_model.AutoProcessor")
     def test_create_pipeline_uses_local_files_only(self, mock_processor, mock_model):
         """Test that _create_pipeline uses local_files_only=True."""
-        import model
+        import whisper_model as model
 
         mock_model.from_pretrained.return_value = Mock()
         mock_processor.from_pretrained.return_value = Mock()
@@ -129,10 +130,10 @@ class TestModelLoading:
         call_kwargs = mock_processor.from_pretrained.call_args[1]
         assert call_kwargs.get("local_files_only") is True
 
-    @patch("model._create_pipeline")
+    @patch("whisper_model._create_pipeline")
     def test_load_model(self, mock_create):
         """Test loading model."""
-        import model
+        import whisper_model as model
 
         mock_pipe = Mock()
         mock_create.return_value = mock_pipe
@@ -145,10 +146,10 @@ class TestModelLoading:
         assert state.model_name == model.MODEL
         mock_create.assert_called_once_with(model.MODEL)
 
-    @patch("model._create_pipeline")
+    @patch("whisper_model._create_pipeline")
     def test_load_model_already_loaded(self, mock_create):
         """Test loading model when already loaded does nothing."""
-        import model
+        import whisper_model as model
 
         # Reset state
         model._model_state.loaded = True
@@ -159,10 +160,10 @@ class TestModelLoading:
         # Should not create pipeline again
         mock_create.assert_not_called()
 
-    @patch("model.load_model")
+    @patch("whisper_model.load_model")
     def test_get_pipeline_auto_loads(self, mock_load):
         """Test get_pipeline auto-loads model."""
-        import model
+        import whisper_model as model
 
         model._model_state.loaded = False
         model._model_state.pipe = None
@@ -171,11 +172,11 @@ class TestModelLoading:
 
         mock_load.assert_called_once()
 
-    @patch("model.AutoModelForSpeechSeq2Seq")
-    @patch("model.AutoProcessor")
+    @patch("whisper_model.AutoModelForSpeechSeq2Seq")
+    @patch("whisper_model.AutoProcessor")
     def test_load_model_raises_on_missing_cache(self, mock_processor, mock_model):
         """Test that loading fails gracefully when models not in cache."""
-        import model
+        import whisper_model as model
 
         # Simulate models not in cache
         mock_model.from_pretrained.side_effect = OSError("Model not found")
@@ -193,7 +194,7 @@ class TestModelUnloading:
 
     def test_unload_model(self):
         """Test unloading model."""
-        import model
+        import whisper_model as model
 
         # Set up state
         model._model_state.loaded = True
@@ -210,7 +211,7 @@ class TestModelUnloading:
 
     def test_unload_when_not_loaded(self):
         """Test unloading when model is not loaded."""
-        import model
+        import whisper_model as model
 
         # Reset state
         model._model_state.loaded = False
@@ -225,7 +226,7 @@ class TestCUDASetup:
 
     def test_setup_cuda_when_available(self):
         """Test CUDA setup when GPU is available."""
-        import model
+        import whisper_model as model
 
         torch_mock.cuda.is_available.return_value = True
         torch_mock.cuda.get_device_name.return_value = "NVIDIA RTX 4090"
@@ -238,7 +239,7 @@ class TestCUDASetup:
 
     def test_setup_cuda_when_not_available(self):
         """Test CUDA setup when GPU is not available."""
-        import model
+        import whisper_model as model
 
         # Reset DEVICE to cpu for this test
         with patch.object(model, "DEVICE", "cpu"):
