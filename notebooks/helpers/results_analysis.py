@@ -211,17 +211,35 @@ def calculate_wer_metrics(successful_results: List[Dict], reference_transcript: 
 
     print("\nWord Error Rate (WER) Analysis:")
     print("=" * 80)
+    
+    # Normalize reference transcript
+    import re
+    ref_normalized = reference_transcript.lower().strip()
+    # Remove extra whitespace and punctuation for better comparison
+    ref_normalized = re.sub(r'[^\w\s]', '', ref_normalized)
+    ref_normalized = ' '.join(ref_normalized.split())
 
     for result in successful_results:
-        hypothesis = result["final_transcript"].lower().strip()
-        reference = reference_transcript.lower().strip()
-
+        hypothesis = result["final_transcript"].strip()
+        
         if hypothesis:
-            error_rate = wer(reference, hypothesis)
+            # Normalize hypothesis the same way
+            hyp_normalized = hypothesis.lower().strip()
+            hyp_normalized = re.sub(r'[^\w\s]', '', hyp_normalized)
+            hyp_normalized = ' '.join(hyp_normalized.split())
+            
+            # Calculate WER
+            error_rate = wer(ref_normalized, hyp_normalized)
+            
+            # Count words for context
+            ref_words = len(ref_normalized.split())
+            hyp_words = len(hyp_normalized.split())
+            
             print(f"\n{result['backend'].upper()}:")
-            print(f"  Reference:  '{reference[:100]}...'")
-            print(f"  Hypothesis: '{hypothesis[:100]}...'")
-            print(f"  WER: {error_rate*100:.2f}%")
+            print(f"  Reference:  '{reference_transcript[:80]}...' ({ref_words} words)")
+            print(f"  Hypothesis: '{hypothesis[:80]}...' ({hyp_words} words)")
+            print(f"  WER: {error_rate*100:.2f}% (lower is better)")
+            print(f"  Accuracy: {(1-error_rate)*100:.2f}%")
         else:
             print(f"\n{result['backend'].upper()}: No transcript generated")
 
