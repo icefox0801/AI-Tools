@@ -43,11 +43,11 @@ class StreamingASRClient:
             # Increase timeouts significantly for slower backends like VOSK
             # VOSK can be very slow, especially on first requests
             async with websockets.connect(
-                self.ws_url, 
-                ping_interval=30,   # Send ping every 30s
-                ping_timeout=60,    # Wait 60s for pong response (2x ping_interval)
-                close_timeout=15,   # Wait 15s for close handshake
-                max_size=10 * 1024 * 1024  # 10MB max message size
+                self.ws_url,
+                ping_interval=30,  # Send ping every 30s
+                ping_timeout=60,  # Wait 60s for pong response (2x ping_interval)
+                close_timeout=15,  # Wait 15s for close handshake
+                max_size=10 * 1024 * 1024,  # 10MB max message size
             ) as ws:
                 print(f"[{self.backend_name}] WebSocket connected to {self.ws_url}")
 

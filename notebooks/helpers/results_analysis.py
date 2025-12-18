@@ -97,16 +97,9 @@ def create_results_dataframe(benchmark_results: List[Dict]) -> pd.DataFrame:
 
     rows = []
     for r in successful_results:
-        # Create a readable config description
-        config = r.get("config", {})
-        config_str = (
-            ", ".join([f"{k}={v}" for k, v in sorted(config.items())]) if config else "default"
-        )
-
         rows.append(
             {
                 "Backend": r["backend"],
-                "Config": config_str,
                 "Avg Latency (ms)": r["avg_latency_ms"],
                 "P95 Latency (ms)": r["p95_latency_ms"],
                 "Max Latency (ms)": r["max_latency_ms"],
@@ -211,30 +204,31 @@ def calculate_wer_metrics(successful_results: List[Dict], reference_transcript: 
 
     print("\nWord Error Rate (WER) Analysis:")
     print("=" * 80)
-    
+
     # Normalize reference transcript
     import re
+
     ref_normalized = reference_transcript.lower().strip()
     # Remove extra whitespace and punctuation for better comparison
-    ref_normalized = re.sub(r'[^\w\s]', '', ref_normalized)
-    ref_normalized = ' '.join(ref_normalized.split())
+    ref_normalized = re.sub(r"[^\w\s]", "", ref_normalized)
+    ref_normalized = " ".join(ref_normalized.split())
 
     for result in successful_results:
         hypothesis = result["final_transcript"].strip()
-        
+
         if hypothesis:
             # Normalize hypothesis the same way
             hyp_normalized = hypothesis.lower().strip()
-            hyp_normalized = re.sub(r'[^\w\s]', '', hyp_normalized)
-            hyp_normalized = ' '.join(hyp_normalized.split())
-            
+            hyp_normalized = re.sub(r"[^\w\s]", "", hyp_normalized)
+            hyp_normalized = " ".join(hyp_normalized.split())
+
             # Calculate WER
             error_rate = wer(ref_normalized, hyp_normalized)
-            
+
             # Count words for context
             ref_words = len(ref_normalized.split())
             hyp_words = len(hyp_normalized.split())
-            
+
             print(f"\n{result['backend'].upper()}:")
             print(f"  Reference:  '{reference_transcript[:80]}...' ({ref_words} words)")
             print(f"  Hypothesis: '{hypothesis[:80]}...' ({hyp_words} words)")

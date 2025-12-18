@@ -1,10 +1,12 @@
 """Audio generation helpers for benchmarking notebooks."""
 
-import requests
-import numpy as np
 import random
 from io import BytesIO
-from typing import Optional, Dict, Callable, Tuple
+from typing import Callable, Dict, Optional, Tuple
+
+import numpy as np
+import requests
+from IPython.display import Audio, display
 
 
 def create_audio_settings_ui(
@@ -22,7 +24,7 @@ def create_audio_settings_ui(
             - settings_ui: VBox widget to display
             - get_audio_settings: Function to get current settings dict
     """
-    from ipywidgets import IntSlider, FloatSlider, VBox, HTML
+    from ipywidgets import IntSlider, FloatSlider, VBox, Label
 
     # Create interactive widgets
     word_count_widget = IntSlider(
@@ -44,7 +46,7 @@ def create_audio_settings_ui(
     )
 
     # Combine widgets
-    header = HTML("<h4>⚙️ Audio Generation Settings</h4>")
+    header = Label("⚙️ Audio Generation Settings")
     settings_ui = VBox([header, word_count_widget, speech_speed_widget])
 
     # Getter function
@@ -98,6 +100,20 @@ def generate_and_prepare_audio(
     audio_data = text_to_speech_gtts(text, sample_rate=sample_rate, speed=speech_speed)
 
     print(f"✅ Audio generated! Duration: {len(audio_data)/sample_rate:.2f}s")
+
+    # Display audio player
+    print(f"\n🔊 Audio Playback")
+    display(Audio(data=audio_data, rate=sample_rate, autoplay=False))
+
+    # Display transcript preview (1 line max)
+    if text:
+        preview_length = 60
+        if len(text) > preview_length:
+            print(f"📄 Transcript: {text[:preview_length]}... ({len(text)} chars)")
+        else:
+            print(f"📄 Transcript: {text}")
+
+    print(f"✅ Ready for benchmarking!")
 
     return audio_data, text
 

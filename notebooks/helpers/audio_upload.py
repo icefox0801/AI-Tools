@@ -5,7 +5,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 import requests
-from ipywidgets import FileUpload
+from ipywidgets import Layout, FileUpload, Label, GridBox
 from IPython.display import display, Audio
 
 # Global widget reference for the two-cell pattern
@@ -29,12 +29,13 @@ def create_upload_widget():
         accept=".wav,.mp3,.m4a,.ogg,.flac", multiple=False, description="Select Audio"
     )
 
-    print("📤 Upload Audio File")
-    print("1. Click 'Select Audio' and choose your file")
-    print("2. Run the next cell to process")
-    display(_upload_widget)
+    # Combine widgets
+    header = Label("📤 Audio Upload")
+    upload_ui = GridBox(
+        [header, _upload_widget], layout=Layout(grid_template_columns="150px 150px")
+    )
 
-    return _upload_widget
+    return upload_ui
 
 
 def get_uploaded_audio(target_sample_rate=16000, transcribe=True):
@@ -85,11 +86,11 @@ def get_uploaded_audio(target_sample_rate=16000, transcribe=True):
     if text:
         preview_length = 60
         if len(text) > preview_length:
-            print(f"\n📄 Transcript: {text[:preview_length]}... ({len(text)} chars)")
+            print(f"📄 Transcript: {text[:preview_length]}... ({len(text)} chars)")
         else:
-            print(f"\n📄 Transcript: {text}")
+            print(f"📄 Transcript: {text}")
 
-    print(f"\n✅ Ready for benchmarking!")
+    print(f"✅ Ready for benchmarking!")
 
     return audio_data, text
 
