@@ -40,9 +40,14 @@ class StreamingASRClient:
         final_transcript = ""
 
         try:
-            # Increase ping timeout for slower backends like VOSK
+            # Increase timeouts significantly for slower backends like VOSK
+            # VOSK can be very slow, especially on first requests
             async with websockets.connect(
-                self.ws_url, ping_interval=20, ping_timeout=30, close_timeout=10
+                self.ws_url, 
+                ping_interval=30,   # Send ping every 30s
+                ping_timeout=60,    # Wait 60s for pong response (2x ping_interval)
+                close_timeout=15,   # Wait 15s for close handshake
+                max_size=10 * 1024 * 1024  # 10MB max message size
             ) as ws:
                 print(f"[{self.backend_name}] WebSocket connected to {self.ws_url}")
 
@@ -68,9 +73,10 @@ class StreamingASRClient:
                     start_time = time.time()
                     await ws.send(chunk)
 
-                    # Try to receive response (non-blocking)
+                    # Try to receive response with longer timeout for slow backends
+                    # VOSK can be much slower than other backends
                     try:
-                        response = await asyncio.wait_for(ws.recv(), timeout=0.5)
+                        response = await asyncio.wait_for(ws.recv(), timeout=2.0)
                         latency = time.time() - start_time
 
                         data = json.loads(response)
@@ -94,9 +100,9 @@ class StreamingASRClient:
                 await ws.send(b"")
                 print(f"[{self.backend_name}] Sent end-of-stream signal")
 
-                # Wait for final response
+                # Wait for final response with extended timeout
                 try:
-                    response = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                    response = await asyncio.wait_for(ws.recv(), timeout=10.0)
                     data = json.loads(response)
                     final_text = data.get("text", "")
                     if final_text:
