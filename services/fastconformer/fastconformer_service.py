@@ -28,6 +28,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastconformer_model import (
     ATT_CONTEXT_SIZE,
+    BATCH_SIZE,
     DECODER_TYPE,
     DEVICE,
     MODEL_NAME,
@@ -147,7 +148,7 @@ def stream_transcribe_chunk(
                 # Process every N chunks to reduce overhead
                 if len(state.cache_last_channel) >= 2:  # Process every 1 second
                     combined_audio = np.concatenate(state.cache_last_channel)
-                    results = model.transcribe([combined_audio], batch_size=1)
+                    results = model.transcribe([combined_audio], batch_size=BATCH_SIZE)
 
                     if results and results[0]:
                         text = results[0].text if hasattr(results[0], "text") else str(results[0])
