@@ -3,6 +3,8 @@
 # This configuration increases limits to support large file uploads
 # (e.g., audio files) in notebooks via ipywidgets.FileUpload
 
+from traitlets.config import get_config
+
 c = get_config()  # type: ignore
 
 # ------------------------------------------------------------------------------
