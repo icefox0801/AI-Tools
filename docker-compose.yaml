@@ -168,6 +168,10 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
       - TEXT_REFINER_URL=http://text-refiner:8000   # Text refiner service for punctuation + correction
+      # Parakeet model settings (configured in .env)
+      - PARAKEET_DECODING_STRATEGY=${PARAKEET_DECODING_STRATEGY}
+      - PARAKEET_BEAM_SIZE=${PARAKEET_BEAM_SIZE}
+      - PARAKEET_LANGUAGE=${PARAKEET_LANGUAGE}
     deploy:
       resources:
         reservations:
@@ -255,8 +259,10 @@ services:
       - fastconformer-nemo-cache:/root/.cache/nemo         # NeMo-specific cache
     environment:
       - FASTCONFORMER_MODEL=nvidia/stt_en_fastconformer_hybrid_large_streaming_multi
-      - DECODER_TYPE=rnnt                           # rnnt or ctc (rnnt has better accuracy)
-      - ATT_CONTEXT_SIZE=[70,6]                     # [70,0]=0ms, [70,1]=80ms, [70,6]=480ms, [70,33]=1040ms
+      - DECODER_TYPE=${FASTCONFORMER_DECODER_TYPE}  # rnnt or ctc (rnnt has better accuracy)
+      - ATT_CONTEXT_SIZE=${FASTCONFORMER_ATT_CONTEXT_SIZE}  # [70,0]=0ms, [70,1]=80ms, [70,6]=480ms, [70,33]=1040ms
+      - BEAM_SIZE=${FASTCONFORMER_BEAM_SIZE}
+      - BATCH_SIZE=${FASTCONFORMER_BATCH_SIZE}
       - CUDA_VISIBLE_DEVICES=0
       - PYTORCH_JIT=0                               # Fix SIGSEGV in NeMo with PyTorch 2.9.x
     deploy:

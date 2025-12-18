@@ -51,9 +51,7 @@ __version__ = "1.0"
 
 # Streaming parameters
 CHUNK_DURATION_SEC = 0.5  # Process every 500ms
-MIN_CHUNK_SEC = 0.2  # Minimum chunk size
 SILENCE_THRESHOLD_SEC = 2.0
-MAX_WORDS_PER_SEGMENT = 30
 
 # Logging
 logger = setup_logging(__name__)

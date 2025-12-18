@@ -21,19 +21,20 @@ class StreamingASRClient:
         self.base_url = base_url
         self.ws_url = base_url.replace("http://", "ws://").replace("https://", "wss://") + "/stream"
 
-    async def transcribe_stream(
-        self, audio: np.ndarray, chunk_size: int, config: Dict = None
-    ) -> Tuple[str, list, list]:
+    async def transcribe_stream(self, audio: np.ndarray, chunk_size: int) -> Tuple[str, list, list]:
         """
         Stream audio to ASR service via WebSocket and collect results.
 
         Args:
             audio: Audio data as float32 numpy array (-1.0 to 1.0)
             chunk_size: Number of samples per chunk
-            config: Optional configuration dict to send to backend
 
         Returns:
             Tuple of (final_transcript, list of partial transcripts, list of latencies)
+
+        Note:
+            Model settings (VAD, beam size, language, etc.) are configured via
+            environment variables in docker-compose.yaml and cannot be changed at runtime.
         """
         transcripts = []
         latencies = []
@@ -50,11 +51,6 @@ class StreamingASRClient:
                 max_size=10 * 1024 * 1024,  # 10MB max message size
             ) as ws:
                 print(f"[{self.backend_name}] WebSocket connected to {self.ws_url}")
-
-                # Send configuration if provided
-                if config:
-                    await ws.send(json.dumps(config))
-                    print(f"[{self.backend_name}] Config sent: {config}")
 
                 # Convert audio to int16 PCM bytes
                 audio_int16 = (audio * 32767).astype(np.int16)
@@ -123,7 +119,7 @@ class StreamingASRClient:
 
 
 async def benchmark_backend(
-    backend_name: str, base_url: str, audio: np.ndarray, chunk_size: int, config: Dict = None
+    backend_name: str, base_url: str, audio: np.ndarray, chunk_size: int
 ) -> Dict:
     """
     Benchmark a single ASR backend with streaming audio via WebSocket.
@@ -133,7 +129,6 @@ async def benchmark_backend(
         base_url: Base URL of the ASR service
         audio: Audio data as numpy array
         chunk_size: Size of each audio chunk (in samples)
-        config: Configuration parameters to send to backend
 
     Returns:
         Dict containing benchmark results with keys:
@@ -154,9 +149,7 @@ async def benchmark_backend(
     try:
         print(f"[{backend_name}] Starting transcription...")
 
-        final_transcript, transcripts, latencies = await client.transcribe_stream(
-            audio, chunk_size, config
-        )
+        final_transcript, transcripts, latencies = await client.transcribe_stream(audio, chunk_size)
 
         print(f"[{backend_name}] Transcription complete")
         print(f"[{backend_name}] Final transcript: '{final_transcript}'")
@@ -171,7 +164,7 @@ async def benchmark_backend(
 
         return {
             "backend": backend_name,
-            "config": config or {},
+            "config": {},  # Config now comes from environment variables
             "avg_latency_ms": avg_latency * 1000,
             "p95_latency_ms": p95_latency * 1000,
             "max_latency_ms": max_latency * 1000,
@@ -216,7 +209,6 @@ async def run_all_benchmarks(
         print(f"\n{'='*60}")
         print(f"Benchmarking: {backend_info['name']}")
         print(f"Backend: {backend_info['backend'].upper()}")
-        print(f"Configuration: {backend_info['config']}")
         print(f"{'='*60}")
 
         result = await benchmark_backend(
@@ -224,7 +216,6 @@ async def run_all_benchmarks(
             backend_info["url"],
             test_audio,
             test_config["chunk_size"],
-            backend_info["config"],
         )
         results.append(result)
 

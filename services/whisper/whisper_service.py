@@ -35,10 +35,8 @@ from model import (
     DEVICE,
     MODEL,
     SAMPLE_RATE,
-    TORCH_DTYPE,
     get_model_state,
     get_pipeline,
-    load_model,
     setup_cuda,
     unload_model,
 )
@@ -412,14 +410,16 @@ async def stream_transcribe(websocket: WebSocket):
 
     Protocol:
     1. Connect to websocket
-    2. Send config: {"chunk_ms": 500, "language": "en"}
-    3. Stream raw PCM audio bytes (int16, 16kHz, mono)
-    4. Receive JSON: {"id": "s1", "text": "..."}
+    2. Stream raw PCM audio bytes (int16, 16kHz, mono)
+    3. Receive JSON: {"id": "s1", "text": "..."}
+
+    Note: All model settings (VAD, beam size, language, etc.) are configured
+    via environment variables in docker-compose.yaml and cannot be changed at runtime.
     """
     await websocket.accept()
     logger.info(f"Stream connection established (model: {MODEL})")
 
-    # Settings (can be overridden by config message)
+    # Settings from environment variables (fixed at service startup)
     chunk_duration_sec = DEFAULT_CHUNK_DURATION_SEC
     min_audio_sec = DEFAULT_MIN_AUDIO_SEC
     language = DEFAULT_LANGUAGE
@@ -439,43 +439,6 @@ async def stream_transcribe(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive()
-
-            # Handle config messages
-            if "text" in data:
-                try:
-                    msg = json.loads(data["text"])
-                    logger.info(f"Config received: {msg}")
-
-                    # Update settings from config
-                    if "LANGUAGE" in msg:
-                        language = msg["LANGUAGE"]
-                        logger.info(f"Language set to: {language}")
-
-                    if "VAD_FILTER" in msg:
-                        vad_filter = msg["VAD_FILTER"]
-                        logger.info(f"VAD filter set to: {vad_filter}")
-
-                    if "VAD_THRESHOLD" in msg:
-                        vad_threshold = float(msg["VAD_THRESHOLD"])
-                        logger.info(f"VAD threshold set to: {vad_threshold}")
-
-                    if "BEAM_SIZE" in msg:
-                        beam_size = int(msg["BEAM_SIZE"])
-                        logger.info(f"Beam size set to: {beam_size}")
-
-                    if "CHUNK_DURATION_SEC" in msg:
-                        chunk_duration_sec = float(msg["CHUNK_DURATION_SEC"])
-                        chunk_samples = int(SAMPLE_RATE * chunk_duration_sec)
-                        logger.info(f"Chunk duration set to: {chunk_duration_sec}s")
-
-                    if "MIN_AUDIO_SEC" in msg:
-                        min_audio_sec = float(msg["MIN_AUDIO_SEC"])
-                        min_samples = int(SAMPLE_RATE * min_audio_sec)
-                        logger.info(f"Min audio duration set to: {min_audio_sec}s")
-
-                    continue
-                except json.JSONDecodeError:
-                    continue
 
             # Handle audio data
             if "bytes" in data:
