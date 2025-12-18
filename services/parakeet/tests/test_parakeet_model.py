@@ -61,6 +61,10 @@ def mock_env(monkeypatch):
     """Set required environment variables."""
     monkeypatch.setenv("PARAKEET_STREAMING_MODEL", "nvidia/test-streaming")
     monkeypatch.setenv("PARAKEET_OFFLINE_MODEL", "nvidia/test-offline")
+    monkeypatch.setenv("PARAKEET_DECODING_STRATEGY", "greedy")
+    monkeypatch.setenv("PARAKEET_BEAM_SIZE", "1")
+    monkeypatch.setenv("PARAKEET_LANGUAGE", "en")
+    return monkeypatch
 
 
 @pytest.fixture

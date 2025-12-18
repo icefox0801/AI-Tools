@@ -65,6 +65,8 @@ def mock_env(monkeypatch):
     )
     monkeypatch.setenv("DECODER_TYPE", "rnnt")
     monkeypatch.setenv("ATT_CONTEXT_SIZE", "[70,6]")
+    monkeypatch.setenv("BEAM_SIZE", "1")
+    monkeypatch.setenv("BATCH_SIZE", "1")
 
 
 @pytest.fixture

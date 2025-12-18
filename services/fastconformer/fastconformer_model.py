@@ -21,15 +21,13 @@ SERVICE_NAME = "fastconformer-asr"
 # Configuration
 # ==============================================================================
 
-MODEL_NAME = os.getenv(
-    "FASTCONFORMER_MODEL", "nvidia/stt_en_fastconformer_hybrid_large_streaming_multi"
-)
-DECODER_TYPE = os.getenv("DECODER_TYPE", "rnnt")  # rnnt or ctc
+MODEL_NAME = os.environ["FASTCONFORMER_MODEL"]
+DECODER_TYPE = os.environ["DECODER_TYPE"]  # rnnt or ctc
 ATT_CONTEXT_SIZE = eval(
-    os.getenv("ATT_CONTEXT_SIZE", "[70,6]")
+    os.environ["ATT_CONTEXT_SIZE"]
 )  # [70,0]=0ms, [70,1]=80ms, [70,6]=480ms, [70,33]=1040ms
-BEAM_SIZE = int(os.getenv("BEAM_SIZE", "1"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1"))
+BEAM_SIZE = int(os.environ["BEAM_SIZE"])
+BATCH_SIZE = int(os.environ["BATCH_SIZE"])
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Flag to track CUDA initialization

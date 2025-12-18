@@ -25,9 +25,9 @@ STREAMING_MODEL = os.environ["PARAKEET_STREAMING_MODEL"]
 OFFLINE_MODEL = os.environ["PARAKEET_OFFLINE_MODEL"]
 
 # Decoding configuration from environment variables
-DECODING_STRATEGY = os.getenv("PARAKEET_DECODING_STRATEGY", "greedy")  # greedy or beam
-BEAM_SIZE = int(os.getenv("PARAKEET_BEAM_SIZE", "1"))
-LANGUAGE = os.getenv("PARAKEET_LANGUAGE", "en")
+DECODING_STRATEGY = os.environ["PARAKEET_DECODING_STRATEGY"]  # greedy or beam
+BEAM_SIZE = int(os.environ["PARAKEET_BEAM_SIZE"])
+LANGUAGE = os.environ["PARAKEET_LANGUAGE"]
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -196,7 +196,7 @@ def load_model(mode: str = "streaming"):
                     }
                 )
                 model.change_decoding_strategy(decoding_cfg)
-        
+
         # Apply decoding strategy from environment variable
         if DECODING_STRATEGY == "beam" and BEAM_SIZE > 1:
             logger.info(f"Configuring beam search with beam_size={BEAM_SIZE}")
@@ -212,7 +212,7 @@ def load_model(mode: str = "streaming"):
         elif DECODING_STRATEGY == "greedy":
             logger.info("Using greedy decoding")
             # Greedy is the default, no need to change
-        
+
         logger.info(f"Language: {LANGUAGE}, Decoding: {DECODING_STRATEGY}, Beam Size: {BEAM_SIZE}")
 
         # Store references based on mode
