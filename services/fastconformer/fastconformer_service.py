@@ -16,6 +16,7 @@ Protocol:
 """
 
 import asyncio
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -50,9 +51,9 @@ __version__ = "1.0"
 # Configuration
 # ==============================================================================
 
-# Streaming parameters
-CHUNK_DURATION_SEC = 0.5  # Process every 500ms
-SILENCE_THRESHOLD_SEC = 2.0
+# Streaming parameters from environment variables
+CHUNK_DURATION_SEC = float(os.environ["FASTCONFORMER_CHUNK_DURATION_SEC"])
+SILENCE_THRESHOLD_SEC = float(os.environ["FASTCONFORMER_SILENCE_THRESHOLD_SEC"])
 
 # Logging
 logger = setup_logging(__name__)

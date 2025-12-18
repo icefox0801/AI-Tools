@@ -75,6 +75,14 @@ def mock_env(monkeypatch):
     monkeypatch.setenv("PARAKEET_DECODING_STRATEGY", "greedy")
     monkeypatch.setenv("PARAKEET_BEAM_SIZE", "1")
     monkeypatch.setenv("PARAKEET_LANGUAGE", "en")
+    # Service parameters
+    monkeypatch.setenv("PARAKEET_CHUNK_DURATION_SEC", "0.5")
+    monkeypatch.setenv("PARAKEET_MIN_CHUNK_SEC", "0.2")
+    monkeypatch.setenv("PARAKEET_SILENCE_THRESHOLD_SEC", "2.0")
+    monkeypatch.setenv("PARAKEET_MAX_WORDS_PER_SEGMENT", "30")
+    monkeypatch.setenv("PARAKEET_MAX_AUDIO_CHUNK_SEC", "18.0")
+    monkeypatch.setenv("PARAKEET_OVERLAP_SEC", "1.0")
+    monkeypatch.setenv("PARAKEET_MIN_WORDS_FOR_PUNCTUATION", "6")
 
 
 @pytest.fixture

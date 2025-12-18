@@ -67,6 +67,9 @@ def mock_env(monkeypatch):
     monkeypatch.setenv("ATT_CONTEXT_SIZE", "[70,6]")
     monkeypatch.setenv("BEAM_SIZE", "1")
     monkeypatch.setenv("BATCH_SIZE", "1")
+    # Service parameters
+    monkeypatch.setenv("FASTCONFORMER_CHUNK_DURATION_SEC", "0.5")
+    monkeypatch.setenv("FASTCONFORMER_SILENCE_THRESHOLD_SEC", "2.0")
 
 
 @pytest.fixture

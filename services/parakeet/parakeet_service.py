@@ -50,18 +50,18 @@ __version__ = "1.1"
 # Configuration
 # ==============================================================================
 
-# Streaming parameters
-CHUNK_DURATION_SEC = 0.5  # Reduced from 1.0 for faster initial output
-MIN_CHUNK_SEC = 0.2  # Reduced from 0.3 for lower latency
-SILENCE_THRESHOLD_SEC = 2.0
-MAX_WORDS_PER_SEGMENT = 30
+# Streaming parameters from environment variables
+CHUNK_DURATION_SEC = float(os.environ["PARAKEET_CHUNK_DURATION_SEC"])
+MIN_CHUNK_SEC = float(os.environ["PARAKEET_MIN_CHUNK_SEC"])
+SILENCE_THRESHOLD_SEC = float(os.environ["PARAKEET_SILENCE_THRESHOLD_SEC"])
+MAX_WORDS_PER_SEGMENT = int(os.environ["PARAKEET_MAX_WORDS_PER_SEGMENT"])
 
-# Offline transcription parameters
-MAX_AUDIO_CHUNK_SEC = 18.0
-OVERLAP_SEC = 1.0
+# Offline transcription parameters from environment variables
+MAX_AUDIO_CHUNK_SEC = float(os.environ["PARAKEET_MAX_AUDIO_CHUNK_SEC"])
+OVERLAP_SEC = float(os.environ["PARAKEET_OVERLAP_SEC"])
 
-# Text refinement
-MIN_WORDS_FOR_PUNCTUATION = 6
+# Text refinement from environment variables
+MIN_WORDS_FOR_PUNCTUATION = int(os.environ["PARAKEET_MIN_WORDS_FOR_PUNCTUATION"])
 
 # Logging
 logger = setup_logging(__name__)

@@ -68,6 +68,11 @@ def mock_env(monkeypatch):
     )
     monkeypatch.setenv("DECODER_TYPE", "rnnt")
     monkeypatch.setenv("ATT_CONTEXT_SIZE", "[70,6]")
+    monkeypatch.setenv("BEAM_SIZE", "1")
+    monkeypatch.setenv("BATCH_SIZE", "1")
+    # Service parameters
+    monkeypatch.setenv("FASTCONFORMER_CHUNK_DURATION_SEC", "0.5")
+    monkeypatch.setenv("FASTCONFORMER_SILENCE_THRESHOLD_SEC", "2.0")
 
 
 @pytest.fixture
@@ -214,31 +219,42 @@ def test_unload_endpoint(client, mock_model_module):
 def test_pcm_to_float():
     """Test PCM to float conversion."""
     # Remove cached service module
+    import os
     import sys
 
     if "fastconformer_service" in sys.modules:
         del sys.modules["fastconformer_service"]
 
-    # Import with mocks
-    with patch.dict(
-        "sys.modules",
-        {
-            "torch": mock_torch,
-            "uvicorn": mock_uvicorn,
-            "shared": MagicMock(),
-            "shared.core": mock_shared_core,
-            "shared.utils": mock_shared_utils,
-            "fastconformer_model": MagicMock(
-                DECODER_TYPE="rnnt",
-                DEVICE="cuda",
-                MODEL_NAME="test",
-                ATT_CONTEXT_SIZE=[70, 6],
-                get_model=MagicMock(),
-                get_model_state=MagicMock(),
-                setup_cuda=MagicMock(),
-                unload_model=MagicMock(),
-            ),
-        },
+    # Import with mocks and environment variables
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "FASTCONFORMER_CHUNK_DURATION_SEC": "0.5",
+                "FASTCONFORMER_SILENCE_THRESHOLD_SEC": "2.0",
+            },
+        ),
+        patch.dict(
+            "sys.modules",
+            {
+                "torch": mock_torch,
+                "uvicorn": mock_uvicorn,
+                "shared": MagicMock(),
+                "shared.core": mock_shared_core,
+                "shared.utils": mock_shared_utils,
+                "fastconformer_model": MagicMock(
+                    DECODER_TYPE="rnnt",
+                    DEVICE="cuda",
+                    MODEL_NAME="test",
+                    ATT_CONTEXT_SIZE=[70, 6],
+                    BATCH_SIZE=1,
+                    get_model=MagicMock(),
+                    get_model_state=MagicMock(),
+                    setup_cuda=MagicMock(),
+                    unload_model=MagicMock(),
+                ),
+            },
+        ),
     ):
         from fastconformer_service import pcm_to_float
 
