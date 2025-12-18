@@ -28,6 +28,8 @@ DECODER_TYPE = os.getenv("DECODER_TYPE", "rnnt")  # rnnt or ctc
 ATT_CONTEXT_SIZE = eval(
     os.getenv("ATT_CONTEXT_SIZE", "[70,6]")
 )  # [70,0]=0ms, [70,1]=80ms, [70,6]=480ms, [70,33]=1040ms
+BEAM_SIZE = int(os.getenv("BEAM_SIZE", "1"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1"))
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Flag to track CUDA initialization
