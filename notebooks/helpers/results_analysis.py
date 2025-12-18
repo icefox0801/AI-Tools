@@ -48,18 +48,24 @@ def create_short_label(backend: str, config: Dict) -> str:
     return backend_abbr
 
 
-def print_backend_configurations(backends: List[Dict]) -> None:
+def print_backend_configurations(backends) -> None:
     """
     Print backend configurations in a readable format.
 
     Args:
-        backends: List of backend configuration dicts
+        backends: Dict or list of backend configuration dicts
     """
     print("=" * 80)
     print("CONFIGURED BACKENDS")
     print("=" * 80)
 
-    for i, backend in enumerate(backends, 1):
+    # Handle both dict (from get_backends()) and list formats
+    if isinstance(backends, dict):
+        backends_list = list(backends.values())
+    else:
+        backends_list = backends
+
+    for i, backend in enumerate(backends_list, 1):
         name = backend.get("name", "Unknown")
         url = backend.get("url", "Unknown")
         config = backend.get("config", {})
