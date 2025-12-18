@@ -180,7 +180,7 @@ async def benchmark_backend(
         import traceback
 
         traceback.print_exc()
-        return {"backend": backend_name, "config": config or {}, "success": False, "error": str(e)}
+        return {"backend": backend_name, "success": False, "error": str(e)}
 
 
 async def run_all_benchmarks(

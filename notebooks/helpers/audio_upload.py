@@ -172,20 +172,17 @@ def transcribe_with_whisper(
     audio_data,
     sample_rate,
     whisper_url="http://whisper-asr:8000",
-    beam_size=5,
-    vad_filter=True,
-    language="en",
 ):
     """
     Transcribe audio using Whisper ASR service.
+
+    Model settings (beam size, VAD, language) are configured via environment
+    variables in the Whisper service container (see .env file).
 
     Args:
         audio_data: Audio samples (float32, mono)
         sample_rate: Sample rate of audio
         whisper_url: URL of Whisper service
-        beam_size: Beam size for decoding (default: 5, higher = more accurate but slower)
-        vad_filter: Enable voice activity detection (default: True, improves accuracy)
-        language: Language code (default: 'en')
 
     Returns:
         str: Transcribed text
@@ -210,17 +207,12 @@ def transcribe_with_whisper(
         print(
             f"📤 Uploading {len(audio_data)/sample_rate:.1f}s audio ({len(wav_bytes)/1024:.1f} KB)..."
         )
-        print(f"⚙️ Settings: beam_size={beam_size}, vad_filter={vad_filter}, language={language}")
-
-        # Prepare transcription parameters
-        data = {"beam_size": beam_size, "vad_filter": vad_filter, "language": language}
 
         # Send for transcription with longer timeout for large files
         timeout = max(300, int(len(audio_data) / sample_rate * 2))  # At least 2x audio duration
         response = requests.post(
             f"{whisper_url}/transcribe",
             files={"file": ("audio.wav", wav_bytes, "audio/wav")},
-            data=data,
             timeout=timeout,
         )
 
