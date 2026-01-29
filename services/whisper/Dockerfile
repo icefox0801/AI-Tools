@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY --from=shared . /app/shared/
 
 # Copy application code
-COPY model.py whisper_service.py ./
+COPY whisper_model.py whisper_service.py ./
 
 # Copy download script LAST (changes here won't invalidate above layers)
 COPY download_models.sh .

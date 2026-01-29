@@ -66,6 +66,13 @@ DEFAULT_LANGUAGE = os.environ["WHISPER_LANGUAGE"]
 DEFAULT_CHUNK_DURATION_SEC = float(os.environ["WHISPER_CHUNK_DURATION_SEC"])
 DEFAULT_MIN_AUDIO_SEC = float(os.environ["WHISPER_MIN_AUDIO_SEC"])
 
+# Hallucination prevention settings
+NO_REPEAT_NGRAM_SIZE = int(os.environ["WHISPER_NO_REPEAT_NGRAM_SIZE"])
+TEMPERATURE = float(os.environ["WHISPER_TEMPERATURE"])
+COMPRESSION_RATIO_THRESHOLD = float(os.environ["WHISPER_COMPRESSION_RATIO_THRESHOLD"])
+LOGPROB_THRESHOLD = float(os.environ["WHISPER_LOGPROB_THRESHOLD"])
+NO_SPEECH_THRESHOLD = float(os.environ["WHISPER_NO_SPEECH_THRESHOLD"])
+
 
 # =============================================================================
 # FastAPI App
@@ -216,6 +223,11 @@ async def info():
         "model_loaded": state.loaded,
         "chunk_duration_sec": DEFAULT_CHUNK_DURATION_SEC,
         "min_audio_sec": DEFAULT_MIN_AUDIO_SEC,
+        "no_repeat_ngram_size": NO_REPEAT_NGRAM_SIZE,
+        "temperature": TEMPERATURE,
+        "compression_ratio_threshold": COMPRESSION_RATIO_THRESHOLD,
+        "logprob_threshold": LOGPROB_THRESHOLD,
+        "no_speech_threshold": NO_SPEECH_THRESHOLD,
     }
 
 
@@ -315,6 +327,11 @@ async def transcribe_file(file: UploadFile = File(...), language: str = "en"):
                 "task": "transcribe",
                 "language": language,
                 "num_beams": BEAM_SIZE,
+                "no_repeat_ngram_size": NO_REPEAT_NGRAM_SIZE,
+                "temperature": TEMPERATURE,
+                "compression_ratio_threshold": COMPRESSION_RATIO_THRESHOLD,
+                "logprob_threshold": LOGPROB_THRESHOLD,
+                "no_speech_threshold": NO_SPEECH_THRESHOLD,
             },
             return_timestamps=True,
         )
@@ -392,6 +409,11 @@ def transcribe_audio_with_config(
                 "task": "transcribe",
                 "language": language,
                 "num_beams": beam_size,
+                "no_repeat_ngram_size": NO_REPEAT_NGRAM_SIZE,
+                "temperature": TEMPERATURE,
+                "compression_ratio_threshold": COMPRESSION_RATIO_THRESHOLD,
+                "logprob_threshold": LOGPROB_THRESHOLD,
+                "no_speech_threshold": NO_SPEECH_THRESHOLD,
             },
             return_timestamps=False,
         )
