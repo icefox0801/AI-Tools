@@ -42,7 +42,7 @@ ENV HF_ENDPOINT=${HF_ENDPOINT}
 # Install PyTorch with CUDA 12.8 support (cached layer)
 # Use Tsinghua for PyTorch wheels + Aliyun for NVIDIA CUDA dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR} --extra-index-url ${PYPI_MIRROR}
+    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR}
 
 # Install dependencies (cached layer)
 COPY requirements.docker.txt .

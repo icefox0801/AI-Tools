@@ -49,7 +49,7 @@ RUN pip install --upgrade pip setuptools wheel
 # PyTorch 2.9+ is required for RTX 5070 Ti and other Blackwell GPUs
 # Cache mount stores downloads permanently in Docker's buildkit cache
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch==2.9.1 torchaudio==2.9.1 --index-url ${PYTORCH_CUDA_MIRROR} --extra-index-url ${PYPI_MIRROR}
+    pip install torch==2.9.1 torchaudio==2.9.1 --index-url ${PYTORCH_CUDA_MIRROR}
 
 # Install NeMo and dependencies
 # First install num2words from PyPI (not in Aliyun mirror)

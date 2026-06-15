@@ -52,7 +52,7 @@ ENV HF_ENDPOINT=${HF_ENDPOINT}
 # Cache mount stores downloads permanently in Docker's buildkit cache
 # Use Tsinghua for PyTorch wheels + Aliyun for NVIDIA CUDA dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR} --extra-index-url ${PYPI_MIRROR}
+    pip install torch torchvision torchaudio --index-url ${PYTORCH_CUDA_MIRROR}
 
 # Copy ONLY requirements first for better layer caching
 # (Code changes won't invalidate pip install layer)
