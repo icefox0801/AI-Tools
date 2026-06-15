@@ -366,6 +366,76 @@ services:
       retries: 3
       start_period: 30s
 
+  # Video Upscaler Service: Real-ESRGAN GPU video super-resolution (clarity enhancement)
+  # Offline batch processing - submit a video, poll progress, download the result.
+  # Pure-PyTorch network runs on RTX 5070 Ti (Blackwell sm_120) via PyTorch 2.9.1 + CUDA 12.8.
+  video-upscaler:
+    build:
+      context: ./services/video-upscaler
+      dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared                         # Shared Python modules
+      args:
+        APT_MIRROR: ${APT_MIRROR}
+        PYPI_MIRROR: ${PYPI_MIRROR}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST}
+        PYTORCH_CUDA_MIRROR: ${PYTORCH_CUDA_MIRROR}
+    image: video-upscaler:latest
+    container_name: video-upscaler
+    ports:
+      - "8005:8000"                                 # Port mapping: Video Upscaler API endpoint
+    volumes:
+      - video-upscaler-weights:/app/weights         # Real-ESRGAN weights (downloaded once, ~250MB)
+      - video-upscaler-data:/app/data               # Uploaded inputs + upscaled outputs
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - DEVICE=cuda
+      - WEIGHTS_DIR=/app/weights
+      - DATA_DIR=/app/data
+      - UPSCALER_TILE=${UPSCALER_TILE:-0}           # Tile size for VRAM control (0 = disabled, fastest; raise only if OOM)
+      - UPSCALER_HALF=${UPSCALER_HALF:-true}        # FP16 inference for speed
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Video Upscaler Web UI: Gradio frontend for the video-upscaler API
+  video-upscaler-ui:
+    build:
+      context: ./services/video-upscaler-ui
+      dockerfile: Dockerfile
+    image: video-upscaler-ui:latest
+    container_name: video-upscaler-ui
+    depends_on:
+      - video-upscaler
+    ports:
+      - "7861:7861"                                 # Port mapping: Gradio web interface
+    environment:
+      - UPSCALER_URL=http://video-upscaler:8000
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7861
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7861/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt
 volumes:
@@ -391,6 +461,8 @@ volumes:
   fastconformer-model-data:   # Stores HuggingFace/NeMo model cache for FastConformer (~3GB)
   fastconformer-nemo-cache:   # Stores NeMo-specific cache for FastConformer
   text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (pre-downloaded via download_models.sh)
+  video-upscaler-weights:     # Stores Real-ESRGAN model weights (~250MB, via download_models.sh)
+  video-upscaler-data:        # Stores uploaded videos and upscaled outputs
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
 networks:

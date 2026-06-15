@@ -1,0 +1,22 @@
+# Video Upscaler Service - Real-ESRGAN GPU video super-resolution
+# NOTE: torch / torchvision are installed separately in the Dockerfile
+#       (PyTorch 2.9.1 + CUDA 12.8) for Blackwell (sm_120) support.
+
+# Super-resolution engine
+realesrgan>=0.3.0
+basicsr>=1.4.2
+
+# Image / array processing
+# numpy and opencv are pinned to exact versions to prevent pip's dependency
+# resolver from backtracking (downloading many 70MB+ opencv wheels) while
+# searching for a build compatible with the numpy<2 constraint.
+# realesrgan depends on the full opencv-python (not headless); libgl1 is
+# installed in the image so the GUI build works fine on the server.
+numpy==1.26.4
+opencv-python==4.10.0.84
+Pillow>=10.0.0
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
