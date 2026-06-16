@@ -45,6 +45,8 @@ _INPUT_VID_H_MAX = 560  # upload widget — left-column, keep compact
 _INPUT_VID_TARGET_W = 400  # assumed left-column width for height calculation
 _VID_TARGET_W = 420  # each video inside the 2-column results row
 _IMG_TARGET_W = 420  # each image inside the 2-column comparison row
+_DEFAULT_VID_H = 320  # compact placeholder height (before source dims are known)
+_DEFAULT_IMG_H = 240  # compact placeholder height for comparison images
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -123,7 +125,7 @@ def _probe_video_dims(path: str) -> tuple[int, int]:
 def _compute_heights(w: int, h: int) -> dict:
     """Proportional display heights for upload widget, result videos, and comparison images."""
     if h == 0:
-        return {"input": 360, "video": 240, "image": 240}
+        return {"input": 360, "video": 240, "image": 240, "image_w": 320}
     aspect = w / h
     input_h = int(_INPUT_VID_TARGET_W / aspect)
     input_h = max(_VID_H_MIN, min(_INPUT_VID_H_MAX, input_h))  # compact cap for full-width widget
@@ -131,7 +133,8 @@ def _compute_heights(w: int, h: int) -> dict:
     video_h = max(_VID_H_MIN, min(_VID_H_MAX, video_h))
     image_h = int(_IMG_TARGET_W / aspect)
     image_h = max(_IMG_H_MIN, min(_IMG_H_MAX, image_h))
-    return {"input": input_h, "video": video_h, "image": image_h}
+    image_w = int(image_h * aspect)  # width at correct aspect ratio for the clamped height
+    return {"input": input_h, "video": video_h, "image": image_h, "image_w": image_w}
 
 
 def _progress_bar(pct: float) -> str:
@@ -153,89 +156,62 @@ def _fmt_duration(seconds: float) -> str:
     return f"{s}s"
 
 
-# ── main processing generator ─────────────────────────────────────────────────
+def _heights_from_res(resolution: str | None) -> dict | None:
+    """Parse 'WxH' resolution string and return height dict, or None on failure."""
+    if not resolution:
+        return None
+    try:
+        w, h = map(int, resolution.lower().split("x"))
+        return _compute_heights(w, h)
+    except Exception:  # noqa: BLE001
+        return None
 
 
-def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
+def _heights_from_image(img) -> dict | None:
+    """Derive height dict from a PIL Image's dimensions, or None on failure."""
+    try:
+        w, h = img.size
+        return _compute_heights(w, h)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# gr.skip() returns the same singleton each call — capture it once for identity checks.
+_SKIP = gr.skip()
+
+
+def _wrap_h(val, height: int | None):
+    """Return gr.update(value=val, height=height) or val unchanged."""
+    if height is None or val is None or isinstance(val, dict) or val is _SKIP:
+        return val
+    return gr.update(value=val, height=height)
+
+
+# ── shared job-polling generator ─────────────────────────────────────────────
+
+
+def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
     """
-    Submit a video to the backend and stream progress until completion.
+    Poll job_id until terminal state, yielding UI updates.
 
-    Yields updates for: (status, output_video, original_frame, upscaled_frame,
-                         frame_info, preview_video, frame_slider, frame_number,
-                         active_job_id).
+    Yields 8-tuples: (status, output_video, original_frame, upscaled_frame,
+                      frame_info, preview_video, frame_slider, active_job_id)
+
+    cancel_on_disconnect=True  → cancel the backend job if the client
+                                  disconnects (used when *we* submitted it).
+    cancel_on_disconnect=False → just stop watching (used when reattaching
+                                  to a job we didn't submit).
     """
     keep = gr.skip()
     hide_selector = gr.update(visible=False)
-
-    path = _extract_video_path(video_path)
-    if not path:
-        yield (
-            "⚠️ Please upload a video first.",
-            keep,
-            keep,
-            keep,
-            keep,
-            keep,
-            hide_selector,
-            "",
-        )
-        return
-
-    mode_map = {
-        "🎬 Standard": "standard",
-        "✨ Standard + Smooth": "tmix",
-        "🎯 BasicVSR++": "basicvsr",
-    }
-    api_mode = mode_map.get(temporal_mode, "standard")
-
-    try:
-        with open(path, "rb") as f:
-            files = {"file": (os.path.basename(path), f, "video/mp4")}
-            form = {
-                "model": model,
-                "outscale": str(outscale),
-                "denoise": str(denoise),
-                "tile": str(int(tile)),
-                "temporal_mode": api_mode,
-            }
-            resp = httpx.post(
-                f"{UPSCALER_URL}/upscale",
-                files=files,
-                data=form,
-                timeout=UPLOAD_TIMEOUT_SEC,
-            )
-        resp.raise_for_status()
-        job_id = resp.json()["job_id"]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Upload failed: %s", exc)
-        yield (
-            f"❌ Upload failed: {exc}",
-            keep,
-            keep,
-            keep,
-            keep,
-            keep,
-            hide_selector,
-            "",
-        )
-        return
-
-    logger.info("Submitted job %s (mode=%s)", job_id, api_mode)
-    yield (
-        f"⏳ Queued (job `{job_id}`). Processing will start shortly…",
-        keep,
-        keep,
-        keep,
-        keep,
-        keep,
-        hide_selector,
-        job_id,
-    )
 
     finished = False
     proc_start: float | None = None
     proc_start_frame = 0
     poll_count = 0
+    img_h: int | None = None  # set once on first comparison frame
+    img_w: int | None = None
+    vid_h: int | None = None
     try:
         while True:
             time.sleep(POLL_INTERVAL_SEC)
@@ -329,6 +305,14 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
                 comparison = _fetch_latest_comparison(job_id) if poll_count % 5 == 1 else None
                 orig_img = comparison["original"] if comparison else keep
                 upscaled_img = comparison["upscaled"] if comparison else keep
+                # Detect dimensions once from first comparison frame.
+                first_heights = False
+                if comparison and img_h is None:
+                    heights = _heights_from_image(comparison.get("original"))
+                    if heights:
+                        img_h = heights["image"]
+                        vid_h = heights["video"]
+                        first_heights = True
                 slider_upd = keep
                 if comparison and comparison.get("frames"):
                     frames_list = comparison["frames"]
@@ -344,13 +328,23 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
                 if poll_count % 15 == 0:
                     preview_vid = _download_preview_video(job_id) or keep
 
+                # On first height detection set video container heights to match
+                # images (height-only gr.update is safe; value+height crashes in
+                # Gradio 6.x via Video.postprocess).
+                if first_heights and vid_h is not None:
+                    output_vid_upd = gr.update(height=vid_h)
+                    preview_vid_upd = gr.update(height=vid_h)
+                else:
+                    output_vid_upd = keep
+                    preview_vid_upd = preview_vid
+
                 yield (
                     msg,
+                    output_vid_upd,
+                    _wrap_h(orig_img, img_h),
+                    _wrap_h(upscaled_img, img_h),
                     keep,
-                    orig_img,
-                    upscaled_img,
-                    keep,
-                    preview_vid,
+                    preview_vid_upd,
                     slider_upd,
                     job_id,
                 )
@@ -365,6 +359,7 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
                         keep,
                         keep,
                         "No frames available",
+                        keep,
                         keep,
                         job_id,
                     )
@@ -384,14 +379,32 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
 
             elif status == "cancelled":
                 finished = True
+                done_f = job.get("done_frames", 0)
+                total_f = job.get("total_frames", 0)
+                pct = job.get("progress", 0.0) * 100
+                progress_txt = f"{done_f}/{total_f} frames ({pct:.1f}%)" if total_f else "partial"
+                comp = _fetch_latest_comparison(job_id)
+                orig_img = comp["original"] if comp else keep
+                upscaled_img = comp["upscaled"] if comp else keep
+                slider_upd = hide_selector
+                if comp and comp.get("frames"):
+                    frames_list = comp["frames"]
+                    slider_upd = gr.update(
+                        minimum=frames_list[0],
+                        maximum=max(frames_list[-1], frames_list[0] + 1),
+                        value=comp["frame_idx"],
+                        step=1,
+                        visible=True,
+                    )
+                preview_vid = _download_preview_video(job_id) or keep
                 yield (
-                    "🛑 Job cancelled.",
+                    f"🛑 Cancelled — {progress_txt} completed.",
                     keep,
+                    orig_img,
+                    upscaled_img,
                     keep,
-                    keep,
-                    keep,
-                    keep,
-                    hide_selector,
+                    preview_vid,
+                    slider_upd,
                     job_id,
                 )
                 return
@@ -411,12 +424,92 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
                 return
 
     finally:
-        if not finished:
+        if not finished and cancel_on_disconnect:
             try:
                 httpx.delete(f"{UPSCALER_URL}/jobs/{job_id}", timeout=10)
                 logger.info("Cancelled job %s (client disconnected)", job_id)
             except Exception:  # noqa: BLE001
                 pass
+
+
+# ── main processing generator ─────────────────────────────────────────────────
+
+
+def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
+    """
+    Submit a video to the backend and stream progress until completion.
+
+    Yields updates for: (status, output_video, original_frame, upscaled_frame,
+                         frame_info, preview_video, frame_slider, active_job_id).
+    """
+    keep = gr.skip()
+    hide_selector = gr.update(visible=False)
+
+    path = _extract_video_path(video_path)
+    if not path:
+        yield (
+            "⚠️ Please upload a video first.",
+            keep,
+            keep,
+            keep,
+            keep,
+            keep,
+            hide_selector,
+            "",
+        )
+        return
+
+    mode_map = {
+        "🎬 Standard": "standard",
+        "✨ Standard + Smooth": "tmix",
+        "🎯 BasicVSR++": "basicvsr",
+    }
+    api_mode = mode_map.get(temporal_mode, "standard")
+
+    try:
+        with open(path, "rb") as f:
+            files = {"file": (os.path.basename(path), f, "video/mp4")}
+            form = {
+                "model": model,
+                "outscale": str(outscale),
+                "denoise": str(denoise),
+                "tile": str(int(tile)),
+                "temporal_mode": api_mode,
+            }
+            resp = httpx.post(
+                f"{UPSCALER_URL}/upscale",
+                files=files,
+                data=form,
+                timeout=UPLOAD_TIMEOUT_SEC,
+            )
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Upload failed: %s", exc)
+        yield (
+            f"❌ Upload failed: {exc}",
+            keep,
+            keep,
+            keep,
+            keep,
+            keep,
+            hide_selector,
+            "",
+        )
+        return
+
+    logger.info("Submitted job %s (mode=%s)", job_id, api_mode)
+    yield (
+        f"⏳ Queued (job `{job_id}`). Processing will start shortly…",
+        None,  # clear output video
+        gr.update(value=None, height=_DEFAULT_IMG_H),  # clear + reset original frame
+        gr.update(value=None, height=_DEFAULT_IMG_H),  # clear + reset upscaled frame
+        keep,
+        None,  # clear preview video
+        hide_selector,
+        job_id,
+    )
+    yield from _stream_job(job_id, cancel_on_disconnect=True)
 
 
 # ── result / preview helpers ──────────────────────────────────────────────────
@@ -509,6 +602,32 @@ def _fetch_jobs() -> list[dict]:
     return r.json().get("jobs", [])
 
 
+def _fetch_disk_jobs() -> list[dict]:
+    """Fetch all jobs discovered from disk (full history)."""
+    try:
+        r = httpx.get(f"{UPSCALER_URL}/jobs/discover", timeout=10)
+        r.raise_for_status()
+        return r.json().get("jobs", [])
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Disk jobs fetch failed: %s", exc)
+        return []
+
+
+def _format_prev_job_label(j: dict) -> str:
+    """Human-readable label for a historical job dropdown entry."""
+    status = j.get("status", "?")
+    icon = {"done": "✅", "error": "❌", "cancelled": "🛑", "processing": "🔄", "queued": "⏳"}.get(
+        status, "•"
+    )
+    filename = os.path.basename(j.get("filename", "video"))
+    ts = j.get("finished_at") or j.get("created_at")
+    date_str = time.strftime("%m/%d %H:%M", time.localtime(ts)) if ts else "?"
+    model = j.get("model", "")
+    short_model = model.split("_")[0] if model else ""
+    outscale = j.get("outscale", "")
+    return f"{icon} {j['id'][:8]} | {filename} | x{outscale:g} {short_model} | {date_str}"
+
+
 def _format_job_line(job: dict) -> str:
     """Readable single-line job summary for queue display and selector labels."""
     status = job.get("status", "unknown")
@@ -546,6 +665,113 @@ def _queue_view(closed_ids: list[str] | None) -> tuple[str, list[tuple[str, str]
 
     choices = [(_format_job_line(j), j["id"]) for j in jobs]
     return "\n".join(lines), choices, None
+
+
+def refresh_prev_jobs():
+    """Return updated choices for the previous-jobs dropdown."""
+    jobs = _fetch_disk_jobs()
+    choices = [(_format_prev_job_label(j), j["id"]) for j in jobs]
+    return gr.update(choices=choices, value=None)
+
+
+def load_previous_job(job_id: str | None):
+    """Load a historical job's results; reattach as live stream if still running."""
+    keep = gr.skip()
+    hide_slider = gr.update(visible=False)
+
+    if not job_id:
+        yield "⚠️ Select a job to load.", keep, keep, keep, keep, keep, hide_slider, ""
+        return
+
+    try:
+        r = httpx.get(f"{UPSCALER_URL}/jobs/{job_id}", timeout=10)
+        if r.status_code == 404:
+            yield f"❌ Job `{job_id[:8]}` not found.", keep, keep, keep, keep, keep, hide_slider, ""
+            return
+        r.raise_for_status()
+        job = r.json()
+    except Exception as exc:  # noqa: BLE001
+        yield f"❌ Failed to fetch job: {exc}", keep, keep, keep, keep, keep, hide_slider, ""
+        return
+
+    status = job.get("status", "unknown")
+
+    # Still running — clear stale UI and reattach to the live stream.
+    if status in ("queued", "processing"):
+        yield (
+            f"⏳ Reattaching to job `{job_id[:8]}`…",
+            None,
+            gr.update(value=None, height=_DEFAULT_IMG_H),
+            gr.update(value=None, height=_DEFAULT_IMG_H),
+            keep,
+            None,
+            hide_slider,
+            job_id,
+        )
+        # cancel_on_disconnect=False: closing the page must not kill the job.
+        yield from _stream_job(job_id, cancel_on_disconnect=False)
+        return
+
+    # Terminal states — build status banner then load whatever artifacts exist.
+    if status == "done":
+        res = job.get("result") or {}
+        banner = (
+            f"### ✅ Done (loaded from history)\n"
+            f"{res.get('source_resolution', '?')} → "
+            f"**{res.get('output_resolution', '?')}** "
+            f"({res.get('frames', '?')} frames · model `{job['model']}` · "
+            f"x{job['outscale']:g} · mode `{job.get('temporal_mode', 'standard')}`)"
+        )
+    elif status == "cancelled":
+        done_f = job.get("done_frames", 0)
+        total_f = job.get("total_frames", 0)
+        pct = job.get("progress", 0.0) * 100
+        progress_txt = f"{done_f}/{total_f} frames ({pct:.1f}%)" if total_f else "partial"
+        banner = f"### 🛑 Cancelled — {progress_txt} completed\n_Showing frames captured before cancellation._"
+    elif status == "error":
+        banner = f"### ❌ Failed: {job.get('error', 'unknown error')}\n_Showing frames captured before the error._"
+    else:
+        yield f"⚠️ Unknown status: {status}", keep, keep, keep, keep, keep, hide_slider, job_id
+        return
+
+    out_path = _download_result(job_id) if status == "done" else None
+    preview_vid = _download_preview_video(job_id)
+    comp = _fetch_latest_comparison(job_id)
+    orig_img = comp["original"] if comp else keep
+    upscaled_img = comp["upscaled"] if comp else keep
+
+    # Compute image dimensions from comparison frame for proper aspect-ratio sizing.
+    img_h = None
+    if comp:
+        _h = _heights_from_image(comp.get("original"))
+        if _h:
+            img_h = _h["image"]
+
+    # For empty video slots reset to compact height (height-only gr.update is safe;
+    # gr.update(value=path, height=x) crashes via Gradio 6.x Video.postprocess).
+    out_video_upd = out_path if out_path is not None else gr.update(value=None, height=_DEFAULT_VID_H)
+    prev_video_upd = preview_vid if preview_vid is not None else gr.update(value=None, height=_DEFAULT_VID_H)
+
+    slider_upd = hide_slider
+    if comp and comp.get("frames"):
+        frames_list = comp["frames"]
+        slider_upd = gr.update(
+            minimum=frames_list[0],
+            maximum=max(frames_list[-1], frames_list[0] + 1),
+            value=comp["frame_idx"],
+            step=1,
+            visible=True,
+        )
+    yield (
+        banner,
+        out_video_upd,
+        _wrap_h(orig_img, img_h),
+        _wrap_h(upscaled_img, img_h),
+        keep,
+        prev_video_upd,
+        slider_upd,
+        job_id,
+    )
 
 
 def refresh_job_queue(closed_ids: list[str] | None):
@@ -654,6 +880,19 @@ def build_ui() -> gr.Blocks:
                 )
                 # Injected after upload to constrain widget to the video's aspect ratio
                 css_injector = gr.HTML("", visible=False, elem_id="css_injector")
+
+                with gr.Accordion("📂 Load Previous Job", open=False):
+                    prev_job_selector = gr.Dropdown(
+                        choices=[],
+                        value=None,
+                        label="Select a previous job",
+                        interactive=True,
+                    )
+                    with gr.Row():
+                        refresh_prev_btn = gr.Button("🔄 Refresh list", size="sm")
+                        load_prev_btn = gr.Button(
+                            "📂 Load selected", size="sm", variant="secondary"
+                        )
 
                 gr.Markdown("### ⚙️ Settings")
 
@@ -810,6 +1049,7 @@ def build_ui() -> gr.Blocks:
                 "margin-left:auto!important;margin-right:auto!important;}}"
                 "</style>"
             )
+            iw = heights["image_w"]  # noqa: F841 (kept for reference)
             return (
                 gr.update(height=input_h),  # input_video
                 gr.update(height=ih),  # original_frame
@@ -1007,6 +1247,38 @@ def build_ui() -> gr.Blocks:
             inputs=[closed_jobs],
             outputs=[queue_display, queue_selector],
             queue=False,
+        )
+        demo.load(
+            refresh_prev_jobs,
+            inputs=None,
+            outputs=[prev_job_selector],
+            queue=False,
+        )
+        refresh_queue_btn.click(
+            refresh_job_queue,
+            inputs=[closed_jobs],
+            outputs=[queue_display, queue_selector],
+            queue=False,
+        )
+        refresh_prev_btn.click(
+            refresh_prev_jobs,
+            inputs=None,
+            outputs=[prev_job_selector],
+            queue=False,
+        )
+        load_prev_btn.click(
+            load_previous_job,
+            inputs=[prev_job_selector],
+            outputs=[
+                status,
+                output_video,
+                original_frame,
+                upscaled_frame,
+                frame_info,
+                preview_video,
+                frame_slider,
+                active_job_id,
+            ],
         )
         refresh_queue_btn.click(
             refresh_job_queue,

@@ -89,7 +89,12 @@ def _resize_for_preview(img: np.ndarray, max_w: int = 640) -> np.ndarray:
 
 
 def _start_encoder(
-    width: int, height: int, fps: float, input_path: str, has_audio: bool, output_path: str,
+    width: int,
+    height: int,
+    fps: float,
+    input_path: str,
+    has_audio: bool,
+    output_path: str,
     hqdn3d_tmp: int = 4,
 ) -> subprocess.Popen:
     """Launch an FFmpeg encoder that reads raw BGR frames from stdin."""
@@ -480,34 +485,32 @@ def _upscale_video_esrgan(
                             if os.path.exists(upscaled_file):
                                 os.remove(upscaled_file)
 
-            # Rolling preview video: save frames and regenerate clip every 60 frames.
+            # Rolling preview video: save every upscaled frame, regenerate clip every 30.
             if preview_video_dir and preview_video_path:
-                # Save every 3rd frame to keep storage reasonable.
-                if idx % 3 == 0:
-                    frame_path = os.path.join(preview_video_dir, f"frame_{idx:06d}.jpg")
-                    ok, buf = cv2.imencode(".jpg", output, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                    if ok:
-                        with open(frame_path, "wb") as f:
-                            f.write(buf.tobytes())
-                        # Keep only the last 120 frames (~3-5 seconds at typical framerates).
-                        all_frames = sorted(
-                            [
-                                f
-                                for f in os.listdir(preview_video_dir)
-                                if f.startswith("frame_") and f.endswith(".jpg")
-                            ],
-                            key=lambda x: int(x.split("_")[1].split(".")[0]),
-                        )
-                        if len(all_frames) > 120:
-                            for old_frame in all_frames[:-120]:
-                                os.remove(os.path.join(preview_video_dir, old_frame))
-                # Generate preview video every 60 frames.
-                if idx % 60 == 0:
-                    # Preview stores every 3rd frame, so encode at fps/3 to keep real-time speed.
+                frame_path = os.path.join(preview_video_dir, f"frame_{idx:06d}.jpg")
+                ok, buf = cv2.imencode(".jpg", output, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                if ok:
+                    with open(frame_path, "wb") as f:
+                        f.write(buf.tobytes())
+                    # Keep only the last 3 seconds worth of frames.
+                    keep = max(30, int(fps * 3))
+                    all_frames = sorted(
+                        [
+                            f
+                            for f in os.listdir(preview_video_dir)
+                            if f.startswith("frame_") and f.endswith(".jpg")
+                        ],
+                        key=lambda x: int(x.split("_")[1].split(".")[0]),
+                    )
+                    if len(all_frames) > keep:
+                        for old_frame in all_frames[:-keep]:
+                            os.remove(os.path.join(preview_video_dir, old_frame))
+                # Regenerate preview video every 30 frames at original fps for smooth playback.
+                if idx % 30 == 0:
                     _generate_preview_video(
                         preview_video_dir,
                         preview_video_path,
-                        max(1.0, fps / 3.0),
+                        fps,
                     )
 
             if progress_cb:
@@ -749,13 +752,15 @@ def _upscale_video_basicvsr(
                             if os.path.exists(upscaled_file):
                                 os.remove(upscaled_file)
 
-            # Rolling preview video: save every 3rd upscaled frame, regenerate clip every 15.
-            if preview_video_dir and done % 3 == 0:
+            # Rolling preview video: save every upscaled frame, regenerate clip every 15.
+            if preview_video_dir:
                 frame_path = os.path.join(preview_video_dir, f"frame_{done:06d}.jpg")
-                ok, buf = cv2.imencode(".jpg", out_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                ok, buf = cv2.imencode(".jpg", out_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
                 if ok:
                     with open(frame_path, "wb") as fh:
                         fh.write(buf.tobytes())
+                    # Keep only the last 3 seconds worth of frames.
+                    keep = max(30, int(fps * 3))
                     all_frames = sorted(
                         [
                             ff
@@ -764,14 +769,14 @@ def _upscale_video_basicvsr(
                         ],
                         key=lambda x: int(x.split("_")[1].split(".")[0]),
                     )
-                    if len(all_frames) > 120:
-                        for old in all_frames[:-120]:
+                    if len(all_frames) > keep:
+                        for old in all_frames[:-keep]:
                             os.remove(os.path.join(preview_video_dir, old))
                 if preview_video_path and done % 15 == 0:
                     _generate_preview_video(
                         preview_video_dir,
                         preview_video_path,
-                        max(1.0, fps / 3.0),
+                        fps,
                     )
 
             if progress_cb:

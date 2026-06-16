@@ -18,8 +18,10 @@ Endpoints:
 
 import base64
 import io
+import json
 import os
 import shutil
+import time
 import uuid
 
 import cv2
@@ -29,7 +31,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from jobs import JobManager
+from jobs import Job, JobManager
 from pipeline import upscale_video
 from log_setup import setup_logging
 from upscaler_model import DEFAULT_MODEL, MODELS, list_models
@@ -48,6 +50,25 @@ os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ALLOWED_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv"}
+
+
+def _save_job_meta(job_dir: str, job: "Job") -> None:
+    """Atomically write job metadata to <job_dir>/job.json."""
+    try:
+        path = os.path.join(job_dir, "job.json")
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(job.to_dict(), f)
+        os.replace(tmp, path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not save job metadata: %s", exc)
+
+
+def _on_job_finish(job: "Job") -> None:
+    """Persist final job state to disk after the worker finishes."""
+    job_dir = os.path.dirname(job.output_path)
+    if os.path.isdir(job_dir):
+        _save_job_meta(job_dir, job)
 
 
 def _process(job, progress_cb, cancel_cb) -> dict:
@@ -73,7 +94,7 @@ def _process(job, progress_cb, cancel_cb) -> dict:
     )
 
 
-manager = JobManager(processor=_process)
+manager = JobManager(processor=_process, on_finish=_on_job_finish)
 
 app = FastAPI(title="Video Upscaler Service", version=__version__)
 app.add_middleware(
@@ -83,6 +104,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _restore_disk_jobs() -> None:
+    """On startup, reload completed jobs from disk so history survives restarts."""
+    if not os.path.isdir(OUTPUT_DIR):
+        return
+    count = 0
+    for token in os.listdir(OUTPUT_DIR):
+        meta_path = os.path.join(OUTPUT_DIR, token, "job.json")
+        if not os.path.exists(meta_path):
+            continue
+        try:
+            with open(meta_path) as f:
+                data = json.load(f)
+            # Mark jobs that were still running when the service died as errors.
+            if data.get("status") in ("queued", "processing"):
+                data["status"] = "error"
+                data["error"] = "Interrupted (service restarted)"
+                data.setdefault("finished_at", time.time())
+            job = Job(**{k: v for k, v in data.items() if k in Job.__dataclass_fields__})
+            with manager._lock:
+                if job.id not in manager._jobs:
+                    manager._jobs[job.id] = job
+                    count += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not restore job from %s: %s", meta_path, exc)
+    if count:
+        logger.info("Restored %d historical job(s) from disk", count)
 
 
 @app.get("/health")
@@ -175,6 +225,8 @@ async def upscale(
         tile=tile if tile > 0 else None,
         temporal_mode=temporal_mode,
     )
+    # Persist initial state so the job survives a service restart.
+    _save_job_meta(job_dir, job)
     logger.info(
         "Queued job %s (%s, model=%s, x%s, mode=%s)",
         job.id,
@@ -184,6 +236,34 @@ async def upscale(
         temporal_mode,
     )
     return {"job_id": job.id, "status": job.status}
+
+
+@app.get("/jobs/discover")
+async def discover_jobs():
+    """Scan the output directory and return all jobs found on disk (history)."""
+    if not os.path.isdir(OUTPUT_DIR):
+        return {"jobs": []}
+    tokens = sorted(
+        os.listdir(OUTPUT_DIR),
+        key=lambda t: os.path.getmtime(os.path.join(OUTPUT_DIR, t)),
+        reverse=True,
+    )
+    result = []
+    for token in tokens:
+        meta_path = os.path.join(OUTPUT_DIR, token, "job.json")
+        if not os.path.exists(meta_path):
+            continue
+        try:
+            with open(meta_path) as f:
+                data = json.load(f)
+            # Merge with live in-memory state if available.
+            live = manager.get(data.get("id", ""))
+            if live:
+                data = live.to_dict()
+            result.append(data)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Error reading %s: %s", meta_path, exc)
+    return {"jobs": result}
 
 
 @app.get("/jobs")

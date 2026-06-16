@@ -49,9 +49,15 @@ class Job:
 class JobManager:
     """Thread-safe job queue with a single worker."""
 
-    def __init__(self, processor: Callable | None = None, retention: int = 50):
+    def __init__(
+        self,
+        processor: Callable | None = None,
+        retention: int = 50,
+        on_finish: Callable | None = None,
+    ):
         # processor(job, progress_cb, cancel_cb) -> result dict
         self._processor = processor
+        self._on_finish = on_finish  # called with Job after every terminal state
         self._jobs: dict[str, Job] = {}
         self._queue: Queue[str] = Queue()
         self._lock = threading.Lock()
@@ -98,6 +104,12 @@ class JobManager:
             job = self.get(job_id)
             if job is None or job.status == "cancelled":
                 self._queue.task_done()
+                # Still notify on_finish so job.json is updated to final state.
+                if job is not None and self._on_finish is not None:
+                    try:
+                        self._on_finish(job)
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
 
             job.status = "processing"
@@ -127,6 +139,12 @@ class JobManager:
             finally:
                 job.finished_at = time.time()
                 self._queue.task_done()
+
+            if self._on_finish is not None:
+                try:
+                    self._on_finish(job)
+                except Exception:  # noqa: BLE001 - callback failures must not crash the worker
+                    pass
 
     def _evict_locked(self) -> None:
         """Drop oldest finished jobs beyond the retention limit."""
