@@ -29,6 +29,7 @@ class Job:
     outscale: float
     denoise: float
     tile: int | None
+    temporal_mode: str = "standard"  # standard | tmix | basicvsr
     status: str = "queued"  # queued | processing | done | error | cancelled
     progress: float = 0.0  # 0.0 - 1.0
     done_frames: int = 0

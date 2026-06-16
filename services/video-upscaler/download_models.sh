@@ -21,6 +21,9 @@ WEIGHTS=(
     "RealESRGAN_x4plus.pth|${RELEASE}/v0.1.0/RealESRGAN_x4plus.pth"
     "RealESRGAN_x4plus_anime_6B.pth|${RELEASE}/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth"
     "RealESRGAN_x2plus.pth|${RELEASE}/v0.2.1/RealESRGAN_x2plus.pth"
+    # BasicVSR++ temporal model + SPyNet optical-flow backbone
+    "spynet_20210409-c6c1bd09.pth|https://download.openmmlab.com/mmediting/restorers/basicvsr/spynet_20210409-c6c1bd09.pth"
+    "basicvsr_plusplus_c64n7_8x1_600k_reds4.pth|https://download.openmmlab.com/mmediting/restorers/basicvsr_plusplus/basicvsr_plusplus_c64n7_8x1_600k_reds4_20210217-db622b2f.pth"
 )
 
 download() {

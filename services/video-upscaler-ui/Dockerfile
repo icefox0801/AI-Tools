@@ -10,9 +10,10 @@ WORKDIR /app
 RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
     sed -i "s|deb.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list 2>/dev/null || true
 
-# Install system dependencies
+# Install system dependencies (ffmpeg for video probing/aspect-ratio detection)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure pip for China mirrors (Aliyun)

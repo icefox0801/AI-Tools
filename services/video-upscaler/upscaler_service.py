@@ -16,10 +16,14 @@ Endpoints:
   DELETE /jobs/{job_id}        - cancel a queued/running job
 """
 
+import base64
+import io
 import os
 import shutil
 import uuid
 
+import cv2
+import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +52,11 @@ ALLOWED_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv"}
 
 def _process(job, progress_cb, cancel_cb) -> dict:
     """Adapter between JobManager and the upscaling pipeline."""
+    job_dir = os.path.dirname(job.output_path)
+    preview_video_dir = os.path.join(job_dir, "preview_frames")
+    os.makedirs(preview_video_dir, exist_ok=True)
+    preview_video_path = os.path.join(job_dir, "preview_video.mp4")
+
     return upscale_video(
         input_path=job.input_path,
         output_path=job.output_path,
@@ -57,7 +66,10 @@ def _process(job, progress_cb, cancel_cb) -> dict:
         tile=job.tile,
         progress_cb=progress_cb,
         cancel_cb=cancel_cb,
-        preview_path=job.output_path + ".preview.jpg",
+        preview_path=os.path.join(job_dir, "preview.jpg"),
+        preview_video_dir=preview_video_dir,
+        preview_video_path=preview_video_path,
+        temporal_mode=job.temporal_mode,
     )
 
 
@@ -123,6 +135,7 @@ async def upscale(
     outscale: float = Form(4.0),
     denoise: float = Form(1.0),
     tile: int = Form(DEFAULT_TILE),
+    temporal_mode: str = Form("standard"),
 ):
     """Accept a video and queue it for upscaling. Returns a job id immediately."""
     if model not in MODELS:
@@ -136,11 +149,15 @@ async def upscale(
         raise HTTPException(400, "outscale must be between 1.0 and 4.0")
     if not 0.0 <= denoise <= 1.0:
         raise HTTPException(400, "denoise must be between 0.0 and 1.0")
+    if temporal_mode not in ("standard", "tmix", "basicvsr"):
+        raise HTTPException(400, f"Unknown temporal_mode '{temporal_mode}'")
 
     token = uuid.uuid4().hex[:12]
     safe_stem = os.path.splitext(os.path.basename(file.filename or "video"))[0]
+    job_dir = os.path.join(OUTPUT_DIR, token)
+    os.makedirs(job_dir, exist_ok=True)
     input_path = os.path.join(INPUT_DIR, f"{token}{ext}")
-    output_path = os.path.join(OUTPUT_DIR, f"{safe_stem}_x{outscale:g}_{token}.mp4")
+    output_path = os.path.join(job_dir, f"{safe_stem}_x{outscale:g}.mp4")
 
     try:
         with open(input_path, "wb") as f:
@@ -156,8 +173,16 @@ async def upscale(
         outscale=outscale,
         denoise=denoise,
         tile=tile if tile > 0 else None,
+        temporal_mode=temporal_mode,
     )
-    logger.info("Queued job %s (%s, model=%s, x%s)", job.id, file.filename, model, outscale)
+    logger.info(
+        "Queued job %s (%s, model=%s, x%s, mode=%s)",
+        job.id,
+        file.filename,
+        model,
+        outscale,
+        temporal_mode,
+    )
     return {"job_id": job.id, "status": job.status}
 
 
@@ -180,10 +205,73 @@ async def preview(job_id: str):
     job = manager.get(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-    ppath = job.output_path + ".preview.jpg"
+    ppath = os.path.join(os.path.dirname(job.output_path), "preview.jpg")
     if not os.path.exists(ppath):
         raise HTTPException(404, "No preview available yet")
     return FileResponse(ppath, media_type="image/jpeg")
+
+
+@app.get("/jobs/{job_id}/preview-video")
+async def preview_video(job_id: str):
+    """Return a rolling 3-5 second preview video of the most recent frames."""
+    job = manager.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    pvpath = os.path.join(os.path.dirname(job.output_path), "preview_video.mp4")
+    if not os.path.exists(pvpath):
+        raise HTTPException(404, "No preview video available yet")
+    return FileResponse(pvpath, media_type="video/mp4")
+
+
+@app.get("/jobs/{job_id}/comparison-frames")
+async def comparison_frames(job_id: str):
+    """List available frame indices for before/after comparison."""
+    job = manager.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    preview_dir = os.path.join(os.path.dirname(job.output_path), "preview_frames")
+    if not os.path.exists(preview_dir):
+        return {"frames": []}
+    orig_files = sorted(
+        [f for f in os.listdir(preview_dir) if f.startswith("orig_")],
+        key=lambda x: int(x.split("_")[1].split(".")[0]),
+    )
+    frame_indices = [int(f.split("_")[1].split(".")[0]) for f in orig_files]
+    return {"frames": frame_indices}
+
+
+@app.get("/jobs/{job_id}/comparison/{frame_idx}")
+async def comparison(job_id: str, frame_idx: int):
+    """Return original and upscaled images for a specific frame."""
+    job = manager.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    preview_dir = os.path.join(os.path.dirname(job.output_path), "preview_frames")
+    orig_path = os.path.join(preview_dir, f"orig_{frame_idx:06d}.jpg")
+    upscaled_path = os.path.join(preview_dir, f"upscaled_{frame_idx:06d}.jpg")
+    if not os.path.exists(orig_path) or not os.path.exists(upscaled_path):
+        raise HTTPException(404, "Comparison not available for this frame")
+
+    def _encode(path: str) -> str:
+        """Read a JPEG, downscale to max 640px wide, return base64 data-URI."""
+        img = cv2.imread(path)
+        if img is not None:
+            h, w = img.shape[:2]
+            if w > 640:
+                scale = 640.0 / w
+                img = cv2.resize(img, (640, int(round(h * scale))), interpolation=cv2.INTER_AREA)
+            ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if ok:
+                return base64.b64encode(buf.tobytes()).decode()
+        # fallback: return raw file bytes as-is
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+
+    return {
+        "frame_idx": frame_idx,
+        "original": f"data:image/jpeg;base64,{_encode(orig_path)}",
+        "upscaled": f"data:image/jpeg;base64,{_encode(upscaled_path)}",
+    }
 
 
 @app.get("/jobs/{job_id}/download")
