@@ -49,17 +49,28 @@ def fetch_models() -> list[str]:
         ]
 
 
-def upscale(video_path, model, outscale, denoise, tile, progress=gr.Progress()):
+def _progress_bar(pct: float) -> str:
+    """Inline HTML progress bar that updates smoothly without flicker."""
+    p = max(0.0, min(1.0, pct)) * 100
+    return (
+        f'<div style="background:#e5e7eb;border-radius:6px;height:14px;width:100%;overflow:hidden">'
+        f'<div style="background:#6366f1;height:100%;width:{p:.1f}%;transition:width .3s"></div></div>'
+    )
+
+
+def upscale(video_path, model, outscale, denoise, tile):
     """
     Submit a video to the backend and stream progress until completion.
 
-    Yields (status_markdown, output_video_path_or_None, preview_image_or_None).
+    Yields per-component updates for (status, output_video, download, live_preview).
+    Unchanged components are sent gr.skip() so they never re-render (no flicker).
     """
+    keep = gr.skip()  # sentinel: leave a component untouched
+
     if not video_path:
-        yield "⚠️ Please upload a video first.", None, None
+        yield "⚠️ Please upload a video first.", keep, keep, keep
         return
 
-    progress(0, desc="Uploading video...")
     try:
         with open(video_path, "rb") as f:
             files = {"file": (os.path.basename(video_path), f, "video/mp4")}
@@ -79,56 +90,76 @@ def upscale(video_path, model, outscale, denoise, tile, progress=gr.Progress()):
         job_id = resp.json()["job_id"]
     except Exception as exc:  # noqa: BLE001
         logger.error("Upload failed: %s", exc)
-        yield f"❌ Upload failed: {exc}", None, None
+        yield f"❌ Upload failed: {exc}", keep, keep, keep
         return
 
     logger.info("Submitted job %s", job_id)
-    yield f"⏳ Queued (job `{job_id}`). Processing will start shortly...", None, None
+    yield f"⏳ Queued (job `{job_id}`). Processing will start shortly…", keep, keep, keep
 
-    # Poll for progress
-    while True:
-        time.sleep(POLL_INTERVAL_SEC)
-        try:
-            jr = httpx.get(f"{UPSCALER_URL}/jobs/{job_id}", timeout=15)
-            jr.raise_for_status()
-            job = jr.json()
-        except Exception as exc:  # noqa: BLE001
-            yield f"❌ Lost connection to backend: {exc}", None, None
-            return
-
-        status = job["status"]
-        pct = job.get("progress", 0.0)
-        done_f = job.get("done_frames", 0)
-        total_f = job.get("total_frames", 0)
-
-        if status == "queued":
-            yield "⏳ Waiting in queue...", None, None
-        elif status == "processing":
-            progress(pct, desc=f"Upscaling frames {done_f}/{total_f}")
-            frames = f"{done_f}/{total_f} frames" if total_f else "starting..."
-            preview = _download_preview(job_id, done_f)
-            yield f"🚀 Processing — {frames} ({pct*100:.1f}%)", None, preview
-        elif status == "done":
-            progress(1.0, desc="Finalizing...")
-            out_path = _download_result(job_id)
-            if out_path is None:
-                yield "❌ Finished but could not download the result.", None, None
+    # Poll for progress. If the browser tab is closed/refreshed, Gradio closes
+    # this generator (GeneratorExit), so `finished` stays False and the finally
+    # block cancels the backend job instead of leaving the GPU busy.
+    finished = False
+    try:
+        while True:
+            time.sleep(POLL_INTERVAL_SEC)
+            try:
+                jr = httpx.get(f"{UPSCALER_URL}/jobs/{job_id}", timeout=15)
+                jr.raise_for_status()
+                job = jr.json()
+            except Exception as exc:  # noqa: BLE001
+                finished = True
+                yield f"❌ Lost connection to backend: {exc}", keep, keep, keep
                 return
-            res = job.get("result") or {}
-            summary = (
-                f"✅ Done! "
-                f"{res.get('source_resolution', '?')} → "
-                f"**{res.get('output_resolution', '?')}** "
-                f"({res.get('frames', total_f)} frames, model `{job['model']}`, x{job['outscale']:g})"
-            )
-            yield summary, out_path, None
-            return
-        elif status == "cancelled":
-            yield "🛑 Job cancelled.", None, None
-            return
-        else:  # error
-            yield f"❌ Failed: {job.get('error', 'unknown error')}", None, None
-            return
+
+            status = job["status"]
+            pct = job.get("progress", 0.0)
+            done_f = job.get("done_frames", 0)
+            total_f = job.get("total_frames", 0)
+
+            if status == "queued":
+                yield "⏳ Waiting in queue…", keep, keep, keep
+            elif status == "processing":
+                frames = f"{done_f}/{total_f} frames" if total_f else "preparing frames…"
+                msg = (
+                    f"### 🚀 Processing\n{frames} &nbsp; **{pct*100:.1f}%**\n\n{_progress_bar(pct)}"
+                )
+                preview = _download_preview(job_id, done_f)
+                # Only touch the preview when a new frame is available.
+                yield msg, keep, keep, (preview if preview else keep)
+            elif status == "done":
+                out_path = _download_result(job_id)
+                if out_path is None:
+                    finished = True
+                    yield "❌ Finished but could not download the result.", keep, keep, keep
+                    return
+                res = job.get("result") or {}
+                summary = (
+                    f"### ✅ Done\n"
+                    f"{res.get('source_resolution', '?')} → "
+                    f"**{res.get('output_resolution', '?')}** "
+                    f"({res.get('frames', total_f)} frames, model `{job['model']}`, "
+                    f"x{job['outscale']:g})"
+                )
+                finished = True
+                yield summary, out_path, out_path, keep
+                return
+            elif status == "cancelled":
+                finished = True
+                yield "🛑 Job cancelled.", keep, keep, keep
+                return
+            else:  # error
+                finished = True
+                yield f"❌ Failed: {job.get('error', 'unknown error')}", keep, keep, keep
+                return
+    finally:
+        if not finished:
+            # Client disconnected (page refresh/close) before completion.
+            try:
+                httpx.delete(f"{UPSCALER_URL}/jobs/{job_id}", timeout=10)
+                logger.info("Cancelled job %s (client disconnected)", job_id)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _download_preview(job_id: str, frame_no: int) -> str | None:
@@ -169,9 +200,9 @@ def _download_result(job_id: str) -> str | None:
 
 def build_ui() -> gr.Blocks:
     models = fetch_models()
-    default_model = "realesr-general-x4v3" if "realesr-general-x4v3" in models else models[0]
+    default_model = "RealESRGAN_x4plus" if "RealESRGAN_x4plus" in models else models[0]
 
-    with gr.Blocks(title="Video Upscaler", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="Video Upscaler") as demo:
         gr.Markdown(
             "# 🎬 Video Upscaler\n"
             "Enhance video clarity and resolution with **Real-ESRGAN** on your GPU."
@@ -187,25 +218,25 @@ def build_ui() -> gr.Blocks:
                         value=default_model,
                         label="Model",
                         scale=2,
-                        info="general-x4v3 = best default; anime_6B for animation",
+                        info="x4plus = max AI detail (default); general-x4v3 for noisy video; anime_6B for animation",
                     )
                     outscale = gr.Slider(
                         1.0,
                         4.0,
-                        value=2.0,
+                        value=4.0,
                         step=0.5,
                         label="Output scale",
                         scale=1,
-                        info="Final size multiplier",
+                        info="Final size multiplier (4 = max AI detail, native model scale)",
                     )
                 with gr.Accordion("Advanced settings", open=False):
                     denoise = gr.Slider(
                         0.0,
                         1.0,
-                        value=0.5,
+                        value=1.0,
                         step=0.05,
-                        label="Denoise strength (general-x4v3 only)",
-                        info="1.0 = max denoise/smooth, 0.0 = keep grain/detail",
+                        label="Detail strength (general-x4v3 only)",
+                        info="1.0 = sharpest, maximum AI detail · 0.0 = softer / denoised",
                     )
                     tile = gr.Slider(
                         0,
@@ -224,26 +255,21 @@ def build_ui() -> gr.Blocks:
                 live_preview = gr.Image(
                     label="Live preview — latest upscaled frame",
                     interactive=False,
-                    height=300,
+                    height=320,
                 )
-                with gr.Tab("Result"):
-                    output_video = gr.Video(label="Upscaled video", interactive=False, height=300)
-                    download = gr.File(label="Download", interactive=False)
+                output_video = gr.Video(label="Upscaled result", interactive=False, height=320)
+                download = gr.File(label="Download result", interactive=False)
 
         gr.Markdown(
             "ℹ️ GPU-bound and runs one video at a time. The live preview updates as frames "
             "finish; the full playable result appears when processing completes."
         )
 
-        def _run(v, m, o, d, t):
-            for msg, out, preview in upscale(v, m, o, d, t):
-                yield msg, out, out, preview
-
         run_btn.click(
-            _run,
+            upscale,
             inputs=[input_video, model, outscale, denoise, tile],
             outputs=[status, output_video, download, live_preview],
-            show_progress="minimal",
+            show_progress="hidden",
         )
 
     return demo
@@ -251,4 +277,6 @@ def build_ui() -> gr.Blocks:
 
 if __name__ == "__main__":
     logger.info("Starting Video Upscaler UI v%s (backend: %s)", __version__, UPSCALER_URL)
-    build_ui().queue().launch(server_name=SERVER_NAME, server_port=SERVER_PORT)
+    build_ui().queue().launch(
+        server_name=SERVER_NAME, server_port=SERVER_PORT, theme=gr.themes.Soft()
+    )

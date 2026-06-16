@@ -68,7 +68,7 @@ MODELS = {
     },
 }
 
-DEFAULT_MODEL = "realesr-general-x4v3"
+DEFAULT_MODEL = "RealESRGAN_x4plus"
 
 # Simple in-process cache: only one upsampler held at a time
 _current = {"key": None, "upsampler": None}

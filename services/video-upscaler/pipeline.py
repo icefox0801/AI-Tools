@@ -1,13 +1,15 @@
 """
 Video upscaling pipeline using FFmpeg + Real-ESRGAN.
 
-Steps (offline, quality-first):
-  1. Probe input for fps / audio.
-  2. Extract frames to PNG with FFmpeg.
-  3. Upscale each frame with Real-ESRGAN (GPU).
-  4. Reassemble frames into H.264 video, muxing the original audio back in.
+Streaming design (low latency, CPU/GPU overlap):
+  1. Probe input for fps / audio / size.
+  2. Decode frames straight from FFmpeg's stdout (raw BGR, no PNGs on disk).
+  3. Upscale each frame with Real-ESRGAN (GPU) as it arrives.
+  4. Pipe each upscaled frame into an FFmpeg encoder (H.264 + original audio).
 
-Progress is reported through a callback so the job manager can expose it.
+Decode (CPU), upscale (GPU) and encode (CPU) all run concurrently, so the
+GPU starts working within seconds instead of waiting for a full disk
+extraction pass. Progress is reported through a callback.
 """
 
 import json
@@ -18,6 +20,7 @@ import tempfile
 from collections.abc import Callable
 
 import cv2
+import numpy as np
 
 from log_setup import setup_logging
 from upscaler_model import get_upsampler
@@ -34,15 +37,82 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
     return proc
 
 
-def _write_preview(img, path: str, max_w: int = 640) -> None:
+def _first_frame_size(path: str) -> tuple[int, int]:
+    """Decode a single frame to learn the true (display-oriented) width/height."""
+    tmp = tempfile.mkdtemp(prefix="probe_")
+    fp = os.path.join(tmp, "f.png")
+    try:
+        _run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-frames:v", "1", fp]
+        )
+        img = cv2.imread(fp, cv2.IMREAD_COLOR)
+        if img is None:
+            raise RuntimeError("Could not decode the first frame.")
+        h, w = img.shape[:2]
+        return w, h
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _read_exact(stream, n: int) -> bytes | None:
+    """Read exactly n bytes from a stream; return None at end-of-stream."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = stream.read(n - len(buf))
+        if not chunk:
+            return None  # EOF (a trailing partial frame is discarded)
+        buf.extend(chunk)
+    return bytes(buf)
+
+
+def _start_encoder(
+    width: int, height: int, fps: float, input_path: str, has_audio: bool, output_path: str
+) -> subprocess.Popen:
+    """Launch an FFmpeg encoder that reads raw BGR frames from stdin."""
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "bgr24",
+        "-s",
+        f"{width}x{height}",
+        "-framerate",
+        f"{fps}",
+        "-i",
+        "pipe:0",
+    ]
+    if has_audio:
+        cmd += ["-i", input_path]
+    # crf 14 + slow preset: visually-lossless, keeps the AI-added high-frequency
+    # detail (larger files, which is acceptable here).
+    cmd += ["-c:v", "libx264", "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p"]
+    if has_audio:
+        cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+    cmd += [output_path]
+    logger.debug("ENCODER: %s", " ".join(cmd))
+    return subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+
+def _write_preview(img, path: str, max_w: int = 960) -> None:
     """Atomically write a small JPEG preview of the latest upscaled frame."""
     try:
         h, w = img.shape[:2]
         if w > max_w:
             scale = max_w / w
             img = cv2.resize(img, (max_w, int(h * scale)), interpolation=cv2.INTER_AREA)
+        # Encode explicitly (cv2.imwrite infers the format from the file
+        # extension, which would break on the ".tmp" temp filename below).
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not ok:
+            return
         tmp = f"{path}.tmp"
-        cv2.imwrite(tmp, img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        with open(tmp, "wb") as f:
+            f.write(buf.tobytes())
         os.replace(tmp, path)
     except Exception as exc:  # noqa: BLE001 - preview is best-effort, never fail the job
         logger.debug("Preview write failed: %s", exc)
@@ -58,11 +128,24 @@ def probe_video(path: str) -> dict:
             "-print_format",
             "json",
             "-show_streams",
+            "-show_format",
             path,
         ]
     )
     data = json.loads(proc.stdout)
-    info = {"fps": 30.0, "has_audio": False, "width": 0, "height": 0, "nb_frames": 0}
+    info = {
+        "fps": 30.0,
+        "has_audio": False,
+        "width": 0,
+        "height": 0,
+        "nb_frames": 0,
+        "duration": 0.0,
+    }
+
+    try:
+        info["duration"] = float(data.get("format", {}).get("duration", 0.0))
+    except (TypeError, ValueError):
+        info["duration"] = 0.0
 
     for stream in data.get("streams", []):
         if stream.get("codec_type") == "video":
@@ -117,93 +200,91 @@ def upscale_video(
     info = probe_video(input_path)
     fps = info["fps"]
 
+    # Best-effort total frame count for progress reporting.
+    total = info.get("nb_frames") or 0
+    if total <= 0 and info.get("duration", 0) > 0:
+        total = int(round(info["duration"] * fps))
+
     upsampler, meta = get_upsampler(model_name, denoise=denoise, tile=tile)
 
-    work = tempfile.mkdtemp(prefix="upscale_")
-    frames_in = os.path.join(work, "in")
-    frames_out = os.path.join(work, "out")
-    os.makedirs(frames_in, exist_ok=True)
-    os.makedirs(frames_out, exist_ok=True)
+    # True (display-oriented) frame size, so raw decoding lines up byte-for-byte.
+    width, height = _first_frame_size(input_path)
+    frame_bytes = width * height * 3
 
-    try:
-        # 1. Extract frames
-        logger.info("Extracting frames from %s", input_path)
-        _run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                input_path,
-                "-qscale:v",
-                "1",
-                "-qmin",
-                "1",
-                os.path.join(frames_in, "frame_%08d.png"),
-            ]
-        )
+    logger.info(
+        "Streaming upscale: %dx%d @ %.3ffps, ~%d frames (model=%s, outscale=%s)",
+        width,
+        height,
+        fps,
+        total,
+        model_name,
+        outscale,
+    )
 
-        frame_files = sorted(f for f in os.listdir(frames_in) if f.endswith(".png"))
-        total = len(frame_files)
-        if total == 0:
-            raise RuntimeError("No frames were extracted from the input video.")
-
-        logger.info("Upscaling %d frames (model=%s, outscale=%s)", total, model_name, outscale)
-
-        # 2. Upscale each frame
-        for idx, fname in enumerate(frame_files, start=1):
-            if cancel_cb and cancel_cb():
-                raise RuntimeError("Job cancelled")
-
-            img = cv2.imread(os.path.join(frames_in, fname), cv2.IMREAD_UNCHANGED)
-            if img is None:
-                raise RuntimeError(f"Failed to read frame {fname}")
-
-            output, _ = upsampler.enhance(img, outscale=outscale)
-            cv2.imwrite(os.path.join(frames_out, fname), output)
-
-            # Update the live preview every few frames (best-effort, cheap).
-            if preview_path and (idx == 1 or idx % 5 == 0):
-                _write_preview(output, preview_path)
-
-            if progress_cb:
-                progress_cb(idx, total)
-
-        # 3. Reassemble video (+ mux original audio if present)
-        logger.info("Reassembling video -> %s", output_path)
-        cmd = [
+    # Decoder: raw BGR frames straight from FFmpeg's stdout (no PNGs on disk).
+    decoder = subprocess.Popen(
+        [
             "ffmpeg",
             "-hide_banner",
             "-loglevel",
             "error",
-            "-y",
-            "-framerate",
-            f"{fps}",
             "-i",
-            os.path.join(frames_out, "frame_%08d.png"),
-        ]
-        if info["has_audio"]:
-            cmd += ["-i", input_path]
-        cmd += [
-            "-c:v",
-            "libx264",
-            "-preset",
-            "slow",
-            "-crf",
-            "16",
+            input_path,
+            "-f",
+            "rawvideo",
             "-pix_fmt",
-            "yuv420p",
-        ]
-        if info["has_audio"]:
-            cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k", "-shortest"]
-        cmd += [output_path]
-        _run(cmd)
+            "bgr24",
+            "pipe:1",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        bufsize=frame_bytes,
+    )
+    encoder: subprocess.Popen | None = None
+    idx = 0
+
+    try:
+        while True:
+            if cancel_cb and cancel_cb():
+                raise RuntimeError("Job cancelled")
+
+            buf = _read_exact(decoder.stdout, frame_bytes)
+            if buf is None:
+                break  # end of stream
+
+            frame = np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3).copy()
+            output, _ = upsampler.enhance(frame, outscale=outscale)
+            idx += 1
+
+            if encoder is None:
+                oh, ow = output.shape[:2]
+                encoder = _start_encoder(ow, oh, fps, input_path, info["has_audio"], output_path)
+
+            encoder.stdin.write(np.ascontiguousarray(output).tobytes())
+
+            # Live preview (best-effort, cheap).
+            if preview_path and (idx == 1 or idx % 5 == 0):
+                _write_preview(output, preview_path)
+
+            if progress_cb:
+                progress_cb(idx, total or idx)
+
+        if idx == 0:
+            raise RuntimeError("No frames were decoded from the input video.")
+
+        # Flush and finalize the encoder.
+        if encoder is not None:
+            encoder.stdin.close()
+            if encoder.wait() != 0:
+                raise RuntimeError("FFmpeg encoder failed while writing the output video.")
+
+        if decoder.wait() not in (0, None):
+            logger.warning("Decoder exited with code %s", decoder.returncode)
 
         out_info = probe_video(output_path)
         return {
             "output_path": output_path,
-            "frames": total,
+            "frames": idx,
             "model": model_name,
             "outscale": outscale,
             "source_resolution": f"{info['width']}x{info['height']}",
@@ -211,4 +292,10 @@ def upscale_video(
             "fps": round(fps, 3),
         }
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        # Make sure no FFmpeg process is left running on cancel/error.
+        for proc in (decoder, encoder):
+            if proc is not None and proc.poll() is None:
+                try:
+                    proc.kill()
+                except Exception:  # noqa: BLE001
+                    pass
