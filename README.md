@@ -6,6 +6,7 @@ Docker-based AI toolkit for real-time speech-to-text, audio transcription, and L
 
 - 🎤 **Live Captions** - Real-time speech-to-text overlay for meetings, videos, and calls
 - 📝 **Transcription** - Convert audio to searchable text with high accuracy
+- 🎬 **Video Upscaler** - GPU-accelerated video super-resolution with Real-ESRGAN and BasicVSR++
 - 🤖 **AI Summarization** - Automatically extract key points and create summaries
 - 💬 **Chat with Transcripts** - Ask questions about your content using local LLMs
 - 🔒 **100% Local** - No cloud APIs, no data sent elsewhere, full privacy
@@ -37,8 +38,9 @@ open http://localhost:7860
 
 **GPU Notes:**
 - **Vosk**: CPU only, works on any system
-- **Parakeet/Whisper**: Requires NVIDIA GPU with CUDA support
-- VRAM usage: ~4-6GB per ASR model loaded
+- **Parakeet/Whisper/FastConformer**: Requires NVIDIA GPU with CUDA support
+- **Video Upscaler**: Requires NVIDIA GPU with 8GB+ VRAM for 1080p, 12GB+ for 4K
+- VRAM usage: ~4-6GB per ASR model loaded, ~6-8GB for video upscaler
 - Multiple GPU models can run simultaneously with 12GB+ VRAM
 
 ---
@@ -147,6 +149,8 @@ Use the Chat tab to interact with your transcript:
 | Service | Port | Description |
 |---------|------|-------------|
 | audio-notes | 7860 | Web UI for transcription & analysis |
+| video-upscaler | 8005 | FastAPI backend for video super-resolution |
+| video-upscaler-ui | 7861 | Gradio UI for video upscaling |
 | fastconformer-asr | 8004 | NVIDIA FastConformer ASR (streaming-optimized) |
 | whisper-asr | 8003 | OpenAI Whisper ASR (multilingual) |
 | parakeet-asr | 8002 | NVIDIA Parakeet ASR (fast, English) |
@@ -164,6 +168,8 @@ AI-Tools/
 ├── apps/live-captions/     # Desktop tray app for live captions
 ├── services/
 │   ├── audio-notes/        # Web UI (Gradio)
+│   ├── video-upscaler/     # FastAPI backend for video upscaling
+│   ├── video-upscaler-ui/  # Gradio UI for video upscaling
 │   ├── fastconformer/      # FastConformer ASR service (streaming-only)
 │   ├── whisper/            # Whisper ASR service
 │   ├── parakeet/           # Parakeet ASR service
