@@ -259,7 +259,7 @@ def build_ui() -> gr.Blocks:
                     )
                     with gr.Row():
                         steps = gr.Slider(
-                            minimum=5, maximum=50, value=12, step=1, label="Steps"
+                            minimum=3, maximum=30, value=6, step=1, label="Steps"
                         )
                         guidance_scale = gr.Slider(
                             minimum=1.0,

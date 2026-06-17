@@ -88,6 +88,12 @@ def upscale_image_generative(
             work_w,
             work_h,
         )
+    # Pad to multiple of 64 for SD latent upscaler compatibility
+    h, w = work_rgb.shape[:2]
+    pad_h = (64 - h % 64) % 64
+    pad_w = (64 - w % 64) % 64
+    if pad_h or pad_w:
+        work_rgb = cv2.copyMakeBorder(work_rgb, 0, pad_h, 0, pad_w, cv2.BORDER_REFLECT)
 
     input_image = Image.fromarray(work_rgb)
 
@@ -112,6 +118,13 @@ def upscale_image_generative(
             pass
 
     out_rgb = np.array(result.convert("RGB"))
+
+    # Crop off padding added for SD compatibility
+    if pad_h or pad_w:
+        out_h, out_w = out_rgb.shape[:2]
+        crop_h = int(out_h * (h / (h + pad_h))) if pad_h else out_h
+        crop_w = int(out_w * (w / (w + pad_w))) if pad_w else out_w
+        out_rgb = out_rgb[:crop_h, :crop_w]
 
     target_w = max(1, round(src_w * outscale))
     target_h = max(1, round(src_h * outscale))

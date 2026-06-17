@@ -457,10 +457,12 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - DEVICE=cuda
       - HF_HOME=/app/weights/huggingface
+      - HF_TOKEN=${HF_TOKEN}
       - WEIGHTS_DIR=/app/weights
       - DATA_DIR=/app/data
       - UPSCALER_TILE=${UPSCALER_TILE:-0}
       - UPSCALER_HALF=${UPSCALER_HALF:-true}
+      - GAI_MAX_INPUT_SIDE=${GAI_MAX_INPUT_SIDE:-768}
     deploy:
       resources:
         reservations:
