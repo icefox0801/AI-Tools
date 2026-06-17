@@ -46,6 +46,7 @@ _VID_TARGET_W = 420  # each video inside the 2-column results row
 _IMG_TARGET_W = 420  # each image inside the 2-column comparison row
 _DEFAULT_VID_H = 320  # compact placeholder height (before source dims are known)
 _DEFAULT_IMG_H = 240  # compact placeholder height for comparison images
+_MINI_IMG_H = 140  # compact comparison height for modes without live frame comparisons
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -162,6 +163,17 @@ def _heights_from_res(resolution: str | None) -> dict | None:
         return _compute_heights(w, h)
     except Exception:
         return None
+
+
+def _heights_from_job(job: dict | None) -> dict | None:
+    """Extract display heights from a job payload when possible."""
+    if not job:
+        return None
+    res = job.get("result") or {}
+    heights = _heights_from_res(res.get("source_resolution"))
+    if heights:
+        return heights
+    return _heights_from_res(res.get("output_resolution"))
 
 
 def _heights_from_image(img) -> dict | None:
@@ -324,6 +336,42 @@ def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
                 if poll_count % 15 == 0:
                     preview_vid = _download_preview_video(job_id) or keep
 
+                frame_info_upd = keep
+                if not comparison and job.get("model") == "ffmpeg-enhance":
+                    # FFmpeg fast mode does not produce live before/after pairs.
+                    orig_out = gr.update(value=None, height=_MINI_IMG_H, visible=False)
+                    upscaled_out = gr.update(value=None, height=_MINI_IMG_H, visible=False)
+                    frame_info_upd = gr.update(
+                        value=(
+                            "**FFmpeg Fast Mode**  \n"
+                            "Live comparison frames are unavailable while processing. "
+                            "Before/after snapshots will appear when the job finishes."
+                        ),
+                        visible=True,
+                    )
+                else:
+                    # Keep comparison panes visible for ESRGAN/BasicVSR flow.
+                    orig_out = (
+                        gr.update(value=orig_img, visible=True, height=img_h)
+                        if comparison and img_h is not None
+                        else (
+                            gr.update(value=orig_img, visible=True)
+                            if comparison
+                            else gr.update(visible=True)
+                        )
+                    )
+                    upscaled_out = (
+                        gr.update(value=upscaled_img, visible=True, height=img_h)
+                        if comparison and img_h is not None
+                        else (
+                            gr.update(value=upscaled_img, visible=True)
+                            if comparison
+                            else gr.update(visible=True)
+                        )
+                    )
+                if comparison:
+                    frame_info_upd = gr.update(visible=False)
+
                 # On first height detection set video container heights to match
                 # images (height-only gr.update is safe; value+height crashes in
                 # Gradio 6.x via Video.postprocess).
@@ -337,9 +385,9 @@ def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
                 yield (
                     msg,
                     output_vid_upd,
-                    _wrap_h(orig_img, img_h),
-                    _wrap_h(upscaled_img, img_h),
-                    keep,
+                    orig_out,
+                    upscaled_out,
+                    frame_info_upd,
                     preview_vid_upd,
                     slider_upd,
                     job_id,
@@ -490,12 +538,30 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
         return
 
     logger.info("Submitted job %s (mode=%s)", job_id, api_mode)
+    clear_orig = gr.update(value=None)
+    clear_upscaled = gr.update(value=None)
+    frame_hint = keep
+    if model == "ffmpeg-enhance":
+        clear_orig = gr.update(value=None, height=_MINI_IMG_H, visible=False)
+        clear_upscaled = gr.update(value=None, height=_MINI_IMG_H, visible=False)
+        frame_hint = gr.update(
+            value=(
+                "**FFmpeg Fast Mode**  \n"
+                "Live before/after comparison is minimized during processing. "
+                "Snapshots become available after completion."
+            ),
+            visible=True,
+        )
+    else:
+        clear_orig = gr.update(value=None, visible=True)
+        clear_upscaled = gr.update(value=None, visible=True)
+
     yield (
         f"⏳ Queued (job `{job_id}`). Processing will start shortly…",
         None,  # clear output video
-        gr.update(value=None, height=_DEFAULT_IMG_H),  # clear + reset original frame
-        gr.update(value=None, height=_DEFAULT_IMG_H),  # clear + reset upscaled frame
-        keep,
+        clear_orig,
+        clear_upscaled,
+        frame_hint,
         None,  # clear preview video
         hide_selector,
         job_id,
@@ -686,14 +752,16 @@ def load_previous_job(job_id: str | None):
         return
 
     status = job.get("status", "unknown")
+    job_heights = _heights_from_job(job)
+    job_img_h = job_heights["image"] if job_heights else None
 
     # Still running — clear stale UI and reattach to the live stream.
     if status in ("queued", "processing"):
         yield (
             f"⏳ Reattaching to job `{job_id[:8]}`…",
             None,
-            gr.update(value=None, height=_DEFAULT_IMG_H),
-            gr.update(value=None, height=_DEFAULT_IMG_H),
+            gr.update(value=None, height=job_img_h or _DEFAULT_IMG_H),
+            gr.update(value=None, height=job_img_h or _DEFAULT_IMG_H),
             keep,
             None,
             hide_slider,
@@ -732,7 +800,7 @@ def load_previous_job(job_id: str | None):
     upscaled_img = comp["upscaled"] if comp else keep
 
     # Compute image dimensions from comparison frame for proper aspect-ratio sizing.
-    img_h = None
+    img_h = job_img_h
     if comp:
         _h = _heights_from_image(comp.get("original"))
         if _h:
@@ -841,6 +909,12 @@ def build_ui() -> gr.Blocks:
             z-index: 10;
             overflow: hidden;
         }
+        #live_preview_video,
+        #live_preview_video .wrap,
+        #live_preview_video .empty,
+        #live_preview_video video {
+            background: #ffffff !important;
+        }
         #mode_radio .wrap {
             display: flex !important;
             flex-direction: row !important;
@@ -851,6 +925,16 @@ def build_ui() -> gr.Blocks:
             flex: 0 1 auto !important;
             white-space: nowrap !important;
             padding: 6px 10px !important;
+        }
+        #comparison_hint {
+            border: 1px solid #d7deeb;
+            border-radius: 10px;
+            background: #ffffff;
+            padding: 10px 12px;
+            margin-top: 4px;
+        }
+        #comparison_hint p {
+            margin: 0;
         }
     """,
     ) as demo:
@@ -954,7 +1038,12 @@ def build_ui() -> gr.Blocks:
                     _bvsr_denoise = gr.Number(value=1.0, visible=False)
                     _bvsr_tile = gr.Number(value=0, visible=False)
 
-                run_btn = gr.Button("🚀 Start upscaling", variant="primary", size="lg")
+                run_btn = gr.Button(
+                    "🚀 Start upscaling",
+                    variant="primary",
+                    size="lg",
+                    interactive=False,
+                )
 
             # ── RIGHT COLUMN: results ──────────────────────────────────────────
             with gr.Column(scale=2, elem_id="right_panel"):
@@ -991,7 +1080,7 @@ def build_ui() -> gr.Blocks:
                             interactive=False,
                             height=_di,
                         )
-                frame_info = gr.Markdown("No frames yet", visible=False)
+                frame_info = gr.Markdown("", visible=False, elem_id="comparison_hint")
                 with gr.Row():
                     frame_slider = gr.Slider(
                         0,
@@ -1009,6 +1098,7 @@ def build_ui() -> gr.Blocks:
                         interactive=False,
                         height=_dv,
                         autoplay=True,
+                        elem_id="live_preview_video",
                     )
                     output_video = gr.Video(
                         label="✅ Final result",
@@ -1032,6 +1122,7 @@ def build_ui() -> gr.Blocks:
                     gr.update(height=_dv),  # preview_video
                     gr.update(height=_dv),  # output_video
                     gr.update(value="", visible=False),  # css_injector
+                    gr.update(interactive=False),  # run_btn
                 )
             w, h = _probe_video_dims(fpath)
             heights = _compute_heights(w, h)
@@ -1054,6 +1145,7 @@ def build_ui() -> gr.Blocks:
                 gr.update(height=vh),  # preview_video
                 gr.update(height=vh),  # output_video
                 gr.update(value=css, visible=True),  # css_injector
+                gr.update(interactive=True),  # run_btn
             )
 
         input_video.change(
@@ -1066,6 +1158,7 @@ def build_ui() -> gr.Blocks:
                 preview_video,
                 output_video,
                 css_injector,
+                run_btn,
             ],
         )
 
@@ -1245,10 +1338,21 @@ def build_ui() -> gr.Blocks:
             if not job_id:
                 return keep, keep, gr.update(visible=False), keep
 
+            job_img_h = None
+            try:
+                jr = httpx.get(f"{UPSCALER_URL}/jobs/{job_id}", timeout=10)
+                if jr.status_code == 200:
+                    jh = _heights_from_job(jr.json())
+                    if jh:
+                        job_img_h = jh["image"]
+            except Exception:
+                pass
+
             # Fetch latest comparison for the selected job
             comp = _fetch_latest_comparison(job_id)
             if not comp:
-                return keep, keep, gr.update(visible=False), keep
+                img_upd = gr.update(height=job_img_h) if job_img_h is not None else keep
+                return img_upd, img_upd, gr.update(visible=False), keep
 
             # Update comparison images and make slider visible
             frames_list = comp.get("frames", [])
@@ -1262,9 +1366,14 @@ def build_ui() -> gr.Blocks:
                     visible=True,
                 )
 
+            img_h = job_img_h
+            _h = _heights_from_image(comp.get("original"))
+            if _h:
+                img_h = _h["image"]
+
             return (
-                comp["original"],
-                comp["upscaled"],
+                _wrap_h(comp["original"], img_h),
+                _wrap_h(comp["upscaled"], img_h),
                 slider_upd,
                 job_id,  # Update active_job_id so frame slider can fetch frames
             )
