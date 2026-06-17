@@ -4,30 +4,42 @@ This file provides context for AI assistants working on the AI-Tools codebase.
 
 ## Project Summary
 
-AI-Tools is a Docker-based toolkit for speech-to-text and audio analysis:
-- **Live Captions**: Desktop app for real-time transcription
-- **Audio Notes**: Web UI for transcription, summarization, and chat
-- **ASR Services**: Vosk (CPU), Parakeet (GPU), Whisper (GPU)
+AI-Tools is a comprehensive Docker-based AI toolkit featuring:
+- **Live Captions**: Desktop app for real-time speech-to-text transcription
+- **Audio Notes**: Web UI for audio transcription, summarization, and chat
+- **Video Upscaler**: GPU-accelerated video super-resolution using Real-ESRGAN
+- **ASR Services**: Vosk (CPU), Parakeet (GPU), Whisper (GPU), FastConformer (GPU)
 - **Text Refiner**: Punctuation and correction service
 - **Ollama**: Local LLM for summarization and chat
 
 ## Architecture
 
 ```
-┌─────────────────┐     WebSocket      ┌─────────────────┐
-│  Client Apps    │ ◄───────────────► │   ASR Services  │
-│                 │   Audio Stream     │                 │
-│ • Audio Notes   │   {id, text}       │ • Vosk (:8001)  │
-│   (:7860)       │                    │ • Parakeet(:8002│
-│ • Live Captions │                    │ • Whisper(:8003)│
-└────────┬────────┘                    │ • Refiner(:8010)│
-         │                             └─────────────────┘
-         │ Chat/Summarize
-         ▼
+┌─────────────────┐     WebSocket      ┌──────────────────────┐
+│  Client Apps    │ ◄───────────────► │   ASR Services       │
+│                 │   Audio Stream     │                      │
+│ • Audio Notes   │   {id, text}       │ • Vosk (:8001)       │
+│   (:7860)       │                    │ • Parakeet (:8002)   │
+│ • Live Captions │                    │ • Whisper (:8003)    │
+└────────┬────────┘                    │ • FastConformer(:8004│
+         │ Chat/Summarize              │ • Refiner (:8010)    │
+         ▼                             └──────────────────────┘
    ┌─────────────┐
    │ Ollama LLM  │
    │  (:11434)   │
    └─────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  Video Upscaler Pipeline (Independent)                       │
+├──────────────────────────────────────────────────────────────┤
+│ • Video Upload → FastAPI Backend (:8005)                    │
+│   - Frame extraction (FFmpeg)                                │
+│   - Real-ESRGAN upscaling (4x per frame)                     │
+│   - Optional temporal mixing (FFmpeg tmix)                   │
+│   - Optional BasicVSR++ (temporal-aware, 4x fixed)           │
+│   - Frame reassembly + audio mux (FFmpeg)                    │
+│ • Gradio UI (:7861) → Poll job status → Download            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Directory Structure
@@ -47,10 +59,19 @@ AI-Tools/
 │   │   ├── ui/                  # Gradio components
 │   │   ├── services/            # Business logic
 │   │   └── api/                 # REST endpoints
-│   ├── parakeet/                # NeMo Parakeet ASR
+│   ├── video-upscaler/          # FastAPI backend for video super-resolution
+│   │   ├── upscaler_service.py  # FastAPI application
+│   │   ├── pipeline.py          # Real-ESRGAN, BasicVSR++, FFmpeg pipelines
+│   │   ├── jobs.py              # Job queue manager
+│   │   ├── download_models.sh   # Pre-download RealESRGAN weights
+│   │   └── tests/               # Unit tests
+│   ├── video-upscaler-ui/       # Gradio frontend for video upscaler
+│   │   └── app.py               # UI with model selection, tile controls
+│   ├── parakeet/                # NeMo Parakeet ASR (streaming + offline)
 │   ├── whisper/                 # OpenAI Whisper ASR
-│   ├── vosk/                    # Vosk ASR
-│   └── text-refiner/            # Punctuation service
+│   ├── vosk/                    # Vosk ASR (CPU-based)
+│   ├── fastconformer/           # NVIDIA FastConformer ASR (GPU)
+│   └── text-refiner/            # Punctuation & correction service
 ├── shared/
 │   ├── client/                  # WebSocket client library
 │   ├── config/                  # Backend configuration
@@ -109,7 +130,8 @@ Client logic (TranscriptManager):
 ```bash
 # Start services
 docker compose up -d audio-notes ollama
-docker compose up -d whisper-asr parakeet-asr vosk-asr
+docker compose up -d whisper-asr parakeet-asr vosk-asr fastconformer-asr
+docker compose up -d video-upscaler video-upscaler-ui
 
 # Run Live Captions
 cd apps/live-captions
@@ -131,7 +153,7 @@ Use Conventional Commits:
 <type>(<scope>): <description>
 
 Types: feat, fix, refactor, chore, docs, test
-Scope: live-captions, audio-notes, parakeet, whisper, vosk
+Scope: live-captions, audio-notes, video-upscaler, parakeet, whisper, vosk, fastconformer, text-refiner
 ```
 
 Examples:
