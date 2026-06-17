@@ -108,7 +108,7 @@ class JobManager:
                 if job is not None and self._on_finish is not None:
                     try:
                         self._on_finish(job)
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         pass
                 continue
 
@@ -130,7 +130,7 @@ class JobManager:
                 job.result = result
                 job.progress = 1.0
                 job.status = "done"
-            except Exception as exc:  # noqa: BLE001 - surface any failure to the client
+            except Exception as exc:
                 if job._cancel:
                     job.status = "cancelled"
                 else:
@@ -143,7 +143,7 @@ class JobManager:
             if self._on_finish is not None:
                 try:
                     self._on_finish(job)
-                except Exception:  # noqa: BLE001 - callback failures must not crash the worker
+                except Exception:
                     pass
 
     def _evict_locked(self) -> None:

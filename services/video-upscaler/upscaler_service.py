@@ -17,7 +17,6 @@ Endpoints:
 """
 
 import base64
-import io
 import json
 import os
 import shutil
@@ -25,15 +24,13 @@ import time
 import uuid
 
 import cv2
-import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-
 from jobs import Job, JobManager
-from pipeline import upscale_video, enhance_video_ffmpeg
 from log_setup import setup_logging
+from pipeline import enhance_video_ffmpeg, upscale_video
 from upscaler_model import DEFAULT_MODEL, MODELS, list_models
 
 _FFMPEG_MODELS = {"ffmpeg-enhance"}
@@ -62,7 +59,7 @@ def _save_job_meta(job_dir: str, job: "Job") -> None:
         with open(tmp, "w") as f:
             json.dump(job.to_dict(), f)
         os.replace(tmp, path)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Could not save job metadata: %s", exc)
 
 
@@ -80,13 +77,13 @@ def _process(job, progress_cb, cancel_cb) -> dict:
     os.makedirs(preview_video_dir, exist_ok=True)
     preview_video_path = os.path.join(job_dir, "preview_video.mp4")
 
-    kwargs = dict(
-        progress_cb=progress_cb,
-        cancel_cb=cancel_cb,
-        preview_path=os.path.join(job_dir, "preview.jpg"),
-        preview_video_dir=preview_video_dir,
-        preview_video_path=preview_video_path,
-    )
+    kwargs = {
+        "progress_cb": progress_cb,
+        "cancel_cb": cancel_cb,
+        "preview_path": os.path.join(job_dir, "preview.jpg"),
+        "preview_video_dir": preview_video_dir,
+        "preview_video_path": preview_video_path,
+    }
     if job.model == "ffmpeg-enhance":
         return enhance_video_ffmpeg(
             input_path=job.input_path,
@@ -140,7 +137,7 @@ async def _restore_disk_jobs() -> None:
                 if job.id not in manager._jobs:
                     manager._jobs[job.id] = job
                     count += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Could not restore job from %s: %s", meta_path, exc)
     if count:
         logger.info("Restored %d historical job(s) from disk", count)
@@ -281,7 +278,7 @@ async def discover_jobs():
             if live:
                 data = live.to_dict()
             result.append(data)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Error reading %s: %s", meta_path, exc)
     return {"jobs": result}
 
@@ -359,7 +356,7 @@ async def comparison(job_id: str, frame_idx: int):
             h, w = img.shape[:2]
             if w > 640:
                 scale = 640.0 / w
-                img = cv2.resize(img, (640, int(round(h * scale))), interpolation=cv2.INTER_AREA)
+                img = cv2.resize(img, (640, round(h * scale)), interpolation=cv2.INTER_AREA)
             ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ok:
                 return base64.b64encode(buf.tobytes()).decode()

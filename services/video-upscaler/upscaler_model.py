@@ -2,7 +2,7 @@
 Real-ESRGAN model registry and loader for the Video Upscaler service.
 
 Models:
-  - RealESRGAN_x4plus   General 4×, highest detail
+  - RealESRGAN_x4plus   General 4x, highest detail
 """
 
 import os
@@ -19,8 +19,7 @@ USE_HALF = os.environ.get("UPSCALER_HALF", "true").lower() == "true"
 # GitHub release base for Real-ESRGAN weights
 _RELEASE = "https://github.com/xinntao/Real-ESRGAN/releases/download"
 
-# Model registry: only the most representative traditional upscaler is kept.
-# Generative models (controlnet-tile, sdxl-turbo) live in generative_enhancer.py.
+# Model registry: Real-ESRGAN (traditional) and BasicVSR++ (temporal with noise reduction).
 MODELS = {
     "RealESRGAN_x4plus": {
         "arch": "rrdb",
@@ -29,7 +28,7 @@ MODELS = {
         "files": ["RealESRGAN_x4plus.pth"],
         "urls": [f"{_RELEASE}/v0.1.0/RealESRGAN_x4plus.pth"],
         "supports_denoise": False,
-        "description": "Real-ESRGAN 4× — highest traditional-model detail.",
+        "description": "Real-ESRGAN 4x — highest traditional-model detail.",
     },
 }
 

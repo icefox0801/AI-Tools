@@ -18,12 +18,10 @@ import re
 import shutil
 import subprocess
 import tempfile
-import time
 from collections.abc import Callable
 
 import cv2
 import numpy as np
-
 from log_setup import setup_logging
 from upscaler_model import get_upsampler
 
@@ -85,7 +83,7 @@ def _resize_for_preview(img: np.ndarray, max_w: int = 640) -> np.ndarray:
     if w <= max_w:
         return img
     scale = max_w / float(w)
-    return cv2.resize(img, (max_w, int(round(h * scale))), interpolation=cv2.INTER_AREA)
+    return cv2.resize(img, (max_w, round(h * scale)), interpolation=cv2.INTER_AREA)
 
 
 def _clarity_enhance(upsampler, frame: np.ndarray, outscale: float) -> np.ndarray:
@@ -107,8 +105,8 @@ def _clarity_enhance(upsampler, frame: np.ndarray, outscale: float) -> np.ndarra
     hires = np.clip(hires, 0, 255).astype(np.uint8)
 
     # --- high-quality downsample to target resolution -----------------------
-    target_w = max(1, int(round(src_w * outscale)))
-    target_h = max(1, int(round(src_h * outscale)))
+    target_w = max(1, round(src_w * outscale))
+    target_h = max(1, round(src_h * outscale))
     if hires.shape[1] != target_w or hires.shape[0] != target_h:
         hires = cv2.resize(hires, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
 
@@ -158,7 +156,7 @@ def _extract_comparison_frames(
                     check=True,
                     timeout=15,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
 
@@ -167,9 +165,9 @@ def enhance_video_ffmpeg(
     output_path: str,
     progress_cb=None,
     cancel_cb=None,
-    preview_path: str | None = None,  # noqa: ARG001 – kept for interface parity
+    preview_path: str | None = None,
     preview_video_dir: str | None = None,
-    preview_video_path: str | None = None,  # noqa: ARG001
+    preview_video_path: str | None = None,
 ) -> dict:
     """Enhance clarity using FFmpeg filters only — no AI, very fast.
 
@@ -258,7 +256,6 @@ def enhance_video_ffmpeg(
     }
 
 
-
 def _start_encoder(
     width: int,
     height: int,
@@ -327,7 +324,7 @@ def _write_preview(img, path: str, max_w: int = 960) -> None:
         with open(tmp, "wb") as f:
             f.write(buf.tobytes())
         os.replace(tmp, path)
-    except Exception as exc:  # noqa: BLE001 - preview is best-effort, never fail the job
+    except Exception as exc:
         logger.debug("Preview write failed: %s", exc)
 
 
@@ -358,7 +355,7 @@ def _generate_preview_video(
         first = cv2.imread(os.path.join(preview_frames_dir, frames[0]))
         if first is None:
             return
-        h, w = first.shape[:2]
+        _h, _w = first.shape[:2]
 
         # Encode frames into a short MP4 (crf 23 for small size, preset fast).
         vf_args: list[str] = []
@@ -402,7 +399,7 @@ def _generate_preview_video(
             os.replace(tmp, output_path)
         else:
             logger.debug("Preview video encoding failed")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Preview video generation failed: %s", exc)
 
 
@@ -474,9 +471,9 @@ def upscale_video(
     Upscale a video file.
 
     temporal_mode:
-      "standard" – Real-ESRGAN frame-by-frame (default)
-      "tmix"     – Real-ESRGAN then ffmpeg tmix temporal-smoothing pass
-      "basicvsr" – BasicVSR++ temporal-aware SR (4× fixed scale)
+      "standard" - Real-ESRGAN frame-by-frame (default)
+      "tmix"     - Real-ESRGAN then ffmpeg tmix temporal-smoothing pass
+      "basicvsr" - BasicVSR++ temporal-aware SR (4x fixed scale)
     """
     if temporal_mode == "basicvsr":
         return _upscale_video_basicvsr(
@@ -533,7 +530,7 @@ def _upscale_video_esrgan(
     # Best-effort total frame count for progress reporting.
     total = info.get("nb_frames") or 0
     if total <= 0 and info.get("duration", 0) > 0:
-        total = int(round(info["duration"] * fps))
+        total = round(info["duration"] * fps)
 
     # True (display-oriented) frame size, so raw decoding lines up byte-for-byte.
     width, height = _first_frame_size(input_path)
@@ -542,7 +539,7 @@ def _upscale_video_esrgan(
     # Auto-tile large frames so that enhance() returns in reasonable time and
     # cancellation checks between frames stay responsive.  Without tiling a single
     # 1080p frame can block the thread for 30-120 s, making Cancel unresponsive.
-    AUTO_TILE_PIXELS = 512 * 512  # anything larger than ~512×512 gets auto-tiled
+    AUTO_TILE_PIXELS = 512 * 512  # anything larger than ~512x512 gets auto-tiled
     AUTO_TILE_SIZE = 512
     if not tile and (width * height) > AUTO_TILE_PIXELS:
         tile = AUTO_TILE_SIZE
@@ -554,7 +551,7 @@ def _upscale_video_esrgan(
             AUTO_TILE_SIZE,
         )
 
-    upsampler, meta = get_upsampler(model_name, denoise=denoise, tile=tile)
+    upsampler, __meta = get_upsampler(model_name, denoise=denoise, tile=tile)
 
     logger.info(
         "Streaming upscale: %dx%d @ %.3ffps, ~%d frames (model=%s, outscale=%s)",
@@ -602,7 +599,7 @@ def _upscale_video_esrgan(
                     if proc is not None and proc.poll() is None:
                         try:
                             proc.kill()
-                        except Exception:  # noqa: BLE001
+                        except Exception:
                             pass
                 raise RuntimeError("Job cancelled")
 
@@ -718,7 +715,7 @@ def _upscale_video_esrgan(
                 try:
                     proc.kill()
                     proc.wait()  # Reap the zombie to prevent defunct processes
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
 
 
@@ -742,11 +739,11 @@ _basicvsr_model = None  # singleton, loaded on first use
 
 
 def _get_basicvsr_model():
-    global _basicvsr_model  # noqa: PLW0603
+    global _basicvsr_model
     if _basicvsr_model is not None:
         return _basicvsr_model
-    from basicsr.archs.basicvsrpp_arch import BasicVSRPlusPlus  # noqa: PLC0415
-    import torch  # noqa: PLC0415
+    import torch
+    from basicsr.archs.basicvsrpp_arch import BasicVSRPlusPlus
 
     logger.info("Loading BasicVSR++ weights from %s", _BASICVSR_CKPT)
     # Pass spynet_path=None so basicsr doesn't try to load it (it always expects
@@ -797,21 +794,21 @@ def _upscale_video_basicvsr(
     preview_video_dir: str | None = None,
     preview_video_path: str | None = None,
 ) -> dict:
-    """BasicVSR++ temporal-aware 4× upscaling pipeline."""
-    import torch  # noqa: PLC0415
+    """BasicVSR++ temporal-aware 4x upscaling pipeline."""
+    import torch
 
     info = probe_video(input_path)
     fps = info["fps"]
     total = info.get("nb_frames") or 0
     if total <= 0 and info.get("duration", 0) > 0:
-        total = int(round(info["duration"] * fps))
+        total = round(info["duration"] * fps)
 
     width, height = _first_frame_size(input_path)
 
     # ── auto-downscale oversized inputs ────────────────────────────────────
     # BasicVSR++ intermediate feature maps grow with input area.  Above ~720p
     # a chunk of 4 frames exceeds 16 GB VRAM in fp32; fp16 autocast helps but
-    # the safe ceiling is still ~720p.  Downscale here so the 4× output is
+    # the safe ceiling is still ~720p.  Downscale here so the 4x output is
     # still larger than the original (e.g. 1080p input → 720p → 2880p out).
     vf_scale: list[str] = []
     if width * height > _BASICVSR_MAX_PIXELS:
@@ -995,11 +992,11 @@ def _upscale_video_basicvsr(
             try:
                 decoder.kill()
                 decoder.wait()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         if encoder is not None and encoder.poll() is None:
             try:
                 encoder.kill()
                 encoder.wait()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass

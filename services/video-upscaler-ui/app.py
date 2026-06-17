@@ -8,9 +8,9 @@ Progressive layout:
      video/image components are resized to match the source aspect ratio.
 
 Three processing modes:
-  🎬 Standard               – Real-ESRGAN frame-by-frame (fast)
-  ✨ Standard + Smooth      – Real-ESRGAN + ffmpeg tmix temporal blend (reduces flicker)
-  🎯 Temporal (BasicVSR++)  – BasicVSR++ video-aware SR (preserves motion blur)
+  🎬 Standard               - Real-ESRGAN frame-by-frame (fast)
+  ✨ Standard + Smooth      - Real-ESRGAN + ffmpeg tmix temporal blend (reduces flicker)
+  🎯 Temporal (BasicVSR++)  - BasicVSR++ video-aware SR (preserves motion blur)
 """
 
 import base64
@@ -23,8 +23,6 @@ import time
 
 import gradio as gr
 import httpx
-from PIL import Image
-
 from config import (
     POLL_INTERVAL_SEC,
     SERVER_NAME,
@@ -33,6 +31,7 @@ from config import (
     UPSCALER_URL,
     logger,
 )
+from PIL import Image
 
 __version__ = "1.1"
 
@@ -59,7 +58,7 @@ def fetch_models() -> list[str]:
         resp.raise_for_status()
         data = resp.json()
         return [m["name"] for m in data["models"]]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Could not fetch models from backend: %s", exc)
         return [
             "RealESRGAN_x4plus",
@@ -116,7 +115,7 @@ def _probe_video_dims(path: str) -> tuple[int, int]:
         data = json.loads(result.stdout)
         s = data["streams"][0]
         return int(s["width"]), int(s["height"])
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 1920, 1080
 
 
@@ -144,8 +143,8 @@ def _progress_bar(pct: float) -> str:
 
 
 def _fmt_duration(seconds: float) -> str:
-    seconds = max(0, int(round(seconds)))
-    h, rem = divmod(seconds, 3600)
+    seconds = max(0, round(seconds))
+    h, rem = divmod(int(seconds), 3600)
     m, s = divmod(rem, 60)
     if h:
         return f"{h}h {m}m"
@@ -161,7 +160,7 @@ def _heights_from_res(resolution: str | None) -> dict | None:
     try:
         w, h = map(int, resolution.lower().split("x"))
         return _compute_heights(w, h)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -170,7 +169,7 @@ def _heights_from_image(img) -> dict | None:
     try:
         w, h = img.size
         return _compute_heights(w, h)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -208,7 +207,6 @@ def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
     proc_start_frame = 0
     poll_count = 0
     img_h: int | None = None  # set once on first comparison frame
-    img_w: int | None = None
     vid_h: int | None = None
     try:
         while True:
@@ -218,7 +216,7 @@ def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
                 jr = httpx.get(f"{UPSCALER_URL}/jobs/{job_id}", timeout=15)
                 jr.raise_for_status()
                 job = jr.json()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 finished = True
                 yield (
                     f"❌ Lost connection to backend: {exc}",
@@ -266,7 +264,7 @@ def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
                                 job_id,
                             )
                             continue
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
                 yield (
                     "⏳ Waiting in queue…",
@@ -426,7 +424,7 @@ def _stream_job(job_id: str, cancel_on_disconnect: bool = True):
             try:
                 httpx.delete(f"{UPSCALER_URL}/jobs/{job_id}", timeout=10)
                 logger.info("Cancelled job %s (client disconnected)", job_id)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
 
@@ -477,7 +475,7 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
             )
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("Upload failed: %s", exc)
         yield (
             f"❌ Upload failed: {exc}",
@@ -519,7 +517,7 @@ def _download_result(job_id: str) -> str | None:
         with open(out_path, "wb") as f:
             f.write(r.content)
         return out_path
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("Download failed: %s", exc)
         return None
 
@@ -535,7 +533,7 @@ def _download_preview_video(job_id: str) -> str | None:
         with open(out_path, "wb") as f:
             f.write(r.content)
         return out_path
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Preview video download failed: %s", exc)
         return None
 
@@ -560,7 +558,7 @@ def _fetch_comparison(job_id: str, frame_idx: int) -> dict | None:
             "original": _b64_to_pil(data["original"]),
             "upscaled": _b64_to_pil(data["upscaled"]),
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Comparison fetch failed: %s", exc)
         return None
 
@@ -579,7 +577,7 @@ def _fetch_latest_comparison(job_id: str) -> dict | None:
             return None
         data["frames"] = frames
         return data
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Comparison fetch failed: %s", exc)
         return None
 
@@ -601,7 +599,7 @@ def _fetch_disk_jobs() -> list[dict]:
         r = httpx.get(f"{UPSCALER_URL}/jobs/discover", timeout=10)
         r.raise_for_status()
         return r.json().get("jobs", [])
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Disk jobs fetch failed: %s", exc)
         return []
 
@@ -683,7 +681,7 @@ def load_previous_job(job_id: str | None):
             return
         r.raise_for_status()
         job = r.json()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         yield f"❌ Failed to fetch job: {exc}", keep, keep, keep, keep, keep, hide_slider, ""
         return
 
@@ -776,7 +774,7 @@ def refresh_job_queue(closed_ids: list[str] | None):
     try:
         text, choices, value = _queue_view(closed_ids)
         return text, gr.update(choices=choices, value=value)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Queue refresh failed: %s", exc)
         return "⚠️ Failed to fetch job queue", gr.update(choices=[], value=None)
 
@@ -795,7 +793,7 @@ def cancel_selected_job(selected_id: str | None, closed_ids: list[str] | None):
             note = f"✅ Cancelled {selected_id[:8]}\n\n"
         else:
             note = f"⚠️ Could not cancel {selected_id[:8]} (already finished?)\n\n"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Cancel selected failed: %s", exc)
         note = "⚠️ Cancel failed\n\n"
 
@@ -904,7 +902,7 @@ def build_ui() -> gr.Blocks:
                     ],
                     value="💎 Best",
                     label="Preset",
-                    info="Clarity: ESRGAN sharpen 1×  ·  Best: ESRGAN 4×  ·  BasicVSR++: temporal 4×  ·  FFmpeg Fast: no GPU",
+                    info="Clarity: ESRGAN sharpen 1x  ·  Best: ESRGAN 4x  ·  BasicVSR++: temporal 4x  ·  FFmpeg Fast: no GPU",
                 )
 
                 noise_cb = gr.Checkbox(
@@ -949,7 +947,7 @@ def build_ui() -> gr.Blocks:
                 with gr.Group(visible=False) as basicvsr_info:
                     gr.Markdown(
                         "> **BasicVSR++** processes frames in temporal windows — motion blur and "
-                        "inter-frame consistency are preserved.  Scale is fixed at **4×**.  "
+                        "inter-frame consistency are preserved.  Scale is fixed at **4x**.  "
                         "First run downloads ~70 MB of weights automatically."
                     )
                     _bvsr_outscale = gr.Number(value=4.0, visible=False)
@@ -1077,17 +1075,57 @@ def build_ui() -> gr.Blocks:
             show = gr.update(visible=True)
             hide = gr.update(visible=False)
             if preset_name == "🔍 Clarity":
-                return "RealESRGAN_x4plus", gr.update(value=1.0, visible=True), 1.0, "standard", show, hide, gr.update(value=False, visible=True)
+                return (
+                    "RealESRGAN_x4plus",
+                    gr.update(value=1.0, visible=True),
+                    1.0,
+                    "standard",
+                    show,
+                    hide,
+                    gr.update(value=False, visible=True),
+                )
             if preset_name == "🎯 BasicVSR++":
-                return "RealESRGAN_x4plus", gr.update(value=4.0, visible=False), 1.0, "basicvsr", hide, show, gr.update(value=False, visible=False)
+                return (
+                    "RealESRGAN_x4plus",
+                    gr.update(value=4.0, visible=False),
+                    1.0,
+                    "basicvsr",
+                    hide,
+                    show,
+                    gr.update(value=False, visible=False),
+                )
             if preset_name == "🎬 FFmpeg Fast":
-                return "ffmpeg-enhance", gr.update(value=1.0, visible=False), 1.0, "standard", show, hide, gr.update(value=False, visible=False)
-            return "RealESRGAN_x4plus", gr.update(value=4.0, visible=True), 1.0, "standard", show, hide, gr.update(value=False, visible=True)  # 💎 Best
+                return (
+                    "ffmpeg-enhance",
+                    gr.update(value=1.0, visible=False),
+                    1.0,
+                    "standard",
+                    show,
+                    hide,
+                    gr.update(value=False, visible=False),
+                )
+            return (
+                "RealESRGAN_x4plus",
+                gr.update(value=4.0, visible=True),
+                1.0,
+                "standard",
+                show,
+                hide,
+                gr.update(value=False, visible=True),
+            )  # 💎 Best
 
         preset.change(
             apply_preset,
             inputs=[preset],
-            outputs=[model, outscale, denoise, temporal_mode, esrgan_controls, basicvsr_info, noise_cb],
+            outputs=[
+                model,
+                outscale,
+                denoise,
+                temporal_mode,
+                esrgan_controls,
+                basicvsr_info,
+                noise_cb,
+            ],
         )
 
         def on_noise_toggle(checked):
@@ -1105,7 +1143,7 @@ def build_ui() -> gr.Blocks:
                 return keep, keep, keep, keep
             try:
                 idx = int(frame_idx)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return keep, keep, keep, keep
             comp = _fetch_comparison(job_id, idx)
             if not comp:

@@ -7,19 +7,19 @@ from pathlib import Path
 # Make the service modules importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from jobs import JobManager  # noqa: E402
+from jobs import JobManager
 
 
 def _submit(manager, **overrides):
-    params = dict(
-        filename="clip.mp4",
-        input_path="/tmp/in.mp4",
-        output_path="/tmp/out.mp4",
-        model="realesr-general-x4v3",
-        outscale=4.0,
-        denoise=1.0,
-        tile=512,
-    )
+    params = {
+        "filename": "clip.mp4",
+        "input_path": "/tmp/in.mp4",
+        "output_path": "/tmp/out.mp4",
+        "model": "realesr-general-x4v3",
+        "outscale": 4.0,
+        "denoise": 1.0,
+        "tile": 512,
+    }
     params.update(overrides)
     return manager.submit(**params)
 
