@@ -1,0 +1,16 @@
+# Image Super Resolution API dependencies
+realesrgan>=0.3.0
+basicsr>=1.4.2
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow>=10.0.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Optional generative upscalers (creative mode)
+diffusers>=0.30.0
+transformers>=4.43.0
+accelerate>=0.33.0
+safetensors>=0.4.3
+huggingface_hub>=0.24.0

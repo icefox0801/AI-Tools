@@ -436,6 +436,73 @@ services:
       retries: 3
       start_period: 30s
 
+  # Image Super Resolution API: single-image upscaling with multiple ESRGAN models
+  image-superres:
+    build:
+      context: ./services/image-superres
+      dockerfile: Dockerfile
+      args:
+        APT_MIRROR: ${APT_MIRROR}
+        PYPI_MIRROR: ${PYPI_MIRROR}
+        PYPI_TRUSTED_HOST: ${PYPI_TRUSTED_HOST}
+        PYTORCH_CUDA_MIRROR: ${PYTORCH_CUDA_MIRROR}
+    image: image-superres:latest
+    container_name: image-superres
+    ports:
+      - "8006:8000"
+    volumes:
+      - image-superres-weights:/app/weights
+      - image-superres-data:/app/data
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - DEVICE=cuda
+      - HF_HOME=/app/weights/huggingface
+      - WEIGHTS_DIR=/app/weights
+      - DATA_DIR=/app/data
+      - UPSCALER_TILE=${UPSCALER_TILE:-0}
+      - UPSCALER_HALF=${UPSCALER_HALF:-true}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Image Super Resolution Web UI
+  image-superres-ui:
+    build:
+      context: ./services/image-superres-ui
+      dockerfile: Dockerfile
+    image: image-superres-ui:latest
+    container_name: image-superres-ui
+    depends_on:
+      - image-superres
+    ports:
+      - "7862:7862"
+    environment:
+      - IMAGE_SR_URL=http://image-superres:8000
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7862
+    restart: always
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7862/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # Persistent Volumes: Separate container lifecycle from data storage
 # Data remains intact even if containers are deleted/rebuilt
 volumes:
@@ -463,6 +530,8 @@ volumes:
   text-refiner-hf-cache:      # Stores HuggingFace model cache for Text Refiner (pre-downloaded via download_models.sh)
   video-upscaler-weights:     # Stores Real-ESRGAN model weights (~250MB, via download_models.sh)
   video-upscaler-data:        # Stores uploaded videos and upscaled outputs
+  image-superres-weights:     # Stores image SR model weights
+  image-superres-data:        # Stores upscaled image outputs
 # Custom Network: Enables service-to-service communication using container names (instead of IPs)
 # Bridge driver is Docker's default for local network isolation
 networks:
