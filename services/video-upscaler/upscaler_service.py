@@ -34,6 +34,7 @@ from pipeline import enhance_video_ffmpeg, upscale_video
 from upscaler_model import DEFAULT_MODEL, MODELS, list_models
 
 _FFMPEG_MODELS = {"ffmpeg-enhance"}
+_RESUMABLE_MODELS = set(MODELS)
 
 logger = setup_logging(__name__)
 
@@ -45,8 +46,14 @@ INPUT_DIR = os.path.join(DATA_DIR, "inputs")
 OUTPUT_DIR = os.path.join(DATA_DIR, "outputs")
 DEFAULT_TILE = int(os.environ.get("UPSCALER_TILE", "512"))
 
-os.makedirs(INPUT_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def _ensure_data_dirs() -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+_ensure_data_dirs()
 
 ALLOWED_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv"}
 
@@ -74,11 +81,21 @@ def _process(job, progress_cb, cancel_cb) -> dict:
     """Adapter between JobManager and the upscaling pipeline."""
     job_dir = os.path.dirname(job.output_path)
     preview_video_dir = os.path.join(job_dir, "preview_frames")
+    resume_frames_dir = os.path.join(job_dir, "resume_frames")
     os.makedirs(preview_video_dir, exist_ok=True)
     preview_video_path = os.path.join(job_dir, "preview_video.mp4")
 
+    last_saved = {"done": -1}
+
+    def _progress_and_persist(done: int, total: int) -> None:
+        progress_cb(done, total)
+        # Persist progress every 30 frames so interrupted jobs can resume.
+        if done == 0 or done == total or done - last_saved["done"] >= 30:
+            _save_job_meta(job_dir, job)
+            last_saved["done"] = done
+
     kwargs = {
-        "progress_cb": progress_cb,
+        "progress_cb": _progress_and_persist,
         "cancel_cb": cancel_cb,
         "preview_path": os.path.join(job_dir, "preview.jpg"),
         "preview_video_dir": preview_video_dir,
@@ -98,6 +115,7 @@ def _process(job, progress_cb, cancel_cb) -> dict:
         denoise=job.denoise,
         tile=job.tile,
         temporal_mode=job.temporal_mode,
+        resume_frames_dir=resume_frames_dir,
         **kwargs,
     )
 
@@ -117,6 +135,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def _restore_disk_jobs() -> None:
     """On startup, reload completed jobs from disk so history survives restarts."""
+    _ensure_data_dirs()
     if not os.path.isdir(OUTPUT_DIR):
         return
     count = 0
@@ -127,15 +146,23 @@ async def _restore_disk_jobs() -> None:
         try:
             with open(meta_path) as f:
                 data = json.load(f)
-            # Mark jobs that were still running when the service died as errors.
+            # Resume-capable interrupted jobs are re-queued on startup.
             if data.get("status") in ("queued", "processing"):
-                data["status"] = "error"
-                data["error"] = "Interrupted (service restarted)"
-                data.setdefault("finished_at", time.time())
+                if data.get("model") in _RESUMABLE_MODELS:
+                    data["status"] = "queued"
+                    data["error"] = "Resuming after service restart"
+                    data["finished_at"] = None
+                    data["started_at"] = None
+                else:
+                    data["status"] = "error"
+                    data["error"] = "Interrupted (service restarted)"
+                    data.setdefault("finished_at", time.time())
             job = Job(**{k: v for k, v in data.items() if k in Job.__dataclass_fields__})
             with manager._lock:
                 if job.id not in manager._jobs:
                     manager._jobs[job.id] = job
+                    if job.status == "queued":
+                        manager._queue.put(job.id)
                     count += 1
         except Exception as exc:
             logger.warning("Could not restore job from %s: %s", meta_path, exc)
@@ -204,6 +231,7 @@ async def upscale(
     temporal_mode: str = Form("standard"),
 ):
     """Accept a video and queue it for upscaling. Returns a job id immediately."""
+    _ensure_data_dirs()
     all_valid = set(MODELS) | _FFMPEG_MODELS
     if model not in all_valid:
         raise HTTPException(400, f"Unknown model '{model}'. Available: {sorted(all_valid)}")

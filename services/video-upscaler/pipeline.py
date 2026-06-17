@@ -86,6 +86,31 @@ def _resize_for_preview(img: np.ndarray, max_w: int = 640) -> np.ndarray:
     return cv2.resize(img, (max_w, round(h * scale)), interpolation=cv2.INTER_AREA)
 
 
+def _resume_frame_indices(resume_frames_dir: str) -> list[int]:
+    """Return contiguous cached frame indices starting at 1."""
+    if not os.path.isdir(resume_frames_dir):
+        return []
+    indices: list[int] = []
+    for name in os.listdir(resume_frames_dir):
+        m = re.match(r"^frame_(\d{6})\.png$", name)
+        if m:
+            indices.append(int(m.group(1)))
+    if not indices:
+        return []
+    contiguous: list[int] = []
+    expected = 1
+    for idx in sorted(indices):
+        if idx != expected:
+            break
+        contiguous.append(idx)
+        expected += 1
+    return contiguous
+
+
+def _resume_frame_path(resume_frames_dir: str, idx: int) -> str:
+    return os.path.join(resume_frames_dir, f"frame_{idx:06d}.png")
+
+
 def _clarity_enhance(upsampler, frame: np.ndarray, outscale: float) -> np.ndarray:
     """Run the model at 4x, sharpen in the high-res domain, then Lanczos-downsample.
 
@@ -466,6 +491,7 @@ def upscale_video(
     preview_video_dir: str | None = None,
     preview_video_path: str | None = None,
     temporal_mode: str = "standard",
+    resume_frames_dir: str | None = None,
 ) -> dict:
     """
     Upscale a video file.
@@ -498,6 +524,7 @@ def upscale_video(
         preview_path=preview_path,
         preview_video_dir=preview_video_dir,
         preview_video_path=preview_video_path,
+        resume_frames_dir=resume_frames_dir,
         # "tmix" (Standard+Smooth) uses stronger temporal denoising instead of
         # ghosting tmix filter: hqdn3d strength 8 vs Standard's 4.
         hqdn3d_tmp=8 if temporal_mode == "tmix" else 4,
@@ -521,6 +548,7 @@ def _upscale_video_esrgan(
     preview_path: str | None = None,
     preview_video_dir: str | None = None,
     preview_video_path: str | None = None,
+    resume_frames_dir: str | None = None,
     hqdn3d_tmp: int = 4,
 ) -> dict:
     """Real-ESRGAN frame-by-frame upscaling pipeline."""
@@ -588,8 +616,39 @@ def _upscale_video_esrgan(
     )
     encoder: subprocess.Popen | None = None
     idx = 0
+    src_idx = 0
     _preview_frame_window: list[str] = []  # rolling window tracked without os.listdir
     _preview_frame_keep = max(30, int(fps * 3))
+
+    resumed_from = 0
+    if resume_frames_dir:
+        os.makedirs(resume_frames_dir, exist_ok=True)
+        cached = _resume_frame_indices(resume_frames_dir)
+        if cached:
+            resumed_from = cached[-1]
+            logger.info("Resume cache found: %d frame(s)", resumed_from)
+            first_cached = cv2.imread(_resume_frame_path(resume_frames_dir, 1), cv2.IMREAD_COLOR)
+            if first_cached is not None:
+                oh, ow = first_cached.shape[:2]
+                encoder = _start_encoder(
+                    ow,
+                    oh,
+                    fps,
+                    input_path,
+                    info["has_audio"],
+                    output_path,
+                    hqdn3d_tmp=hqdn3d_tmp,
+                )
+                for cached_idx in cached:
+                    cached_frame = cv2.imread(
+                        _resume_frame_path(resume_frames_dir, cached_idx), cv2.IMREAD_COLOR
+                    )
+                    if cached_frame is None:
+                        break
+                    encoder.stdin.write(np.ascontiguousarray(cached_frame).tobytes())
+                    idx = cached_idx
+                if progress_cb:
+                    progress_cb(idx, total or idx)
 
     try:
         while True:
@@ -607,7 +666,11 @@ def _upscale_video_esrgan(
             if buf is None:
                 break  # end of stream or cancelled
 
+            src_idx += 1
             frame = np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3).copy()
+            # Skip already-cached source frames after restart.
+            if src_idx <= resumed_from:
+                continue
             if outscale <= 1.0:
                 output = _clarity_enhance(upsampler, frame, outscale)
             else:
@@ -621,6 +684,9 @@ def _upscale_video_esrgan(
                 )
 
             encoder.stdin.write(np.ascontiguousarray(output).tobytes())
+
+            if resume_frames_dir:
+                cv2.imwrite(_resume_frame_path(resume_frames_dir, idx), output)
 
             # Live preview JPEG + comparison frames (best-effort, cheap).
             if preview_path and (idx == 1 or idx % 5 == 0):
@@ -699,9 +765,12 @@ def _upscale_video_esrgan(
             logger.warning("Decoder exited with code %s", decoder.returncode)
 
         out_info = probe_video(output_path)
+        if resume_frames_dir and os.path.isdir(resume_frames_dir):
+            shutil.rmtree(resume_frames_dir, ignore_errors=True)
         return {
             "output_path": output_path,
             "frames": idx,
+            "resumed_from": resumed_from,
             "model": model_name,
             "outscale": outscale,
             "source_resolution": f"{info['width']}x{info['height']}",
