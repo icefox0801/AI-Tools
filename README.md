@@ -7,6 +7,7 @@ Docker-based AI toolkit for real-time speech-to-text, audio transcription, and L
 - 🎤 **Live Captions** - Real-time speech-to-text overlay for meetings, videos, and calls
 - 📝 **Transcription** - Convert audio to searchable text with high accuracy
 - 🎬 **Video Upscaler** - GPU-accelerated video super-resolution with Real-ESRGAN and BasicVSR++
+- 🖼️ **Image Super Resolution** - GPU-accelerated image upscaling with ESRGAN and Stable Diffusion
 - 🤖 **AI Summarization** - Automatically extract key points and create summaries
 - 💬 **Chat with Transcripts** - Ask questions about your content using local LLMs
 - 🔒 **100% Local** - No cloud APIs, no data sent elsewhere, full privacy
@@ -151,6 +152,8 @@ Use the Chat tab to interact with your transcript:
 | audio-notes | 7860 | Web UI for transcription & analysis |
 | video-upscaler | 8005 | FastAPI backend for video super-resolution |
 | video-upscaler-ui | 7861 | Gradio UI for video upscaling |
+| image-superres | 8006 | FastAPI backend for image super-resolution |
+| image-superres-ui | 7862 | Gradio UI for image upscaling |
 | fastconformer-asr | 8004 | NVIDIA FastConformer ASR (streaming-optimized) |
 | whisper-asr | 8003 | OpenAI Whisper ASR (multilingual) |
 | parakeet-asr | 8002 | NVIDIA Parakeet ASR (fast, English) |
@@ -170,6 +173,8 @@ AI-Tools/
 │   ├── audio-notes/        # Web UI (Gradio)
 │   ├── video-upscaler/     # FastAPI backend for video upscaling
 │   ├── video-upscaler-ui/  # Gradio UI for video upscaling
+│   ├── image-superres/     # FastAPI backend for image upscaling
+│   ├── image-superres-ui/  # Gradio UI for image upscaling
 │   ├── fastconformer/      # FastConformer ASR service (streaming-only)
 │   ├── whisper/            # Whisper ASR service
 │   ├── parakeet/           # Parakeet ASR service

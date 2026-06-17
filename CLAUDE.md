@@ -8,6 +8,7 @@ AI-Tools is a comprehensive Docker-based AI toolkit featuring:
 - **Live Captions**: Desktop app for real-time speech-to-text transcription
 - **Audio Notes**: Web UI for audio transcription, summarization, and chat
 - **Video Upscaler**: GPU-accelerated video super-resolution using Real-ESRGAN
+- **Image Super Resolution**: GPU-accelerated image upscaling with ESRGAN and Stable Diffusion
 - **ASR Services**: Vosk (CPU), Parakeet (GPU), Whisper (GPU), FastConformer (GPU)
 - **Text Refiner**: Punctuation and correction service
 - **Ollama**: Local LLM for summarization and chat
@@ -40,6 +41,15 @@ AI-Tools is a comprehensive Docker-based AI toolkit featuring:
 │   - Frame reassembly + audio mux (FFmpeg)                    │
 │ • Gradio UI (:7861) → Poll job status → Download            │
 └──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  Image Super Resolution Pipeline (Independent)                │
+├──────────────────────────────────────────────────────────────┤
+│ • Image Upload → FastAPI Backend (:8006)                      │
+│   - Real-ESRGAN upscaling (up to 4x)                          │
+│   - Optional Stable Diffusion x2/x4 creative upscale           │
+│ • Gradio UI (:7862) → 3-column layout (settings/upload/result)│
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Directory Structure
@@ -67,6 +77,13 @@ AI-Tools/
 │   │   └── tests/               # Unit tests
 │   ├── video-upscaler-ui/       # Gradio frontend for video upscaler
 │   │   └── app.py               # UI with model selection, tile controls
+│   ├── image-superres/          # FastAPI backend for image super-resolution
+│   │   ├── image_service.py     # FastAPI application
+│   │   ├── image_model.py       # ESRGAN + Stable Diffusion models
+│   │   ├── image_generative.py  # Stable Diffusion pipeline
+│   │   └── download_models.sh   # Pre-download model weights
+│   ├── image-superres-ui/       # Gradio frontend for image upscaling
+│   │   └── app.py               # 3-column UI with presets and GAI controls
 │   ├── parakeet/                # NeMo Parakeet ASR (streaming + offline)
 │   ├── whisper/                 # OpenAI Whisper ASR
 │   ├── vosk/                    # Vosk ASR (CPU-based)
@@ -132,6 +149,7 @@ Client logic (TranscriptManager):
 docker compose up -d audio-notes ollama
 docker compose up -d whisper-asr parakeet-asr vosk-asr fastconformer-asr
 docker compose up -d video-upscaler video-upscaler-ui
+docker compose up -d image-superres image-superres-ui
 
 # Run Live Captions
 cd apps/live-captions
@@ -153,7 +171,7 @@ Use Conventional Commits:
 <type>(<scope>): <description>
 
 Types: feat, fix, refactor, chore, docs, test
-Scope: live-captions, audio-notes, video-upscaler, parakeet, whisper, vosk, fastconformer, text-refiner
+Scope: live-captions, audio-notes, video-upscaler, image-superres, parakeet, whisper, vosk, fastconformer, text-refiner
 ```
 
 Examples:
