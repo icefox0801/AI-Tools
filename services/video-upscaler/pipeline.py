@@ -88,6 +88,177 @@ def _resize_for_preview(img: np.ndarray, max_w: int = 640) -> np.ndarray:
     return cv2.resize(img, (max_w, int(round(h * scale))), interpolation=cv2.INTER_AREA)
 
 
+def _clarity_enhance(upsampler, frame: np.ndarray, outscale: float) -> np.ndarray:
+    """Run the model at 4x, sharpen in the high-res domain, then Lanczos-downsample.
+
+    When outscale <= 1 the caller wants maximum AI-assisted clarity at the
+    original resolution.  Sharpening *before* the final downsample retains far
+    more fine detail than letting ESRGAN's own INTER_AREA resize do the job.
+    """
+    src_h, src_w = frame.shape[:2]
+    # Always run at 4x so the AI operates at maximum detail.
+    hires, _ = upsampler.enhance(frame, outscale=4.0)
+
+    # --- unsharp masking in 4x space ----------------------------------------
+    # sigma=2.5 at 4x ≈ sigma=0.6 at 1x → sharpens features at sub-pixel scale
+    # without amplifying noise or creating halos.
+    blurred = cv2.GaussianBlur(hires, (0, 0), sigmaX=2.5, sigmaY=2.5)
+    hires = cv2.addWeighted(hires, 1.35, blurred, -0.35, 0)
+    hires = np.clip(hires, 0, 255).astype(np.uint8)
+
+    # --- high-quality downsample to target resolution -----------------------
+    target_w = max(1, int(round(src_w * outscale)))
+    target_h = max(1, int(round(src_h * outscale)))
+    if hires.shape[1] != target_w or hires.shape[0] != target_h:
+        hires = cv2.resize(hires, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+
+    return hires
+
+
+def _extract_comparison_frames(
+    input_path: str,
+    output_path: str,
+    preview_dir: str,
+    duration: float,
+    count: int = 5,
+) -> None:
+    """Extract before/after JPEG pairs at evenly-spaced timestamps.
+
+    Written as ``orig_{idx:06d}.jpg`` / ``upscaled_{idx:06d}.jpg`` so the
+    existing comparison-frame API endpoints can serve them without changes.
+    """
+    if duration <= 0 or not os.path.exists(output_path):
+        return
+    fracs = [0.1, 0.3, 0.5, 0.7, 0.9][:count]
+    for i, frac in enumerate(fracs, start=1):
+        t = duration * frac
+        idx_str = f"{i * 5:06d}"  # multiples of 5 → matches idx % 5 == 0 convention
+        for src, prefix in [(input_path, "orig"), (output_path, "upscaled")]:
+            out_jpg = os.path.join(preview_dir, f"{prefix}_{idx_str}.jpg")
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-ss",
+                        str(t),
+                        "-i",
+                        src,
+                        "-vframes",
+                        "1",
+                        "-vf",
+                        "scale=640:-2",  # 640 px wide, even height
+                        "-q:v",
+                        "3",
+                        "-y",
+                        out_jpg,
+                    ],
+                    check=True,
+                    timeout=15,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def enhance_video_ffmpeg(
+    input_path: str,
+    output_path: str,
+    progress_cb=None,
+    cancel_cb=None,
+    preview_path: str | None = None,  # noqa: ARG001 – kept for interface parity
+    preview_video_dir: str | None = None,
+    preview_video_path: str | None = None,  # noqa: ARG001
+) -> dict:
+    """Enhance clarity using FFmpeg filters only — no AI, very fast.
+
+    Pipeline: ``hqdn3d`` (temporal + spatial denoise) → ``unsharp`` (luma USM).
+    Progress is reported via FFmpeg's ``-progress pipe:1`` output.
+    After processing, before/after comparison frames are extracted from both
+    the source and output files.
+    """
+    info = probe_video(input_path)
+    total: int = info.get("nb_frames", 0) or 0
+    width: int = info.get("width", 0)
+    height: int = info.get("height", 0)
+    duration: float = info.get("duration", 0.0)
+
+    if progress_cb:
+        progress_cb(0, total)
+
+    # hqdn3d: 4 params = luma_spatial:chroma_spatial:luma_tmp:chroma_tmp
+    vf = "hqdn3d=4:4:4:4,unsharp=5:5:1.0:5:5:0.0,format=yuv420p"
+    audio_opts = ["-c:a", "copy"] if info.get("has_audio") else ["-an"]
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        input_path,
+        "-vf",
+        vf,
+        "-c:v",
+        "libx264",
+        "-crf",
+        "18",
+        "-preset",
+        "medium",
+        *audio_opts,
+        "-progress",
+        "pipe:1",
+        "-y",
+        output_path,
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+
+    frame_count = 0
+    try:
+        for line in proc.stdout:
+            if cancel_cb and cancel_cb():
+                proc.kill()
+                raise RuntimeError("Job cancelled")
+            line = line.strip()
+            if line.startswith("frame="):
+                try:
+                    frame_count = int(line.split("=", 1)[1])
+                except ValueError:
+                    pass
+                if progress_cb:
+                    progress_cb(frame_count, total or frame_count)
+        proc.wait()
+        if proc.returncode not in (0, None):
+            raise RuntimeError(f"FFmpeg exited with code {proc.returncode}")
+    except RuntimeError:
+        if proc.poll() is None:
+            proc.kill()
+        raise
+
+    # Extract before/after comparison frames from source + output.
+    if preview_video_dir and os.path.isdir(preview_video_dir):
+        _extract_comparison_frames(input_path, output_path, preview_video_dir, duration)
+
+    if progress_cb and total:
+        progress_cb(total, total)
+
+    return {
+        "output_path": output_path,
+        "frames": frame_count or total,
+        "model": "ffmpeg-enhance",
+        "outscale": 1.0,
+        "width": width,
+        "height": height,
+    }
+
+
+
 def _start_encoder(
     width: int,
     height: int,
@@ -420,6 +591,8 @@ def _upscale_video_esrgan(
     )
     encoder: subprocess.Popen | None = None
     idx = 0
+    _preview_frame_window: list[str] = []  # rolling window tracked without os.listdir
+    _preview_frame_keep = max(30, int(fps * 3))
 
     try:
         while True:
@@ -438,7 +611,10 @@ def _upscale_video_esrgan(
                 break  # end of stream or cancelled
 
             frame = np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3).copy()
-            output, _ = upsampler.enhance(frame, outscale=outscale)
+            if outscale <= 1.0:
+                output = _clarity_enhance(upsampler, frame, outscale)
+            else:
+                output, _ = upsampler.enhance(frame, outscale=outscale)
             idx += 1
 
             if encoder is None:
@@ -485,26 +661,23 @@ def _upscale_video_esrgan(
                             if os.path.exists(upscaled_file):
                                 os.remove(upscaled_file)
 
-            # Rolling preview video: save every upscaled frame, regenerate clip every 30.
+            # Rolling preview video: downscale then save, regenerate clip every 30 frames.
             if preview_video_dir and preview_video_path:
                 frame_path = os.path.join(preview_video_dir, f"frame_{idx:06d}.jpg")
-                ok, buf = cv2.imencode(".jpg", output, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                # Downscale to at most 960px wide — preview clip doesn't need full 4K resolution.
+                preview_frame = _resize_for_preview(output, max_w=960)
+                ok, buf = cv2.imencode(".jpg", preview_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:
                     with open(frame_path, "wb") as f:
                         f.write(buf.tobytes())
-                    # Keep only the last 3 seconds worth of frames.
-                    keep = max(30, int(fps * 3))
-                    all_frames = sorted(
-                        [
-                            f
-                            for f in os.listdir(preview_video_dir)
-                            if f.startswith("frame_") and f.endswith(".jpg")
-                        ],
-                        key=lambda x: int(x.split("_")[1].split(".")[0]),
-                    )
-                    if len(all_frames) > keep:
-                        for old_frame in all_frames[:-keep]:
-                            os.remove(os.path.join(preview_video_dir, old_frame))
+                    # Rolling window: track saved paths in a list, no os.listdir needed.
+                    _preview_frame_window.append(frame_path)
+                    while len(_preview_frame_window) > _preview_frame_keep:
+                        old = _preview_frame_window.pop(0)
+                        try:
+                            os.remove(old)
+                        except OSError:
+                            pass
                 # Regenerate preview video every 30 frames at original fps for smooth playback.
                 if idx % 30 == 0:
                     _generate_preview_video(

@@ -32,9 +32,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from jobs import Job, JobManager
-from pipeline import upscale_video
+from pipeline import upscale_video, enhance_video_ffmpeg
 from log_setup import setup_logging
 from upscaler_model import DEFAULT_MODEL, MODELS, list_models
+
+_FFMPEG_MODELS = {"ffmpeg-enhance"}
 
 logger = setup_logging(__name__)
 
@@ -78,6 +80,19 @@ def _process(job, progress_cb, cancel_cb) -> dict:
     os.makedirs(preview_video_dir, exist_ok=True)
     preview_video_path = os.path.join(job_dir, "preview_video.mp4")
 
+    kwargs = dict(
+        progress_cb=progress_cb,
+        cancel_cb=cancel_cb,
+        preview_path=os.path.join(job_dir, "preview.jpg"),
+        preview_video_dir=preview_video_dir,
+        preview_video_path=preview_video_path,
+    )
+    if job.model == "ffmpeg-enhance":
+        return enhance_video_ffmpeg(
+            input_path=job.input_path,
+            output_path=job.output_path,
+            **kwargs,
+        )
     return upscale_video(
         input_path=job.input_path,
         output_path=job.output_path,
@@ -85,12 +100,8 @@ def _process(job, progress_cb, cancel_cb) -> dict:
         outscale=job.outscale,
         denoise=job.denoise,
         tile=job.tile,
-        progress_cb=progress_cb,
-        cancel_cb=cancel_cb,
-        preview_path=os.path.join(job_dir, "preview.jpg"),
-        preview_video_dir=preview_video_dir,
-        preview_video_path=preview_video_path,
         temporal_mode=job.temporal_mode,
+        **kwargs,
     )
 
 
@@ -175,7 +186,15 @@ async def info():
 
 @app.get("/models")
 async def models():
-    return {"models": list_models(), "default": DEFAULT_MODEL}
+    ffmpeg_entry = [
+        {
+            "name": "ffmpeg-enhance",
+            "netscale": 1,
+            "supports_denoise": False,
+            "description": "FFmpeg only (hqdn3d + unsharp) — no GPU, real-time speed",
+        }
+    ]
+    return {"models": list_models() + ffmpeg_entry, "default": DEFAULT_MODEL}
 
 
 @app.post("/upscale")
@@ -188,8 +207,9 @@ async def upscale(
     temporal_mode: str = Form("standard"),
 ):
     """Accept a video and queue it for upscaling. Returns a job id immediately."""
-    if model not in MODELS:
-        raise HTTPException(400, f"Unknown model '{model}'. Available: {list(MODELS)}")
+    all_valid = set(MODELS) | _FFMPEG_MODELS
+    if model not in all_valid:
+        raise HTTPException(400, f"Unknown model '{model}'. Available: {sorted(all_valid)}")
 
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXT:

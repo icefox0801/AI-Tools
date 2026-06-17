@@ -62,10 +62,8 @@ def fetch_models() -> list[str]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not fetch models from backend: %s", exc)
         return [
-            "realesr-general-x4v3",
             "RealESRGAN_x4plus",
-            "RealESRGAN_x4plus_anime_6B",
-            "RealESRGAN_x2plus",
+            "ffmpeg-enhance",
         ]
 
 
@@ -459,12 +457,7 @@ def upscale(video_path, model, outscale, denoise, tile, temporal_mode):
         )
         return
 
-    mode_map = {
-        "🎬 Standard": "standard",
-        "✨ Standard + Smooth": "tmix",
-        "🎯 BasicVSR++": "basicvsr",
-    }
-    api_mode = mode_map.get(temporal_mode, "standard")
+    api_mode = temporal_mode  # State already holds the API string (standard/tmix/basicvsr)
 
     try:
         with open(path, "rb") as f:
@@ -749,8 +742,12 @@ def load_previous_job(job_id: str | None):
 
     # For empty video slots reset to compact height (height-only gr.update is safe;
     # gr.update(value=path, height=x) crashes via Gradio 6.x Video.postprocess).
-    out_video_upd = out_path if out_path is not None else gr.update(value=None, height=_DEFAULT_VID_H)
-    prev_video_upd = preview_vid if preview_vid is not None else gr.update(value=None, height=_DEFAULT_VID_H)
+    out_video_upd = (
+        out_path if out_path is not None else gr.update(value=None, height=_DEFAULT_VID_H)
+    )
+    prev_video_upd = (
+        preview_vid if preview_vid is not None else gr.update(value=None, height=_DEFAULT_VID_H)
+    )
 
     slider_upd = hide_slider
     if comp and comp.get("frames"):
@@ -896,30 +893,32 @@ def build_ui() -> gr.Blocks:
 
                 gr.Markdown("### ⚙️ Settings")
 
-                temporal_mode = gr.Radio(
-                    choices=["🎬 Standard", "✨ Standard + Smooth", "🎯 BasicVSR++"],
-                    value="🎬 Standard",
-                    label="Processing mode",
-                    elem_id="mode_radio",
-                    info=(
-                        "Standard: fastest, frame-by-frame ESRGAN  ·  "
-                        "Standard + Smooth: ESRGAN then ffmpeg tmix temporal blend (reduces flicker)  ·  "
-                        "Temporal: BasicVSR++ — preserves motion blur, 4× only"
-                    ),
+                temporal_mode = gr.State(value="standard")
+
+                preset = gr.Radio(
+                    choices=[
+                        "🔍 Clarity",
+                        "💎 Best",
+                        "🎯 BasicVSR++",
+                        "🎬 FFmpeg Fast",
+                    ],
+                    value="💎 Best",
+                    label="Preset",
+                    info="Clarity: ESRGAN sharpen 1×  ·  Best: ESRGAN 4×  ·  BasicVSR++: temporal 4×  ·  FFmpeg Fast: no GPU",
+                )
+
+                noise_cb = gr.Checkbox(
+                    label="Noise reduction",
+                    value=False,
+                    visible=True,
                 )
 
                 with gr.Group() as esrgan_controls:
-                    preset = gr.Radio(
-                        choices=["⚡ Fast", "⚖️ Balanced", "💎 Best"],
-                        value="💎 Best",
-                        label="Preset",
-                        info="Fast: 2× ESRGAN-v3  ·  Balanced: 3×  ·  Best: 4× x4plus",
-                    )
                     model = gr.Dropdown(
                         choices=esrgan_models,
                         value=default_model,
                         label="Model",
-                        info="x4plus = max detail · general-x4v3 = noise-aware · anime_6B = animation",
+                        info="x4plus = traditional ESRGAN",
                     )
                     outscale = gr.Slider(
                         1.0,
@@ -935,8 +934,8 @@ def build_ui() -> gr.Blocks:
                             1.0,
                             value=1.0,
                             step=0.05,
-                            label="Detail strength (general-x4v3 only)",
-                            info="1.0 = sharpest  ·  0.0 = softest / denoised",
+                            label="Detail strength",
+                            info="1.0 = sharpest  ·  0.0 = softest / denoised  (ESRGAN only)",
                         )
                         tile = gr.Slider(
                             0,
@@ -1072,29 +1071,33 @@ def build_ui() -> gr.Blocks:
             ],
         )
 
-        # ── event: mode change → toggle ESRGAN vs BasicVSR++ controls ─────────
-        def on_mode_change(mode):
-            is_bvsr = mode == "🎯 BasicVSR++"
-            return (
-                gr.update(visible=not is_bvsr),  # esrgan_controls
-                gr.update(visible=is_bvsr),  # basicvsr_info
-            )
+        # ── event: preset → model / scale / denoise / temporal_mode / group visibility ───
+        def apply_preset(preset_name):
+            # returns: model, outscale, denoise, temporal_mode, esrgan_controls, basicvsr_info, noise_cb
+            show = gr.update(visible=True)
+            hide = gr.update(visible=False)
+            if preset_name == "🔍 Clarity":
+                return "RealESRGAN_x4plus", gr.update(value=1.0, visible=True), 1.0, "standard", show, hide, gr.update(value=False, visible=True)
+            if preset_name == "🎯 BasicVSR++":
+                return "RealESRGAN_x4plus", gr.update(value=4.0, visible=False), 1.0, "basicvsr", hide, show, gr.update(value=False, visible=False)
+            if preset_name == "🎬 FFmpeg Fast":
+                return "ffmpeg-enhance", gr.update(value=1.0, visible=False), 1.0, "standard", show, hide, gr.update(value=False, visible=False)
+            return "RealESRGAN_x4plus", gr.update(value=4.0, visible=True), 1.0, "standard", show, hide, gr.update(value=False, visible=True)  # 💎 Best
 
-        temporal_mode.change(
-            on_mode_change,
-            inputs=[temporal_mode],
-            outputs=[esrgan_controls, basicvsr_info],
+        preset.change(
+            apply_preset,
+            inputs=[preset],
+            outputs=[model, outscale, denoise, temporal_mode, esrgan_controls, basicvsr_info, noise_cb],
         )
 
-        # ── event: preset → model / scale / denoise ───────────────────────────
-        def apply_preset(preset_name):
-            if preset_name == "⚡ Fast":
-                return "realesr-general-x4v3", 2.0, 0.5
-            if preset_name == "⚖️ Balanced":
-                return "realesr-general-x4v3", 3.0, 0.8
-            return "RealESRGAN_x4plus", 4.0, 1.0
+        def on_noise_toggle(checked):
+            return "tmix" if checked else "standard"
 
-        preset.change(apply_preset, inputs=[preset], outputs=[model, outscale, denoise])
+        noise_cb.change(
+            on_noise_toggle,
+            inputs=[noise_cb],
+            outputs=[temporal_mode],
+        )
 
         def on_select_frame(frame_idx, job_id):
             keep = gr.skip()
@@ -1118,12 +1121,12 @@ def build_ui() -> gr.Blocks:
         def _disable_controls():
             return (
                 gr.update(interactive=False),  # input_video
-                gr.update(interactive=False),  # temporal_mode
                 gr.update(interactive=False),  # preset
                 gr.update(interactive=False),  # model
                 gr.update(interactive=False),  # outscale
                 gr.update(interactive=False),  # denoise
                 gr.update(interactive=False),  # tile
+                gr.update(interactive=False),  # noise_cb
                 gr.update(interactive=False, value="⏳ Processing…"),  # run_btn
                 gr.update(interactive=True),  # refresh_queue_btn
                 gr.update(interactive=True),  # cancel_selected_btn
@@ -1133,12 +1136,12 @@ def build_ui() -> gr.Blocks:
         def _enable_controls():
             return (
                 gr.update(interactive=True),  # input_video
-                gr.update(interactive=True),  # temporal_mode
                 gr.update(interactive=True),  # preset
                 gr.update(interactive=True),  # model
                 gr.update(interactive=True),  # outscale
                 gr.update(interactive=True),  # denoise
                 gr.update(interactive=True),  # tile
+                gr.update(interactive=True),  # noise_cb
                 gr.update(interactive=True, value="🚀 Start upscaling"),  # run_btn
                 gr.update(interactive=True),  # refresh_queue_btn
                 gr.update(interactive=True),  # cancel_selected_btn
@@ -1151,12 +1154,12 @@ def build_ui() -> gr.Blocks:
             inputs=None,
             outputs=[
                 input_video,
-                temporal_mode,
                 preset,
                 model,
                 outscale,
                 denoise,
                 tile,
+                noise_cb,
                 run_btn,
                 refresh_queue_btn,
                 cancel_selected_btn,
@@ -1184,12 +1187,12 @@ def build_ui() -> gr.Blocks:
             inputs=None,
             outputs=[
                 input_video,
-                temporal_mode,
                 preset,
                 model,
                 outscale,
                 denoise,
                 tile,
+                noise_cb,
                 run_btn,
                 refresh_queue_btn,
                 cancel_selected_btn,

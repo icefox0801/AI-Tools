@@ -1,15 +1,8 @@
 """
 Real-ESRGAN model registry and loader for the Video Upscaler service.
 
-Each model entry describes the network architecture, its native scale, and the
-weight file(s) needed. Models are loaded lazily and cached so the GPU only holds
-one model at a time (videos are processed sequentially).
-
-Supported models:
-  - realesr-general-x4v3      General-purpose v3 (fast, supports denoise strength)
-  - RealESRGAN_x4plus         General 4x, highest detail (heavier)
-  - RealESRGAN_x4plus_anime_6B Anime/animation 4x (lighter)
-  - RealESRGAN_x2plus         General 2x
+Models:
+  - RealESRGAN_x4plus   General 4×, highest detail
 """
 
 import os
@@ -26,19 +19,9 @@ USE_HALF = os.environ.get("UPSCALER_HALF", "true").lower() == "true"
 # GitHub release base for Real-ESRGAN weights
 _RELEASE = "https://github.com/xinntao/Real-ESRGAN/releases/download"
 
-# Model registry: name -> metadata
+# Model registry: only the most representative traditional upscaler is kept.
+# Generative models (controlnet-tile, sdxl-turbo) live in generative_enhancer.py.
 MODELS = {
-    "realesr-general-x4v3": {
-        "arch": "srvgg",
-        "netscale": 4,
-        "files": ["realesr-general-x4v3.pth", "realesr-general-wdn-x4v3.pth"],
-        "urls": [
-            f"{_RELEASE}/v0.2.5.0/realesr-general-x4v3.pth",
-            f"{_RELEASE}/v0.2.5.0/realesr-general-wdn-x4v3.pth",
-        ],
-        "supports_denoise": True,
-        "description": "General v3 - fast, adjustable denoise. Best default for real video.",
-    },
     "RealESRGAN_x4plus": {
         "arch": "rrdb",
         "netscale": 4,
@@ -46,25 +29,7 @@ MODELS = {
         "files": ["RealESRGAN_x4plus.pth"],
         "urls": [f"{_RELEASE}/v0.1.0/RealESRGAN_x4plus.pth"],
         "supports_denoise": False,
-        "description": "General 4x - highest detail, slower/heavier.",
-    },
-    "RealESRGAN_x4plus_anime_6B": {
-        "arch": "rrdb",
-        "netscale": 4,
-        "num_block": 6,
-        "files": ["RealESRGAN_x4plus_anime_6B.pth"],
-        "urls": [f"{_RELEASE}/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth"],
-        "supports_denoise": False,
-        "description": "Anime/animation 4x - lighter, optimized for drawn content.",
-    },
-    "RealESRGAN_x2plus": {
-        "arch": "rrdb",
-        "netscale": 2,
-        "num_block": 23,
-        "files": ["RealESRGAN_x2plus.pth"],
-        "urls": [f"{_RELEASE}/v0.2.1/RealESRGAN_x2plus.pth"],
-        "supports_denoise": False,
-        "description": "General 2x native model.",
+        "description": "Real-ESRGAN 4× — highest traditional-model detail.",
     },
 }
 
