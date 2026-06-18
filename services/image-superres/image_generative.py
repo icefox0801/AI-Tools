@@ -1,5 +1,6 @@
 """Generative image upscaling helpers (diffusers-based)."""
 
+import glob
 import os
 
 import cv2
@@ -12,36 +13,145 @@ from log_setup import setup_logging
 logger = setup_logging(__name__)
 
 DEVICE = os.environ.get("DEVICE", "cuda")
+WEIGHTS_DIR = os.environ.get("WEIGHTS_DIR", "/app/weights")
 GAI_MAX_INPUT_SIDE = int(os.environ.get("GAI_MAX_INPUT_SIDE", "1024"))
 GAI_CPU_OFFLOAD = os.environ.get("GAI_CPU_OFFLOAD", "true").lower() == "true"
+SUPIR_LOCAL_ONLY = os.environ.get("SUPIR_LOCAL_ONLY", "true").lower() == "true"
+SUPIR_BASE_MODEL_ID = os.environ.get(
+    "SUPIR_BASE_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"
+)
 
 _pipe_cache: dict[str, object] = {}
 
 
-def _load_pipe(model_name: str):
-    meta = get_model_meta(model_name)
-    model_id = meta["hf_model_id"]
+def _find_supir_ckpt() -> str:
+    explicit = os.environ.get("SUPIR_CKPT", "").strip()
+    if explicit and os.path.exists(explicit):
+        return explicit
 
-    if model_name in _pipe_cache:
-        return _pipe_cache[model_name]
+    candidates = [
+        os.path.join(WEIGHTS_DIR, "SUPIR-v0Q.ckpt"),
+        os.path.join(WEIGHTS_DIR, "SUPIR-v0Q.safetensors"),
+        os.path.join(
+            WEIGHTS_DIR,
+            "huggingface",
+            "hub",
+            "models--camenduru--SUPIR",
+            "snapshots",
+            "97b24ec4d42bbdf6b3c5a8d701f78ac67aacba04",
+            "SUPIR-v0Q.ckpt",
+        ),
+    ]
 
+    patterns = [
+        os.path.join(
+            WEIGHTS_DIR,
+            "huggingface",
+            "hub",
+            "models--camenduru--SUPIR",
+            "snapshots",
+            "*",
+            "SUPIR-v0Q.ckpt",
+        ),
+        os.path.join(
+            WEIGHTS_DIR,
+            "huggingface",
+            "hub",
+            "models--Kijai--SUPIR_pruned",
+            "snapshots",
+            "*",
+            "SUPIR-v0Q*.safetensors",
+        ),
+    ]
+
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+
+    for pat in patterns:
+        matches = sorted(glob.glob(pat))
+        if matches:
+            return matches[0]
+
+    raise FileNotFoundError(
+        "SUPIR checkpoint not found. Set SUPIR_CKPT or place SUPIR-v0Q under /app/weights."
+    )
+
+
+def _load_supir_model():
+    """Load Kijai SUPIR-pruned adapter onto SDXL base (component-by-component to
+    avoid SIGSEGV on PyTorch 2.9 + CUDA 12.9)."""
     import torch
+    from diffusers import StableDiffusionXLImg2ImgPipeline, UNet2DConditionModel, AutoencoderKL
+    from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 
-    torch_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+    model_id = SUPIR_BASE_MODEL_ID
+    dtype = torch.float16
 
-    if model_name == "stable-diffusion-x4-upscaler":
-        from diffusers import StableDiffusionUpscalePipeline
+    logger.info("Loading SDXL base components...")
+    te = CLIPTextModel.from_pretrained(
+        model_id,
+        subfolder="text_encoder",
+        torch_dtype=dtype,
+        variant="fp16",
+        local_files_only=SUPIR_LOCAL_ONLY,
+    )
+    te2 = CLIPTextModelWithProjection.from_pretrained(
+        model_id,
+        subfolder="text_encoder_2",
+        torch_dtype=dtype,
+        variant="fp16",
+        local_files_only=SUPIR_LOCAL_ONLY,
+    )
+    vae = AutoencoderKL.from_pretrained(
+        model_id,
+        subfolder="vae",
+        torch_dtype=dtype,
+        variant="fp16",
+        local_files_only=SUPIR_LOCAL_ONLY,
+    )
+    unet = UNet2DConditionModel.from_pretrained(
+        model_id,
+        subfolder="unet",
+        torch_dtype=dtype,
+        variant="fp16",
+        local_files_only=SUPIR_LOCAL_ONLY,
+    )
+    tok = CLIPTokenizer.from_pretrained(
+        model_id,
+        subfolder="tokenizer",
+        local_files_only=SUPIR_LOCAL_ONLY,
+    )
+    tok2 = CLIPTokenizer.from_pretrained(
+        model_id,
+        subfolder="tokenizer_2",
+        local_files_only=SUPIR_LOCAL_ONLY,
+    )
 
-        pipe = StableDiffusionUpscalePipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
-    elif model_name == "sd-x2-latent-upscaler":
-        from diffusers import StableDiffusionLatentUpscalePipeline
+    # Find Kijai SUPIR adapter checkpoint
+    import glob
 
-        pipe = StableDiffusionLatentUpscalePipeline.from_pretrained(
-            model_id,
-            torch_dtype=torch_dtype,
+    candidates = sorted(
+        glob.glob(
+            "/app/weights/huggingface/hub/models--Kijai--SUPIR_pruned/snapshots/*/SUPIR-v0F*.safetensors"
         )
-    else:
-        raise ValueError(f"Unsupported generative model: {model_name}")
+    )
+    if not candidates:
+        raise FileNotFoundError("Kijai SUPIR_pruned checkpoint not found")
+    adapter_path = candidates[0]
+    logger.info("Loading SUPIR adapter from %s", adapter_path)
+
+    pipe = StableDiffusionXLImg2ImgPipeline.from_single_file(
+        adapter_path,
+        torch_dtype=dtype,
+        text_encoder=te,
+        text_encoder_2=te2,
+        tokenizer=tok,
+        tokenizer_2=tok2,
+        vae=vae,
+        unet=unet,
+        local_files_only=True,
+    )
 
     if DEVICE == "cuda":
         if GAI_CPU_OFFLOAD:
@@ -50,9 +160,53 @@ def _load_pipe(model_name: str):
             pipe = pipe.to("cuda")
     pipe.enable_attention_slicing()
     try:
-        pipe.enable_vae_slicing()
+        pipe.enable_vae_tiling()
     except Exception:
         pass
+
+    logger.info("SUPIR model loaded on %s", DEVICE)
+    return pipe
+
+
+def _load_supir_pipe(torch_dtype):
+    """Compatibility wrapper — returns the SUPIR model in _pipe_cache."""
+    return _load_supir_model()
+
+
+def _load_pipe(model_name: str):
+    meta = get_model_meta(model_name)
+    model_id = meta.get("hf_model_id")
+
+    if model_name in _pipe_cache:
+        return _pipe_cache[model_name]
+
+    import torch
+
+    torch_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+
+    if model_name == "SUPIR-v0Q":
+        pipe = _load_supir_pipe(torch_dtype)
+    elif model_name == "sdxl-img2img":
+        from diffusers import StableDiffusionXLImg2ImgPipeline
+
+        pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+            model_id,
+            torch_dtype=torch_dtype,
+            variant="fp16",
+            local_files_only=SUPIR_LOCAL_ONLY,
+        )
+        if DEVICE == "cuda":
+            if GAI_CPU_OFFLOAD:
+                pipe.enable_model_cpu_offload()
+            else:
+                pipe = pipe.to("cuda")
+        pipe.enable_attention_slicing()
+        try:
+            pipe.enable_vae_tiling()
+        except Exception:
+            pass
+    else:
+        raise ValueError(f"Unsupported generative model: {model_name} (hf_model_id={model_id})")
 
     _pipe_cache[model_name] = pipe
     logger.info("Loaded generative upscaler pipeline: %s", model_name)
@@ -68,6 +222,7 @@ def upscale_image_generative(
     steps: int,
     guidance_scale: float,
     seed: int | None,
+    denoise: float = 0.4,
 ) -> np.ndarray:
     import torch
 
@@ -75,6 +230,12 @@ def upscale_image_generative(
 
     rgb = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
     src_h, src_w = rgb.shape[:2]
+
+    if model_name == "SUPIR-v0Q":
+        # SUPIR uses same img2img pipeline as sdxl-img2img (adapter weights
+        # are loaded onto the base SDXL UNet by _load_supir_model).
+        pass  # fall through to generic path below
+
     work_rgb = rgb
     if max(src_w, src_h) > GAI_MAX_INPUT_SIDE:
         scale = float(GAI_MAX_INPUT_SIDE) / float(max(src_w, src_h))
@@ -106,6 +267,7 @@ def upscale_image_generative(
             prompt=prompt,
             image=input_image,
             negative_prompt=negative_prompt,
+            strength=denoise,
             num_inference_steps=max(5, min(30, int(steps))),
             guidance_scale=max(1.0, min(9.0, float(guidance_scale))),
             generator=generator,
