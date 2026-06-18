@@ -892,23 +892,8 @@ def build_ui() -> gr.Blocks:
         title="Video Upscaler",
         theme=gr.themes.Soft(),
         css="""
-        #left_panel {
-            position: relative;
-            z-index: 20;
-        }
-        #left_panel .gradio-slider,
-        #left_panel .gradio-button,
-        #left_panel .gradio-dropdown,
-        #left_panel .gradio-radio,
-        #left_panel .gradio-video {
-            position: relative;
-            z-index: 21;
-        }
-        #right_panel {
-            position: relative;
-            z-index: 10;
-            overflow: hidden;
-        }
+        #right_panel { overflow: visible !important; }
+        #left_panel { z-index: 1 !important; }
         #live_preview_video,
         #live_preview_video .wrap,
         #live_preview_video .empty,
