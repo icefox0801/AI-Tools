@@ -457,6 +457,7 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - DEVICE=cuda
       - HF_HOME=/app/weights/huggingface
+      - HF_HUB_OFFLINE=1
       - HF_TOKEN=${HF_TOKEN}
       - WEIGHTS_DIR=/app/weights
       - DATA_DIR=/app/data
