@@ -12,32 +12,32 @@ from config import IMAGE_SR_URL, SERVER_NAME, SERVER_PORT, logger
 __version__ = "1.0"
 
 
-GAI_MODELS = {"stable-diffusion-x4-upscaler", "sd-x2-latent-upscaler"}
+GAI_MODELS = {"SUPIR-v0Q", "sdxl-img2img"}
 PRESET_CHOICES = [
-    "💎 Best Fidelity",
+    "💎 Best Fidelity (text/UI)",
     "🧹 Balanced Denoise",
-    "🎨 GAI Creative x2",
-    "🧠 GAI Creative x4",
+    "🎨 SDXL Photo Enhance",
+    "🧪 SUPIR Restoration",
 ]
 
 
 def _preset_for_model(model_name: str) -> str:
-    if model_name == "sd-x2-latent-upscaler":
-        return "🎨 GAI Creative x2"
-    if model_name == "stable-diffusion-x4-upscaler":
-        return "🧠 GAI Creative x4"
     if model_name == "realesr-general-x4v3":
         return "🧹 Balanced Denoise"
-    return "💎 Best Fidelity"
+    if model_name == "sdxl-img2img":
+        return "🎨 SDXL Photo Enhance"
+    if model_name == "SUPIR-v0Q":
+        return "🧪 SUPIR Restoration"
+    return "💎 Best Fidelity (text/UI)"
 
 
 def _model_for_preset(preset_name: str) -> str:
-    if preset_name == "🎨 GAI Creative x2":
-        return "sd-x2-latent-upscaler"
-    if preset_name == "🧠 GAI Creative x4":
-        return "stable-diffusion-x4-upscaler"
     if preset_name == "🧹 Balanced Denoise":
         return "realesr-general-x4v3"
+    if preset_name == "🎨 SDXL Photo Enhance":
+        return "sdxl-img2img"
+    if preset_name == "🧪 SUPIR Restoration":
+        return "SUPIR-v0Q"
     return "RealESRGAN_x4plus"
 
 
@@ -63,19 +63,20 @@ def fetch_models() -> tuple[list[str], str]:
 
 
 def choose_model(model_name: str):
-    visible = model_name in GAI_MODELS
-    note = (
-        "GAI model selected: text fidelity may be reduced."
-        if visible
-        else "Fidelity model selected: best for text/UI details."
-    )
-    outscale_value = 2.0 if model_name == "sd-x2-latent-upscaler" else 4.0
+    is_gai = model_name in GAI_MODELS
+    if model_name == "SUPIR-v0Q":
+        note = "SUPIR: photorealistic restoration with SDXL. Slow — 5-15 min per image."
+    elif model_name == "sdxl-img2img":
+        note = "SDXL Photo Enhance: generative detail boost for photos. Use prompt to guide style."
+    else:
+        note = "Fidelity model selected: best for text/UI details."
+    outscale_value = 1.0 if is_gai else 4.0
     return (
         gr.update(value=model_name),
-        gr.update(visible=visible),
-        gr.update(value=outscale_value),
-        gr.update(interactive=not visible),
-        gr.update(interactive=not visible),
+        gr.update(visible=is_gai),
+        gr.update(value=outscale_value, interactive=not is_gai),
+        gr.update(interactive=not is_gai),
+        gr.update(interactive=not is_gai),
         note,
     )
 
@@ -167,35 +168,6 @@ def _enable_controls(image: Image.Image | None):
 def build_ui() -> gr.Blocks:
     with gr.Blocks(
         title="Image Super Resolution",
-        theme=gr.themes.Soft(),
-        css="""
-        #left_panel {
-            position: relative;
-            z-index: 20;
-        }
-        #left_panel .gradio-slider,
-        #left_panel .gradio-button,
-        #left_panel .gradio-dropdown,
-        #left_panel .gradio-radio {
-            position: relative;
-            z-index: 21;
-        }
-        #center_panel {
-            position: relative;
-            z-index: 20;
-        }
-        #right_panel {
-            position: relative;
-            z-index: 10;
-            overflow: hidden;
-        }
-        #output_image_panel,
-        #output_image_panel .wrap,
-        #output_image_panel .empty,
-        #output_image_panel img {
-            background: #ffffff !important;
-        }
-    """,
     ) as demo:
         # ── header ────────────────────────────────────────────────────────────
         gr.Markdown(
@@ -354,4 +326,9 @@ if __name__ == "__main__":
         __version__,
         IMAGE_SR_URL,
     )
-    build_ui().queue().launch(server_name=SERVER_NAME, server_port=SERVER_PORT)
+    build_ui().queue().launch(
+        server_name=SERVER_NAME,
+        server_port=SERVER_PORT,
+        theme=gr.themes.Soft(),
+        css="""#right_panel{overflow:visible}""",
+    )

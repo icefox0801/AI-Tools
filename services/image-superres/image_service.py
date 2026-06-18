@@ -78,6 +78,10 @@ async def info():
         "default_model": DEFAULT_MODEL,
         "default_tile": DEFAULT_TILE,
         "data_dir": DATA_DIR,
+        "supir_local_only": os.environ.get("SUPIR_LOCAL_ONLY", "true"),
+        "supir_base_model_id": os.environ.get(
+            "SUPIR_BASE_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"
+        ),
         "allowed_extensions": sorted(ALLOWED_EXT),
     }
 
@@ -125,6 +129,8 @@ async def upscale_image(
         outscale = model_netscale
 
     if is_generative_model(model):
+        # Map denoise 0.0-1.0 to strength 0.1-0.9 (keep some structure)
+        strength = 0.1 + denoise * 0.8
         out_img = upscale_image_generative(
             bgr_image=arr,
             model_name=model,
@@ -134,6 +140,7 @@ async def upscale_image(
             steps=steps,
             guidance_scale=guidance_scale,
             seed=seed if seed >= 0 else None,
+            denoise=strength,
         )
     else:
         upsampler, _ = get_upsampler(model, denoise=denoise, tile=tile if tile > 0 else None)

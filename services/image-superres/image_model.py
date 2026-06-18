@@ -37,21 +37,21 @@ MODELS = {
         "class": "restoration",
         "description": "Balanced model with adjustable denoise strength.",
     },
-    "stable-diffusion-x4-upscaler": {
-        "arch": "diffusion",
-        "netscale": 4,
+    "SUPIR-v0Q": {
+        "arch": "supir",
+        "netscale": 1,
         "supports_denoise": False,
         "class": "generative",
-        "hf_model_id": "stabilityai/stable-diffusion-x4-upscaler",
-        "description": "GAI creative x4 upscaler (can hallucinate details/text).",
+        "hf_model_id": "camenduru/SUPIR",
+        "description": "SUPIR: photorealistic detail restoration with SDXL backbone (slow, high quality).",
     },
-    "sd-x2-latent-upscaler": {
-        "arch": "diffusion",
-        "netscale": 2,
+    "sdxl-img2img": {
+        "arch": "sdxl",
+        "netscale": 1,
         "supports_denoise": False,
         "class": "generative",
-        "hf_model_id": "stabilityai/sd-x2-latent-upscaler",
-        "description": "GAI creative x2 latent upscaler (lower hallucination than x4).",
+        "hf_model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+        "description": "SDXL img2img: generative detail enhancement (4-6GB VRAM, ~30s per image).",
     },
 }
 
@@ -113,7 +113,7 @@ def get_upsampler(model_name: str, denoise: float = 1.0, tile: int | None = None
         raise ValueError(f"Unknown model '{model_name}'. Available: {list(MODELS)}")
 
     meta = MODELS[model_name]
-    if meta.get("arch") == "diffusion":
+    if meta.get("arch") in ("diffusion", "supir"):
         raise ValueError(
             f"Model '{model_name}' is generative; use the generative pipeline path instead."
         )
